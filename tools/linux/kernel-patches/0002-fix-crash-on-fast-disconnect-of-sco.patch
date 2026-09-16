@@ -1,0 +1,20 @@
+# Upstream: 2c501cdd6823a644cf35ac594c635310bf077125 "Bluetooth: Fix crash on fast disconnect of SCO"
+# Taken from: mainline (the commit itself)
+# CVE: none assigned
+# 3.18 adaptation: None; applies to 3.18 unchanged (line offsets only).
+#
+diff --git a/net/bluetooth/sco.c b/net/bluetooth/sco.c
+--- a/net/bluetooth/sco.c
++++ b/net/bluetooth/sco.c
+@@ -1019,6 +1019,11 @@ static void sco_conn_ready(struct sco_conn *conn)
+ 	} else {
+ 		sco_conn_lock(conn);
+ 
++		if (!conn->hcon) {
++			sco_conn_unlock(conn);
++			return;
++		}
++
+ 		parent = sco_get_sock_listen(&conn->hcon->src);
+ 		if (!parent) {
+ 			sco_conn_unlock(conn);

@@ -1,0 +1,46 @@
+# Upstream: fe4840df0bdf341f376885271b7680764fe6b34e "Bluetooth: SMP: If an unallowed command is received consider it a failure"
+# Taken from: linux-5.4.y stable backport 24a855e2bb6fe0a894e06972f8d0a1c034fb4e11
+# CVE: none assigned
+# 3.18 adaptation: 3.18's smp.h has no Secure Connections error codes, so SMP_KEY_REJECTED (0x0f, upstream's value) is added after SMP_INVALID_PARAMS.
+#
+diff --git a/net/bluetooth/smp.c b/net/bluetooth/smp.c
+--- a/net/bluetooth/smp.c
++++ b/net/bluetooth/smp.c
+@@ -1482,8 +1482,25 @@ static int smp_sig_channel(struct l2cap_chan *chan, struct sk_buff *skb)
+ 	if (code > SMP_CMD_MAX)
+ 		goto drop;
+ 
+-	if (smp && !test_and_clear_bit(code, &smp->allow_cmd))
++	if (smp && !test_and_clear_bit(code, &smp->allow_cmd)) {
++		/* If there is a context and the command is not allowed consider
++		 * it a failure so the session is cleanup properly.
++		 */
++		switch (code) {
++		case SMP_CMD_IDENT_INFO:
++		case SMP_CMD_IDENT_ADDR_INFO:
++		case SMP_CMD_SIGN_INFO:
++			/* 3.6.1. Key distribution and generation
++			 *
++			 * A device may reject a distributed key by sending the
++			 * Pairing Failed command with the reason set to
++			 * "Key Rejected".
++			 */
++			smp_failure(conn, SMP_KEY_REJECTED);
++			break;
++		}
+ 		goto drop;
++	}
+ 
+ 	/* If we don't have a context the only allowed commands are
+ 	 * pairing request and security request.
+diff --git a/net/bluetooth/smp.h b/net/bluetooth/smp.h
+--- a/net/bluetooth/smp.h
++++ b/net/bluetooth/smp.h
+@@ -114,6 +114,7 @@ struct smp_cmd_security_req {
+ #define SMP_UNSPECIFIED			0x08
+ #define SMP_REPEATED_ATTEMPTS		0x09
+ #define SMP_INVALID_PARAMS		0x0a
++#define SMP_KEY_REJECTED		0x0f
+ 
+ #define SMP_MIN_ENC_KEY_SIZE		7
+ #define SMP_MAX_ENC_KEY_SIZE		16

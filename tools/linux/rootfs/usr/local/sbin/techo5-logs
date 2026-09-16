@@ -1,0 +1,21 @@
+#!/bin/busybox.static sh
+# Keeps the logs on userdata from growing for ever, respawned by init. Every ten minutes a log over
+# 1 MB is copied to <name>.1 (replacing the last one) and emptied in place.
+#
+# Emptied rather than moved: the daemon and the network tools hold their logs open, and every one of
+# them was opened for appending (>>), so after the truncation their next write lands at the new end
+# instead of leaving a hole the size of the old file. At most ~2 MB per log, whatever the uptime.
+BB=/bin/busybox.static
+DIR=/data/techo5-linux
+MAX=1048576
+while true; do
+	for f in $DIR/*.log; do
+		[ -f "$f" ] || continue
+		size=$($BB stat -c %s "$f" 2>/dev/null || echo 0)
+		if [ "$size" -gt $MAX ]; then
+			$BB cp -f "$f" "$f.1" && : > "$f"
+			echo "techo5-logs: $f was $size bytes; kept as $f.1 and emptied" >> "$f"
+		fi
+	done
+	$BB sleep 600
+done

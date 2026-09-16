@@ -1,0 +1,18 @@
+# Upstream: adf0398cee86643b8eacde95f17d073d022f782c "Bluetooth: l2cap: fix null-ptr-deref in l2cap_chan_timeout"
+# Taken from: linux-4.19.y stable backport e137e2ba96e51902dc2878131823a96bf8e638ae
+# CVE: CVE-2024-27399
+# 3.18 adaptation: None; applies to 3.18 unchanged (line offsets only).
+#
+diff --git a/net/bluetooth/l2cap_core.c b/net/bluetooth/l2cap_core.c
+--- a/net/bluetooth/l2cap_core.c
++++ b/net/bluetooth/l2cap_core.c
+@@ -406,6 +406,9 @@ static void l2cap_chan_timeout(struct work_struct *work)
+ 
+ 	BT_DBG("chan %p state %s", chan, state_to_string(chan->state));
+ 
++	if (!conn)
++		return;
++
+ 	mutex_lock(&conn->chan_lock);
+ 	/* __set_chan_timer() calls l2cap_chan_hold(chan) while scheduling
+ 	 * this work. No need to call l2cap_chan_hold(chan) here again.

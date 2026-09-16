@@ -1,0 +1,49 @@
+# Upstream: a2ec905d1e160a33b2e210e45ad30445ef26ce0e "Bluetooth: fix kernel oops in store_pending_adv_report"
+# Taken from: linux-4.4.y stable backport 8bcbf0502aece97c44d3c64212c249572a711381
+# CVE: none assigned
+# 3.18 adaptation: 3.18's process_adv_report() has no pending-connection report store (the third hunk's code does not exist) and bt_dev_err() does not exist yet, so it is BT_ERR("%s: ...", hdev->name). The length checks are unchanged.
+#
+diff --git a/net/bluetooth/hci_event.c b/net/bluetooth/hci_event.c
+--- a/net/bluetooth/hci_event.c
++++ b/net/bluetooth/hci_event.c
+@@ -1112,6 +1112,9 @@ static void store_pending_adv_report(struct hci_dev *hdev, bdaddr_t *bdaddr,
+ {
+ 	struct discovery_state *d = &hdev->discovery;
+ 
++	if (len > HCI_MAX_AD_LENGTH)
++		return;
++
+ 	bacpy(&d->last_adv_addr, bdaddr);
+ 	d->last_adv_addr_type = bdaddr_type;
+ 	d->last_adv_rssi = rssi;
+@@ -4369,6 +4372,11 @@ static void process_adv_report(struct hci_dev *hdev, u8 type, bdaddr_t *bdaddr,
+ 	bool match;
+ 	u32 flags;
+ 
++	if (len > HCI_MAX_AD_LENGTH) {
++		pr_err_ratelimited("legacy adv larger than 31 bytes");
++		return;
++	}
++
+ 	/* Check if we need to convert to identity address */
+ 	irk = hci_get_irk(hdev, bdaddr, bdaddr_type);
+ 	if (irk) {
+@@ -4496,9 +4504,15 @@ static void hci_le_adv_report_evt(struct hci_dev *hdev, struct sk_buff *skb)
+ 		struct hci_ev_le_advertising_info *ev = ptr;
+ 		s8 rssi;
+ 
+-		rssi = ev->data[ev->length];
+-		process_adv_report(hdev, ev->evt_type, &ev->bdaddr,
+-				   ev->bdaddr_type, rssi, ev->data, ev->length);
++		if (ev->length <= HCI_MAX_AD_LENGTH) {
++			rssi = ev->data[ev->length];
++			process_adv_report(hdev, ev->evt_type, &ev->bdaddr,
++					   ev->bdaddr_type, rssi, ev->data,
++					   ev->length);
++		} else {
++			BT_ERR("%s: Dropping invalid advertising data",
++			       hdev->name);
++		}
+ 
+ 		ptr += sizeof(*ev) + ev->length + 1;
+ 	}

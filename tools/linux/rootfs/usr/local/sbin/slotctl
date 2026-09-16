@@ -1,0 +1,207 @@
+#!/bin/sh
+# slotctl — TECHO5 Dot root filesystem slots, in a directory of the cache partition.
+#
+# The Echo Show 5's slotctl (TECHO5 tools/linux/slotctl) with the Dot's layout: the store is not a
+# partition of its own but /techo5 on cache (p15), mounted at /store, so the store directory is
+# /store/techo5. The command set and the state files are the same, so the daemon's updater
+# (internal/update/slots_linux.go: `slotctl install <tar>`, then a reboot) works unchanged.
+#
+#   .techo5-store        marker: this directory is a store
+#   active               the slot the initramfs boots next: a or b
+#   slots/a, slots/b     the root filesystems (plain directories)
+#   slots/<x>.state      good | trial <tries left> | bad   (absent: never installed)
+#   rescue               present: the next boot stays in the initramfs, then removed
+#   firmware/            the unit's Wi-Fi firmware, adopted once, shared by both slots
+#   twrp.img, linux.img  the unit's TWRP and its Linux boot image, for to-twrp and the way back
+#
+# A newly installed slot is on trial for two boots. The initramfs takes one try per boot; boot.sh
+# commits the slot once the daemon has been up for 90 s. A slot that runs out of tries is marked bad
+# and the other slot, if good, boots instead. Around all of it the initramfs counts unhealthy boots
+# in MISC and falls back to Fire OS at five, so a bad slot is left for the good one first.
+
+STORE=${STORE:-/store/techo5}
+TRIES=2
+
+usage() {
+	cat <<EOF
+usage: slotctl [-s store] <command>
+  status                  slots, their state, the active and the booted one
+  install <rootfs.tar.gz> unpack into the inactive slot, put it on trial, make it active
+                          (--keep-active: install without switching)
+  commit                  mark the booted slot good (no-op if it is)
+  switch <a|b>            boot this slot next; a bad slot goes back on trial
+  rollback                mark the booted slot bad and boot the other, good, one next
+  rescue [off]            stay in the initramfs at the next boot (one boot only)
+  next                    initramfs: choose the slot to boot and take a try; prints its name
+EOF
+	exit 1
+}
+
+die() { echo "slotctl: $*" >&2; exit 1; }
+
+check() { [ -e "$STORE/.techo5-store" ] || die "$STORE is not a store"; }
+
+# atomic one-line file write
+put() { printf '%s\n' "$2" > "$1.tmp" && mv -f "$1.tmp" "$1"; }
+
+state() { cat "$STORE/slots/$1.state" 2>/dev/null || echo none; }
+set_state() { put "$STORE/slots/$1.state" "$2"; }
+active() { cat "$STORE/active" 2>/dev/null; }
+set_active() { put "$STORE/active" "$1"; }
+booted() { cat /run/techo5/slot 2>/dev/null; }
+other() { case "$1" in a) echo b;; b) echo a;; *) echo a;; esac; }
+release() { cat "$STORE/slots/$1/etc/techo5-release" 2>/dev/null || echo "-"; }
+valid_slot() { case "$1" in a|b) return 0;; esac; return 1; }
+
+cmd_status() {
+	check
+	echo "store:  $STORE"
+	echo "active: $(active)"
+	echo "booted: $(booted)"
+	[ -e "$STORE/rescue" ] && echo "rescue: next boot stays in the initramfs"
+	for s in a b; do
+		if [ -d "$STORE/slots/$s" ]; then
+			echo "slot $s: $(state $s) — $(release $s)"
+		else
+			echo "slot $s: empty"
+		fi
+	done
+}
+
+cmd_next() {
+	check
+	a=$(active)
+	if [ -z "$a" ]; then
+		for s in a b; do
+			if [ "$(state $s)" = good ]; then
+				set_active $s; sync; echo "slotctl: no active slot; $s is good" >&2; echo $s; return 0
+			fi
+		done
+		echo "slotctl: no active slot and none good" >&2
+		return 1
+	fi
+	st=$(state $a)
+	case "$st" in
+	good)
+		echo $a; return 0;;
+	trial*)
+		n=${st#trial}; n=$((n))
+		if [ $n -gt 0 ]; then
+			set_state $a "trial $((n-1))"; sync
+			echo "slotctl: $a on trial, $((n-1)) tries left after this one" >&2
+			echo $a; return 0
+		fi
+		set_state $a bad
+		echo "slotctl: $a used all its tries without committing; marked bad" >&2;;
+	*)
+		echo "slotctl: active slot $a is $st" >&2;;
+	esac
+	o=$(other $a)
+	if [ "$(state $o)" = good ]; then
+		set_active $o; sync
+		echo "slotctl: falling back to $o" >&2
+		echo $o; return 0
+	fi
+	sync
+	echo "slotctl: no bootable slot ($a: $(state $a), $o: $(state $o))" >&2
+	return 1
+}
+
+cmd_install() {
+	check
+	keep=
+	tar=
+	for arg in "$@"; do
+		case "$arg" in
+		--keep-active) keep=1;;
+		*) tar=$arg;;
+		esac
+	done
+	[ -n "$tar" ] || usage
+	[ -f "$tar" ] || die "$tar: no such file"
+	case "$tar" in *.gz|*.tgz) z=-z;; *.xz) z=-J;; *) z=;; esac
+	a=$(active)
+	if [ -z "$a" ]; then t=a; else t=$(other $a); fi
+	[ "$t" != "$(booted)" ] || die "slot $t is the running root; refusing to overwrite it"
+	rm -rf "$STORE/slots/$t" "$STORE/slots/$t.state"
+	mkdir -p "$STORE/slots/$t"
+	echo "slotctl: unpacking $tar into slot $t"
+	tar $z -xf "$tar" -C "$STORE/slots/$t" || { rm -rf "$STORE/slots/$t"; sync; die "unpacking failed"; }
+	for f in sbin/init usr/local/bin/echod etc/techo5/boot.sh etc/inittab; do
+		[ -e "$STORE/slots/$t/$f" ] || { rm -rf "$STORE/slots/$t"; sync; die "not a TECHO5 Dot rootfs: $f missing"; }
+	done
+	set_state $t "trial $TRIES"
+	[ -n "$keep" ] || set_active $t
+	sync
+	echo "slotctl: slot $t: $(release $t) — trial $TRIES; active: $(active)"
+}
+
+cmd_commit() {
+	check
+	s=$(booted)
+	[ -n "$s" ] || die "not booted from a slot"
+	case "$(state $s)" in
+	good) echo "slotctl: slot $s is already good"; return 0;;
+	trial*) ;;
+	*) die "slot $s is $(state $s); use switch to put it back on trial";;
+	esac
+	set_state $s good
+	sync
+	echo "slotctl: slot $s committed (good)"
+}
+
+cmd_switch() {
+	check
+	s=$1
+	valid_slot "$s" || usage
+	[ -d "$STORE/slots/$s" ] || die "slot $s is empty"
+	case "$(state $s)" in
+	good|trial*) ;;
+	*) set_state $s "trial $TRIES";;
+	esac
+	set_active $s
+	sync
+	echo "slotctl: next boot: slot $s ($(state $s))"
+}
+
+cmd_rollback() {
+	check
+	s=$(booted)
+	[ -n "$s" ] || die "not booted from a slot"
+	o=$(other $s)
+	[ "$(state $o)" = good ] || die "slot $o is $(state $o), nothing good to roll back to; use switch"
+	set_state $s bad
+	set_active $o
+	sync
+	echo "slotctl: slot $s marked bad; next boot: slot $o"
+}
+
+cmd_rescue() {
+	check
+	if [ "$1" = off ]; then
+		rm -f "$STORE/rescue"; echo "slotctl: next boot is normal"
+	else
+		: > "$STORE/rescue"; echo "slotctl: next boot stays in the initramfs (rescue)"
+	fi
+	sync
+}
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+	-s) STORE=$2; shift 2;;
+	-h|--help) usage;;
+	*) break;;
+	esac
+done
+[ $# -gt 0 ] || usage
+cmd=$1; shift
+case "$cmd" in
+status) cmd_status;;
+next) cmd_next;;
+install) cmd_install "$@";;
+commit) cmd_commit;;
+switch) cmd_switch "$@";;
+rollback) cmd_rollback;;
+rescue) cmd_rescue "$@";;
+*) usage;;
+esac

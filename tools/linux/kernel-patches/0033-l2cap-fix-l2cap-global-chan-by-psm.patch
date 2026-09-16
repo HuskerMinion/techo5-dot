@@ -1,0 +1,17 @@
+# Upstream: f937b758a188d6fd328a81367087eddbb2fce50f "Bluetooth: L2CAP: Fix l2cap_global_chan_by_psm"
+# Taken from: linux-4.14.y stable backport a6d2597e41043be4804b4c7b3dfd5ff76b001ed2
+# CVE: none assigned
+# 3.18 adaptation: None; applies to 3.18 unchanged (line offsets only).
+#
+diff --git a/net/bluetooth/l2cap_core.c b/net/bluetooth/l2cap_core.c
+--- a/net/bluetooth/l2cap_core.c
++++ b/net/bluetooth/l2cap_core.c
+@@ -1756,7 +1756,7 @@ static struct l2cap_chan *l2cap_global_chan_by_psm(int state, __le16 psm,
+ 		if (link_type == LE_LINK && c->src_type == BDADDR_BREDR)
+ 			continue;
+ 
+-		if (c->psm == psm) {
++		if (c->chan_type != L2CAP_CHAN_FIXED && c->psm == psm) {
+ 			int src_match, dst_match;
+ 			int src_any, dst_any;
+ 

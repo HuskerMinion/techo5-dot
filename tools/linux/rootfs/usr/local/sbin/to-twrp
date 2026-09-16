@@ -1,0 +1,46 @@
+#!/bin/sh
+# to-twrp: put this unit's own TWRP back into the recovery partition and boot it, with no PC.
+#
+# The installer keeps a copy of the unit's TWRP (its own backup, never a downloaded one) and of its
+# Linux boot image in the store. From TWRP, the way back is:
+#   adb shell sh /cache/techo5/back-to-linux.sh
+# or running the installer again.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+S=/store/techo5
+MISC=/dev/mmcblk0p8
+REC=/dev/mmcblk0p12
+die() { echo "to-twrp: $*" >&2; exit 1; }
+
+[ -s $S/twrp.img ] || die "no TWRP copy in $S (the installer puts one there)"
+[ "$(head -c 8 $S/twrp.img)" = "ANDROID!" ] || die "$S/twrp.img is not a boot image"
+[ -b $REC ] || mknod -m 600 $REC b 179 12
+[ -b $MISC ] || mknod -m 600 $MISC b 179 8
+
+if [ "$1" != --yes ]; then
+	echo "This replaces Linux in the recovery partition with TWRP and reboots into TWRP."
+	echo "Back afterwards: adb shell sh /cache/techo5/back-to-linux.sh (from TWRP)."
+	echo "Run 'to-twrp --yes' to go ahead."
+	exit 1
+fi
+
+len=$(stat -c %s $S/twrp.img)
+want=$(md5sum < $S/twrp.img | cut -d' ' -f1)
+echo "to-twrp: writing TWRP ($len bytes) to the recovery partition"
+dd if=$S/twrp.img of=$REC bs=1048576 2>/dev/null
+sync
+got=$(head -c $len $REC | md5sum | cut -d' ' -f1)
+if [ "$got" != "$want" ]; then
+	# A bad write must not leave recovery holding neither: Linux goes straight back.
+	if [ -s $S/linux.img ]; then
+		dd if=$S/linux.img of=$REC bs=1048576 2>/dev/null
+		sync
+	fi
+	die "recovery read back $got, wanted $want; Linux was put back"
+fi
+printf 'boot-recovery' | dd of=$MISC bs=32 count=1 conv=notrunc,sync 2>/dev/null
+printf 'TECHO5-TRIES 0 to twrp\n' | dd of=$MISC bs=512 seek=14 count=1 conv=notrunc,sync 2>/dev/null
+sync
+echo "to-twrp: TWRP is in recovery (md5 $got); rebooting into it"
+reboot -f

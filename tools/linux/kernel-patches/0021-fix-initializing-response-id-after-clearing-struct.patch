@@ -1,0 +1,19 @@
+# Upstream: a5687c644015a097304a2e47476c0ecab2065734 "Bluetooth: Fix initializing response id after clearing struct"
+# Taken from: linux-4.4.y stable backport 8bfe9113f38a14870a3e26eeaa82602164541acf
+# CVE: none of its own; fixes the CVE-2020-12352 fix above
+# 3.18 adaptation: None; applies to 3.18 unchanged (line offsets only).
+#
+diff --git a/net/bluetooth/a2mp.c b/net/bluetooth/a2mp.c
+--- a/net/bluetooth/a2mp.c
++++ b/net/bluetooth/a2mp.c
+@@ -355,9 +355,9 @@ static int a2mp_getampassoc_req(struct amp_mgr *mgr, struct sk_buff *skb,
+ 	hdev = hci_dev_get(req->id);
+ 	if (!hdev || hdev->amp_type == AMP_TYPE_BREDR || tmp) {
+ 		struct a2mp_amp_assoc_rsp rsp;
+-		rsp.id = req->id;
+ 
+ 		memset(&rsp, 0, sizeof(rsp));
++		rsp.id = req->id;
+ 
+ 		if (tmp) {
+ 			rsp.status = A2MP_STATUS_COLLISION_OCCURED;

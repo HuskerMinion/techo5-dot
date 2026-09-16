@@ -1,0 +1,29 @@
+# Upstream: 35fcbc4243aad7e7d020b7c1dfb14bb888b20a4f "Bluetooth: L2CAP: Fix user-after-free"
+# Taken from: linux-4.14.y stable backport 843fc4e386dd84b806a7f07fb062d8c3a44e5364
+# CVE: CVE-2022-50386
+# 3.18 adaptation: None; applies to 3.18 unchanged (line offsets only).
+#
+diff --git a/net/bluetooth/l2cap_core.c b/net/bluetooth/l2cap_core.c
+--- a/net/bluetooth/l2cap_core.c
++++ b/net/bluetooth/l2cap_core.c
+@@ -3976,6 +3976,12 @@ static int l2cap_connect_create_rsp(struct l2cap_conn *conn,
+ 		}
+ 	}
+ 
++	chan = l2cap_chan_hold_unless_zero(chan);
++	if (!chan) {
++		err = -EBADSLT;
++		goto unlock;
++	}
++
+ 	err = 0;
+ 
+ 	l2cap_chan_lock(chan);
+@@ -4005,6 +4011,7 @@ static int l2cap_connect_create_rsp(struct l2cap_conn *conn,
+ 	}
+ 
+ 	l2cap_chan_unlock(chan);
++	l2cap_chan_put(chan);
+ 
+ unlock:
+ 	mutex_unlock(&conn->chan_lock);

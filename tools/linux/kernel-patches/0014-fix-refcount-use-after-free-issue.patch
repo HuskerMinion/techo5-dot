@@ -1,0 +1,140 @@
+# Upstream: 6c08fc896b60893c5d673764b0668015d76df462 "Bluetooth: Fix refcount use-after-free issue"
+# Taken from: linux-4.4.y stable backport c998f2fde1824c6122c0d72811851e99ec5d139f
+# CVE: none assigned
+# 3.18 adaptation: Applied with fuzz in l2cap_sock_cleanup_listen() only: 3.18 has no BT_DBG() line inside the loop. Code change identical.
+#
+diff --git a/net/bluetooth/l2cap_core.c b/net/bluetooth/l2cap_core.c
+--- a/net/bluetooth/l2cap_core.c
++++ b/net/bluetooth/l2cap_core.c
+@@ -394,6 +394,9 @@ static void l2cap_chan_timeout(struct work_struct *work)
+ 	BT_DBG("chan %p state %s", chan, state_to_string(chan->state));
+ 
+ 	mutex_lock(&conn->chan_lock);
++	/* __set_chan_timer() calls l2cap_chan_hold(chan) while scheduling
++	 * this work. No need to call l2cap_chan_hold(chan) here again.
++	 */
+ 	l2cap_chan_lock(chan);
+ 
+ 	if (chan->state == BT_CONNECTED || chan->state == BT_CONFIG)
+@@ -406,12 +409,12 @@ static void l2cap_chan_timeout(struct work_struct *work)
+ 
+ 	l2cap_chan_close(chan, reason);
+ 
+-	l2cap_chan_unlock(chan);
+-
+ 	chan->ops->close(chan);
+-	mutex_unlock(&conn->chan_lock);
+ 
++	l2cap_chan_unlock(chan);
+ 	l2cap_chan_put(chan);
++
++	mutex_unlock(&conn->chan_lock);
+ }
+ 
+ struct l2cap_chan *l2cap_chan_create(void)
+@@ -1667,9 +1670,9 @@ static void l2cap_conn_del(struct hci_conn *hcon, int err)
+ 
+ 		l2cap_chan_del(chan, err);
+ 
+-		l2cap_chan_unlock(chan);
+-
+ 		chan->ops->close(chan);
++
++		l2cap_chan_unlock(chan);
+ 		l2cap_chan_put(chan);
+ 	}
+ 
+@@ -4270,6 +4273,7 @@ static inline int l2cap_disconnect_req(struct l2cap_conn *conn,
+ 		return 0;
+ 	}
+ 
++	l2cap_chan_hold(chan);
+ 	l2cap_chan_lock(chan);
+ 
+ 	rsp.dcid = cpu_to_le16(chan->scid);
+@@ -4278,12 +4282,11 @@ static inline int l2cap_disconnect_req(struct l2cap_conn *conn,
+ 
+ 	chan->ops->set_shutdown(chan);
+ 
+-	l2cap_chan_hold(chan);
+ 	l2cap_chan_del(chan, ECONNRESET);
+ 
+-	l2cap_chan_unlock(chan);
+-
+ 	chan->ops->close(chan);
++
++	l2cap_chan_unlock(chan);
+ 	l2cap_chan_put(chan);
+ 
+ 	mutex_unlock(&conn->chan_lock);
+@@ -4315,20 +4318,21 @@ static inline int l2cap_disconnect_rsp(struct l2cap_conn *conn,
+ 		return 0;
+ 	}
+ 
++	l2cap_chan_hold(chan);
+ 	l2cap_chan_lock(chan);
+ 
+ 	if (chan->state != BT_DISCONN) {
+ 		l2cap_chan_unlock(chan);
++		l2cap_chan_put(chan);
+ 		mutex_unlock(&conn->chan_lock);
+ 		return 0;
+ 	}
+ 
+-	l2cap_chan_hold(chan);
+ 	l2cap_chan_del(chan, 0);
+ 
+-	l2cap_chan_unlock(chan);
+-
+ 	chan->ops->close(chan);
++
++	l2cap_chan_unlock(chan);
+ 	l2cap_chan_put(chan);
+ 
+ 	mutex_unlock(&conn->chan_lock);
+diff --git a/net/bluetooth/l2cap_sock.c b/net/bluetooth/l2cap_sock.c
+--- a/net/bluetooth/l2cap_sock.c
++++ b/net/bluetooth/l2cap_sock.c
+@@ -1033,7 +1033,7 @@ done:
+ }
+ 
+ /* Kill socket (only if zapped and orphan)
+- * Must be called on unlocked socket.
++ * Must be called on unlocked socket, with l2cap channel lock.
+  */
+ static void l2cap_sock_kill(struct sock *sk)
+ {
+@@ -1144,8 +1144,15 @@ static int l2cap_sock_release(struct socket *sock)
+ 
+ 	err = l2cap_sock_shutdown(sock, 2);
+ 
++	l2cap_chan_hold(l2cap_pi(sk)->chan);
++	l2cap_chan_lock(l2cap_pi(sk)->chan);
++
+ 	sock_orphan(sk);
+ 	l2cap_sock_kill(sk);
++
++	l2cap_chan_unlock(l2cap_pi(sk)->chan);
++	l2cap_chan_put(l2cap_pi(sk)->chan);
++
+ 	return err;
+ }
+ 
+@@ -1159,12 +1166,15 @@ static void l2cap_sock_cleanup_listen(struct sock *parent)
+ 	while ((sk = bt_accept_dequeue(parent, NULL))) {
+ 		struct l2cap_chan *chan = l2cap_pi(sk)->chan;
+ 
++		l2cap_chan_hold(chan);
+ 		l2cap_chan_lock(chan);
++
+ 		__clear_chan_timer(chan);
+ 		l2cap_chan_close(chan, ECONNRESET);
+-		l2cap_chan_unlock(chan);
+-
+ 		l2cap_sock_kill(sk);
++
++		l2cap_chan_unlock(chan);
++		l2cap_chan_put(chan);
+ 	}
+ }
+ 

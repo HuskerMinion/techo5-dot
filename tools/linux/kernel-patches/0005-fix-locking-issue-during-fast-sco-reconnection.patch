@@ -1,0 +1,29 @@
+# Upstream: 1da5537eccd865b83fedbbb7ea704669f6d255fd "Bluetooth: Fix locking issue during fast SCO reconnection."
+# Taken from: mainline (the commit itself)
+# CVE: none assigned
+# 3.18 adaptation: None; applies to 3.18 unchanged (line offsets only).
+#
+diff --git a/net/bluetooth/sco.c b/net/bluetooth/sco.c
+--- a/net/bluetooth/sco.c
++++ b/net/bluetooth/sco.c
+@@ -968,7 +968,9 @@ static int sco_sock_shutdown(struct socket *sock, int how)
+ 	if (!sk)
+ 		return 0;
+ 
++	sock_hold(sk);
+ 	lock_sock(sk);
++
+ 	if (!sk->sk_shutdown) {
+ 		sk->sk_shutdown = SHUTDOWN_MASK;
+ 		sco_sock_clear_timer(sk);
+@@ -979,7 +981,10 @@ static int sco_sock_shutdown(struct socket *sock, int how)
+ 			err = bt_sock_wait_state(sk, BT_CLOSED,
+ 						 sk->sk_lingertime);
+ 	}
++
+ 	release_sock(sk);
++	sock_put(sk);
++
+ 	return err;
+ }
+ 

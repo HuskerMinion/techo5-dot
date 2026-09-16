@@ -1,0 +1,9 @@
+# busybox init in a rootfs slot. boot.sh runs once and brings the device up; the respawn entries are
+# the daemon, the console, and the log keeper. None may setsid: under busybox init a respawn that forks
+# looks like an exit, and init spawns another every cycle.
+::sysinit:/etc/techo5/boot.sh
+::respawn:/usr/local/sbin/techo5-run
+::respawn:/usr/local/sbin/techo5-console
+::respawn:/usr/local/sbin/techo5-logs
+::ctrlaltdel:/bin/busybox.static reboot
+::shutdown:/etc/techo5/shutdown.sh

@@ -1,0 +1,31 @@
+# Upstream: 3a56ef719f0b9682afb8a86d64b2399e36faa4e6 "Bluetooth: stop proccessing malicious adv data"
+# Taken from: linux-4.4.y stable backport 048acfa4daf167b007b6bd8bef474e90c2282a5f
+# CVE: none assigned
+# 3.18 adaptation: bt_dev_err() does not exist in 3.18: BT_ERR("%s: ...", hdev->name). The next patch moves the check, as upstream did.
+#
+diff --git a/net/bluetooth/hci_event.c b/net/bluetooth/hci_event.c
+--- a/net/bluetooth/hci_event.c
++++ b/net/bluetooth/hci_event.c
+@@ -4520,7 +4520,8 @@ static void hci_le_adv_report_evt(struct hci_dev *hdev, struct sk_buff *skb)
+ 		struct hci_ev_le_advertising_info *ev = ptr;
+ 		s8 rssi;
+ 
+-		if (ev->length <= HCI_MAX_AD_LENGTH) {
++		if (ev->length <= HCI_MAX_AD_LENGTH &&
++		    ev->data + ev->length <= skb_tail_pointer(skb)) {
+ 			rssi = ev->data[ev->length];
+ 			process_adv_report(hdev, ev->evt_type, &ev->bdaddr,
+ 					   ev->bdaddr_type, rssi, ev->data,
+@@ -4531,6 +4532,12 @@ static void hci_le_adv_report_evt(struct hci_dev *hdev, struct sk_buff *skb)
+ 		}
+ 
+ 		ptr += sizeof(*ev) + ev->length + 1;
++
++		if (ptr > (void *) skb_tail_pointer(skb) - sizeof(*ev)) {
++			BT_ERR("%s: Malicious advertising data. Stopping processing",
++			       hdev->name);
++			break;
++		}
+ 	}
+ 
+ 	hci_dev_unlock(hdev);

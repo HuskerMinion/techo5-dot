@@ -1,0 +1,39 @@
+# Upstream: 6ccf455ee056ab6f89450a956ae02d442038541c "Fix SIGSEGV caused by too short fdk-aac LIB_INFO"
+#   (arkq/bluez-alsa, Arkadiusz Bokowy, 2025-08-03, closes #775; first released in v5.0.0)
+# Taken from: upstream master (the commit itself)
+#
+# Fixes: a2dp_aac_source_init() and a2dp_aac_sink_init() declare LIB_INFO info[16] with only
+# entry 15 marked as the end, then call FDKlibInfo_getCapabilities(). fdk-aac 2.0.2's
+# FDK_audio.h inlines that as a scan over FDK_MODULE_LAST (39) entries of 56 bytes on 32-bit
+# ARM, so it reads about 1.3 KB past the 896-byte stack array, and bluealsa segfaults at
+# start-up whenever that runs past the top of the main thread's stack (it depends on the size of
+# the environment). The fix sizes the array to FDK_MODULE_LAST and marks every entry free with
+# FDKinitLibInfo() (both from FDK_audio.h), so the scan stays inside the array.
+#
+# 4.3.1 adaptation: none; the hunks apply to 4.3.1 unchanged (line offsets only, -15).
+#
+diff --git a/src/a2dp-aac.c b/src/a2dp-aac.c
+--- a/src/a2dp-aac.c
++++ b/src/a2dp-aac.c
+@@ -703,8 +703,8 @@
+ 
+ static int a2dp_aac_source_init(struct a2dp_sep *sep) {
+ 
+-	LIB_INFO info[16] = {
+-		[15] = { .module_id = ~FDK_NONE } };
++	LIB_INFO info[FDK_MODULE_LAST];
++	FDKinitLibInfo(info);
+ 	aacEncGetLibInfo(info);
+ 
+ 	unsigned int caps_aac = FDKlibInfo_getCapabilities(info, FDK_AACENC);
+@@ -790,8 +790,8 @@
+ 
+ static int a2dp_aac_sink_init(struct a2dp_sep *sep) {
+ 
+-	LIB_INFO info[16] = {
+-		[15] = { .module_id = ~FDK_NONE } };
++	LIB_INFO info[FDK_MODULE_LAST];
++	FDKinitLibInfo(info);
+ 	aacDecoder_GetLibInfo(info);
+ 
+ 	unsigned int caps_aac = FDKlibInfo_getCapabilities(info, FDK_AACDEC);

@@ -1,0 +1,38 @@
+# Upstream: 8a7889cc6e2dbbace114130f4efd9b77452069cd "Bluetooth: L2CAP: Fix returning correct LE CoC response codes"
+# Taken from: mainline (the commit itself)
+# CVE: none assigned
+# 3.18 adaptation: None; applies to 3.18 unchanged (line offsets only).
+#
+diff --git a/include/net/bluetooth/l2cap.h b/include/net/bluetooth/l2cap.h
+--- a/include/net/bluetooth/l2cap.h
++++ b/include/net/bluetooth/l2cap.h
+@@ -269,6 +269,8 @@ struct l2cap_conn_rsp {
+ #define L2CAP_CR_AUTHORIZATION	0x0006
+ #define L2CAP_CR_BAD_KEY_SIZE	0x0007
+ #define L2CAP_CR_ENCRYPTION	0x0008
++#define L2CAP_CR_INVALID_SCID	0x0009
++#define L2CAP_CR_SCID_IN_USE	0x0010
+ 
+ /* connect/create channel status */
+ #define L2CAP_CS_NO_INFO	0x0000
+diff --git a/net/bluetooth/l2cap_core.c b/net/bluetooth/l2cap_core.c
+--- a/net/bluetooth/l2cap_core.c
++++ b/net/bluetooth/l2cap_core.c
+@@ -5403,9 +5403,16 @@ static int l2cap_le_connect_req(struct l2cap_conn *conn,
+ 		goto response_unlock;
+ 	}
+ 
++	/* Check for valid dynamic CID range */
++	if (scid < L2CAP_CID_DYN_START || scid > L2CAP_CID_LE_DYN_END) {
++		result = L2CAP_CR_INVALID_SCID;
++		chan = NULL;
++		goto response_unlock;
++	}
++
+ 	/* Check if we already have channel with that dcid */
+ 	if (__l2cap_get_chan_by_dcid(conn, scid)) {
+-		result = L2CAP_CR_NO_MEM;
++		result = L2CAP_CR_SCID_IN_USE;
+ 		chan = NULL;
+ 		goto response_unlock;
+ 	}

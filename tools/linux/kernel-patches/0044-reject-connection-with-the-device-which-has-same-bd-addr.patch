@@ -1,0 +1,45 @@
+# Upstream: 1ffc6f8cc33268731fcf9629fc4438f6db1191fc "Bluetooth: Reject connection with the device which has same BD_ADDR"
+# Taken from: linux-4.14.y stable backport b84272be807ce58b7079aad5dafebc67f0bbeaf8
+# CVE: CVE-2020-26555
+# 3.18 adaptation: bt_dev_dbg() does not exist in 3.18: BT_DBG("%s: ...", hdev->name).
+#
+diff --git a/net/bluetooth/hci_conn.c b/net/bluetooth/hci_conn.c
+--- a/net/bluetooth/hci_conn.c
++++ b/net/bluetooth/hci_conn.c
+@@ -850,6 +850,15 @@ struct hci_conn *hci_connect_acl(struct hci_dev *hdev, bdaddr_t *dst,
+ 	if (!test_bit(HCI_BREDR_ENABLED, &hdev->dev_flags))
+ 		return ERR_PTR(-EOPNOTSUPP);
+ 
++	/* Reject outgoing connection to device with same BD ADDR against
++	 * CVE-2020-26555
++	 */
++	if (!bacmp(&hdev->bdaddr, dst)) {
++		BT_DBG("%s: Reject connection with same BD_ADDR %pMR\n",
++		       hdev->name, dst);
++		return ERR_PTR(-ECONNREFUSED);
++	}
++
+ 	acl = hci_conn_hash_lookup_ba(hdev, ACL_LINK, dst);
+ 	if (!acl) {
+ 		acl = hci_conn_add(hdev, ACL_LINK, dst, HCI_ROLE_MASTER);
+diff --git a/net/bluetooth/hci_event.c b/net/bluetooth/hci_event.c
+--- a/net/bluetooth/hci_event.c
++++ b/net/bluetooth/hci_event.c
+@@ -2133,6 +2133,17 @@ static void hci_conn_request_evt(struct hci_dev *hdev, struct sk_buff *skb)
+ 	BT_DBG("%s bdaddr %pMR type 0x%x", hdev->name, &ev->bdaddr,
+ 	       ev->link_type);
+ 
++	/* Reject incoming connection from device with same BD ADDR against
++	 * CVE-2020-26555
++	 */
++	if (!bacmp(&hdev->bdaddr, &ev->bdaddr))
++	{
++		BT_DBG("%s: Reject connection with same BD_ADDR %pMR\n",
++		       hdev->name, &ev->bdaddr);
++		hci_reject_conn(hdev, &ev->bdaddr);
++		return;
++	}
++
+ 	mask |= hci_proto_connect_ind(hdev, &ev->bdaddr, ev->link_type,
+ 				      &flags);
+ 

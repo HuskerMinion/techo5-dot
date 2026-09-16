@@ -1,0 +1,6 @@
+#!/bin/busybox.static sh
+# A root shell on the USB serial port, respawned by init. Not setsid: see /etc/inittab.
+BB=/bin/busybox.static
+while [ ! -e /dev/ttyGS0 ]; do $BB sleep 1; done
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+exec $BB sh -l < /dev/ttyGS0 > /dev/ttyGS0 2>&1

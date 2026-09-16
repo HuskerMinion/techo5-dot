@@ -1,0 +1,14 @@
+#!/bin/busybox.static sh
+# The daemon, supervised by init: when it exits, init starts it again. The pause keeps a crash from
+# becoming a busy loop, and the boot script's marker keeps it from starting before the hardware is
+# ready. It does not wait for Bluetooth: the daemon picks BlueZ and bluez-alsa up whenever they
+# arrive, so the voice satellite is on the network as soon as the network is.
+#
+# Maintenance: while /run/techo5/hold exists the daemon is not started, so the microphones and the
+# ring are free for `echod tools`. `touch /run/techo5/hold; killall echod`, then `rm` it to resume.
+BB=/bin/busybox.static
+while [ ! -e /run/techo5/ready ]; do $BB sleep 1; done
+while [ -e /run/techo5/hold ]; do $BB sleep 5; done
+$BB sleep 2
+echo "techo5-run: starting at $($BB date)" >> /data/techo5-linux/echod.log
+exec /usr/local/bin/echod run >> /data/techo5-linux/echod.log 2>&1

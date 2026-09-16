@@ -1,0 +1,112 @@
+#!/bin/sh
+# techo5-bt: Bluetooth on the Echo Dot, started once by boot.sh in the background.
+#
+# The chip's Bluetooth side is the vendor driver's raw H4 node, /dev/stpbt. btbridge (TECHO5
+# cmd/btbridge) turns it into hci0 through the kernel's virtual HCI driver, and BlueZ runs on top:
+# bluetoothd for pairing and connections, bluez-alsa for A2DP, which the daemon plays into. The
+# daemon's Home Assistant proxy listens on hci0 alongside them. All of it needs a kernel with
+# CONFIG_BT and CONFIG_BT_HCIVHCI (tools/linux/build-kernel.sh); on the stock kernel there is no
+# /dev/vhci and this does nothing, so an older boot image keeps working.
+#
+# Wi-Fi and Bluetooth share one antenna, so scanning is left to the daemon to start and stop.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+LOG=/data/techo5-linux
+STATE=/data/techo5-linux/bluetooth
+say() { echo "techo5-bt: $*" > /dev/kmsg; }
+
+# The daemon takes its Bluetooth services once, at start, so techo5-run waits for this to be done
+# with, however it ends.
+trap 'touch /run/techo5/bt-settled' EXIT
+
+[ -e /dev/vhci ] || { say "no /dev/vhci (kernel without Bluetooth); skipping"; exit 0; }
+[ -x /usr/local/bin/btbridge ] || { say "no btbridge in this slot"; exit 0; }
+BLUETOOTHD=$(command -v bluetoothd || echo /usr/lib/bluetooth/bluetoothd)
+[ -x "$BLUETOOTHD" ] || { say "no bluetoothd in this slot"; exit 0; }
+
+# Pairings and bluez-alsa's state outlast slots and updates on userdata.
+mkdir -p $STATE/bluez $STATE/bluealsa /var/lib/bluetooth /var/lib/bluealsa /usr/var/lib/bluealsa /run/dbus
+grep -q ' /var/lib/bluetooth ' /proc/mounts || mount --bind $STATE/bluez /var/lib/bluetooth
+for d in /var/lib/bluealsa /usr/var/lib/bluealsa; do
+	grep -q " $d " /proc/mounts || mount --bind $STATE/bluealsa $d
+done
+
+# The unit's own address, the one Fire OS used, kept once on userdata. Without it the controller comes
+# up with the firmware's default and every pairing is lost at the next boot.
+if [ ! -s $STATE/bdaddr ]; then
+	a=$(sed -n 's/^Address = \([0-9a-fA-F:]\{17\}\)$/\1/p' /data/misc/bluedroid/bt_config.conf 2>/dev/null | head -1)
+	if [ -z "$a" ]; then
+		# No Fire OS record: a locally administered address from the Wi-Fi one, stable across boots.
+		w=$(cat /sys/class/net/wlan0/address 2>/dev/null)
+		[ -n "$w" ] && a=$(printf '%02x%s' $(( 0x${w%%:*} | 0x02 )) "${w#??}")
+	fi
+	[ -n "$a" ] && echo "$a" | tr -d ':' | tr 'A-F' 'a-f' > $STATE/bdaddr
+fi
+bdaddr=$(cat $STATE/bdaddr 2>/dev/null)
+
+# The bridge, restarted if it exits (a chip reset ends it).
+( while true; do
+	# -max-feature-page 1: this controller claims a second extended features page and refuses to read
+	# it, which the 3.18 kernel takes as a failed init (cmd/btbridge/h4.go).
+	btbridge -bdaddr "$bdaddr" -max-feature-page 1 >> $LOG/btbridge.log 2>&1
+	sleep 2
+done ) &
+n=0
+while [ $n -lt 15 ] && [ ! -d /sys/class/bluetooth/hci0 ]; do sleep 1; n=$((n + 1)); done
+[ -d /sys/class/bluetooth/hci0 ] || { say "bridge up but no hci0"; exit 1; }
+
+# dbus's system bus: the package's install script would have made its user.
+grep -q '^messagebus:' /etc/group || echo 'messagebus:x:101:messagebus' >> /etc/group
+grep -q '^messagebus:' /etc/passwd || echo 'messagebus:x:100:101:messagebus:/run/dbus:/sbin/nologin' >> /etc/passwd
+# bluealsa's own user, before dbus-daemon starts: a policy naming a user that does not exist yet is
+# dropped when the bus loads it, and bluealsa then cannot own its name.
+grep -q '^bluealsa:' /etc/passwd || echo 'bluealsa:x:120:18:bluealsa:/var/lib/bluealsa:/sbin/nologin' >> /etc/passwd
+dbus-uuidgen --ensure 2>/dev/null
+if ! pidof dbus-daemon > /dev/null; then
+	dbus-daemon --system --nofork --nopidfile >> $LOG/dbus.log 2>&1 &
+	sleep 1
+fi
+# Only what audio needs: no HID or HID over GATT (a paired device could otherwise present itself as a
+# keyboard), no PAN networking, no SIM access.
+"$BLUETOOTHD" -n --noplugin=input,hog,network,sap >> $LOG/bluetoothd.log 2>&1 &
+
+# Seen on the Show: after the first power-on the controller answers commands but reports nothing it
+# hears until it has been powered off and on once.
+n=0
+while [ $n -lt 10 ] && ! timeout 3 btmgmt info 2>/dev/null | grep -q "current settings:.*powered"; do
+	timeout 3 btmgmt power on > /dev/null 2>&1
+	sleep 1
+	n=$((n + 1))
+done
+timeout 5 btmgmt power off > /dev/null 2>&1
+sleep 1
+timeout 5 btmgmt power on > /dev/null 2>&1
+
+# bluez-alsa registers its A2DP endpoints with bluetoothd, so it comes after it, and it is kept
+# running: started too early in the first boots it left without a word.
+n=0
+while [ $n -lt 10 ] && ! dbus-send --system --print-reply --dest=org.freedesktop.DBus / org.freedesktop.DBus.ListNames 2>/dev/null | grep -q '"org.bluez"'; do
+	sleep 1
+	n=$((n + 1))
+done
+#
+# This bluealsa is built from source with upstream's fix for its AAC capability read
+# (tools/linux/build-bluealsa.sh), which in Alpine's 4.3.1 ran past a 16-entry array and crashed at
+# start for some environment sizes.
+#
+# It runs as its own user rather than root: it parses what paired devices send. dbus lets that user
+# own org.bluealsa (etc/dbus-1/system.d/techo5-bluealsa.conf); bluetoothd hands it the transports.
+chown -R 120:18 $STATE/bluealsa
+rm -f $STATE/bluealsa.pad
+( while true; do
+	echo "techo5-bt: starting bluealsa at $(date)" >> $LOG/bluealsa.log
+	su -s /bin/sh bluealsa -c 'exec bluealsa -p a2dp-source' >> $LOG/bluealsa.log 2>&1
+	sleep 3
+done ) &
+# The daemon looks for org.bluealsa once when it starts: wait for it to be on the bus.
+n=0
+while [ $n -lt 15 ] && ! dbus-send --system --print-reply --dest=org.freedesktop.DBus / org.freedesktop.DBus.ListNames 2>/dev/null | grep -q '"org.bluealsa'; do
+	sleep 1
+	n=$((n + 1))
+done
+say "hci0 $(cat /sys/class/bluetooth/hci0/address 2>/dev/null) up; bluetoothd and bluealsa started"

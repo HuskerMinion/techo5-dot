@@ -1,0 +1,21 @@
+# Upstream: 28261da8a26f4915aa257d12d506c6ba179d961f "Bluetooth: Check state in l2cap_disconnect_rsp"
+# Taken from: linux-4.4.y stable backport 2f2c6a264cfbb6c961e3cdd27af26329c69be97d
+# CVE: none assigned
+# 3.18 adaptation: None; applies to 3.18 unchanged (line offsets only).
+#
+diff --git a/net/bluetooth/l2cap_core.c b/net/bluetooth/l2cap_core.c
+--- a/net/bluetooth/l2cap_core.c
++++ b/net/bluetooth/l2cap_core.c
+@@ -4317,6 +4317,12 @@ static inline int l2cap_disconnect_rsp(struct l2cap_conn *conn,
+ 
+ 	l2cap_chan_lock(chan);
+ 
++	if (chan->state != BT_DISCONN) {
++		l2cap_chan_unlock(chan);
++		mutex_unlock(&conn->chan_lock);
++		return 0;
++	}
++
+ 	l2cap_chan_hold(chan);
+ 	l2cap_chan_del(chan, 0);
+ 

@@ -1,0 +1,16 @@
+# Upstream: 25e97f7b1866e6b8503be349eeea44bb52d661ce "Bluetooth: L2CAP: fix "bad unlock balance" in l2cap_disconnect_rsp"
+# Taken from: linux-4.14.y stable backport 5f352a56f0e607e6ff539cbf12156bfd8af232be
+# CVE: CVE-2023-53297
+# 3.18 adaptation: None; applies to 3.18 unchanged (line offsets only).
+#
+diff --git a/net/bluetooth/l2cap_core.c b/net/bluetooth/l2cap_core.c
+--- a/net/bluetooth/l2cap_core.c
++++ b/net/bluetooth/l2cap_core.c
+@@ -4318,7 +4318,6 @@ static inline int l2cap_disconnect_rsp(struct l2cap_conn *conn,
+ 
+ 	chan = l2cap_get_chan_by_scid(conn, scid);
+ 	if (!chan) {
+-		mutex_unlock(&conn->chan_lock);
+ 		return 0;
+ 	}
+ 

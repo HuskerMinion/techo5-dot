@@ -1,0 +1,19 @@
+# Upstream: 435c513369768f5840cd57101e398bc450fd26de "Bluetooth: Fix locking issue on SCO disconnection"
+# Taken from: mainline (the commit itself)
+# CVE: none assigned
+# 3.18 adaptation: None; applies to 3.18 unchanged (line offsets only).
+#
+diff --git a/net/bluetooth/sco.c b/net/bluetooth/sco.c
+--- a/net/bluetooth/sco.c
++++ b/net/bluetooth/sco.c
+@@ -417,8 +417,10 @@ static void __sco_sock_close(struct sock *sk)
+ 		if (sco_pi(sk)->conn->hcon) {
+ 			sk->sk_state = BT_DISCONN;
+ 			sco_sock_set_timer(sk, SCO_DISCONN_TIMEOUT);
++			sco_conn_lock(sco_pi(sk)->conn);
+ 			hci_conn_drop(sco_pi(sk)->conn->hcon);
+ 			sco_pi(sk)->conn->hcon = NULL;
++			sco_conn_unlock(sco_pi(sk)->conn);
+ 		} else
+ 			sco_chan_del(sk, ECONNRESET);
+ 		break;

@@ -1,0 +1,16 @@
+# Upstream: 0d0e2d032811280b927650ff3c15fe5020e82533 "Bluetooth: L2CAP: fix use-after-free in l2cap_conn_del()"
+# Taken from: linux-4.14.y stable backport 17c6164854f8bb80bf76f32b2c2f199c16b53703
+# CVE: CVE-2022-3640
+# 3.18 adaptation: None; applies to 3.18 unchanged (line offsets only).
+#
+diff --git a/net/bluetooth/l2cap_core.c b/net/bluetooth/l2cap_core.c
+--- a/net/bluetooth/l2cap_core.c
++++ b/net/bluetooth/l2cap_core.c
+@@ -6862,6 +6862,7 @@ static void l2cap_data_channel(struct l2cap_conn *conn, u16 cid,
+ 				return;
+ 			}
+ 
++			l2cap_chan_hold(chan);
+ 			l2cap_chan_lock(chan);
+ 		} else {
+ 			BT_DBG("unknown cid 0x%4.4x", cid);

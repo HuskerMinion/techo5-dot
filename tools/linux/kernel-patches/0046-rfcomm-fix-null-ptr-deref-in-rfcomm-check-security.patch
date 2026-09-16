@@ -1,0 +1,17 @@
+# Upstream: 2535b848fa0f42ddff3e5255cf5e742c9b77bb26 "Bluetooth: rfcomm: Fix null-ptr-deref in rfcomm_check_security"
+# Taken from: linux-4.19.y stable backport 369f419c097e82407dd429a202cde9a73d3ae29b
+# CVE: CVE-2024-26903
+# 3.18 adaptation: None; applies to 3.18 unchanged (line offsets only).
+#
+diff --git a/net/bluetooth/rfcomm/core.c b/net/bluetooth/rfcomm/core.c
+--- a/net/bluetooth/rfcomm/core.c
++++ b/net/bluetooth/rfcomm/core.c
+@@ -1910,7 +1910,7 @@ static struct rfcomm_session *rfcomm_process_rx(struct rfcomm_session *s)
+ 	/* Get data directly from socket receive queue without copying it. */
+ 	while ((skb = skb_dequeue(&sk->sk_receive_queue))) {
+ 		skb_orphan(skb);
+-		if (!skb_linearize(skb)) {
++		if (!skb_linearize(skb) && sk->sk_state != BT_CLOSED) {
+ 			s = rfcomm_recv_frame(s, skb);
+ 			if (!s)
+ 				break;

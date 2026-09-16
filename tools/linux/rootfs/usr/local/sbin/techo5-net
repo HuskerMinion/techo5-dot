@@ -1,0 +1,84 @@
+#!/bin/sh
+# techo5-net [restart]: join Wi-Fi and keep a DHCP lease. Used by boot.sh, by wifi-set, and by the
+# rescue initramfs, so every path onto the network is the same one.
+#
+# The network is the one set on the unit with wifi-set (/data/techo5-linux/wifi.conf), or failing that
+# the one Fire OS saved (/data/misc/wifi/wpa_supplicant.conf). Nothing is typed at boot and nothing
+# leaves the unit. Prints the address on success.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+OWN=/data/techo5-linux/wifi.conf
+ANDROID=/data/misc/wifi/wpa_supplicant.conf
+CONF=/run/wpa_supplicant.conf
+LOG=/data/techo5-linux
+[ -d $LOG ] || LOG=/tmp
+
+# To stderr only: under boot.sh that is the kernel log already, and at a console it is the terminal.
+say() { echo "techo5-net: $*" >&2; }
+
+if [ "$1" = restart ]; then
+	killall udhcpc wpa_supplicant 2>/dev/null
+	sleep 1
+	ifconfig wlan0 0.0.0.0 2>/dev/null
+fi
+
+[ -e /sys/class/net/wlan0 ] || { say "no wlan0"; exit 1; }
+
+if [ -s $OWN ]; then
+	ssid=$(sed -n 's/^ssid=//p' $OWN | head -1)
+	psk=$(sed -n 's/^psk=//p' $OWN | head -1)
+	from="set on the unit"
+else
+	# Android's file carries fields its fork understands and ours does not (max_oper_chwidth), so the
+	# network block is rebuilt from the two lines that matter.
+	ssid=$(sed -n 's/^[ \t]*ssid=\(.*\)$/\1/p' $ANDROID 2>/dev/null | head -1)
+	psk=$(sed -n 's/^[ \t]*psk=\(.*\)$/\1/p' $ANDROID 2>/dev/null | head -1)
+	from="saved by Fire OS"
+fi
+[ -n "$ssid" ] && [ -n "$psk" ] || { say "no network configured (wifi-set sets one)"; exit 1; }
+
+( umask 077
+  printf 'ctrl_interface=/run/wpa\nupdate_config=0\nnetwork={\n\tssid=%s\n\tpsk=%s\n}\n' "$ssid" "$psk" > $CONF )
+mkdir -p /run/wpa
+wpa_supplicant -B -i wlan0 -D nl80211 -c $CONF >> $LOG/wpa.log 2>&1
+i=0
+while [ $i -lt 45 ]; do
+	[ "$(wpa_cli -p /run/wpa status 2>/dev/null | sed -n 's/^wpa_state=//p')" = COMPLETED ] && break
+	sleep 1
+	i=$((i + 1))
+done
+[ $i -lt 45 ] || { say "not associated after 45 s ($from)"; exit 1; }
+
+# busybox's client hands a lease to a script or throws it away. It stays running (no -q), so the lease
+# is renewed: a client that quits after the first lease keeps an address the router later gives away.
+cat > /run/udhcpc.sh <<'EOF'
+#!/bin/sh
+case "$1" in
+deconfig)
+	ifconfig "$interface" 0.0.0.0
+	;;
+bound | renew)
+	ifconfig "$interface" "$ip" netmask "$subnet"
+	if [ -n "$router" ]; then
+		while route del default gw 0.0.0.0 dev "$interface" 2>/dev/null; do :; done
+		route add default gw "${router%% *}" dev "$interface"
+	fi
+	[ -n "$dns" ] && { for s in $dns; do echo "nameserver $s"; done > /etc/resolv.conf; }
+	;;
+esac
+EOF
+chmod 755 /run/udhcpc.sh
+udhcpc -i wlan0 -s /run/udhcpc.sh -b -t 8 -p /run/udhcpc.pid >> $LOG/udhcpc.log 2>&1
+
+i=0
+while [ $i -lt 30 ]; do
+	# ifconfig rather than ip: the static busybox is not built with every applet.
+	IP=$(ifconfig wlan0 2>/dev/null | sed -n 's/.*inet addr:\([0-9.]*\).*/\1/p' | head -1)
+	[ -n "$IP" ] && break
+	sleep 1
+	i=$((i + 1))
+done
+[ -n "$IP" ] || { say "associated but no lease ($from)"; exit 1; }
+say "address $IP on $(wpa_cli -p /run/wpa status 2>/dev/null | sed -n 's/^ssid=//p') ($from)"
+echo "$IP"

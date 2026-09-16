@@ -1,0 +1,25 @@
+# Upstream: b840304fb46cdf7012722f456bce06f151b3e81b "Bluetooth: L2CAP: Fix build errors in some archs"
+# Taken from: linux-4.14.y stable backport 774ca061d4e82b630ddd4478d8efa63c97d4b5a2
+# CVE: none assigned
+# 3.18 adaptation: None; applies to 3.18 unchanged (line offsets only).
+#
+diff --git a/net/bluetooth/l2cap_core.c b/net/bluetooth/l2cap_core.c
+--- a/net/bluetooth/l2cap_core.c
++++ b/net/bluetooth/l2cap_core.c
+@@ -1764,11 +1764,11 @@ static struct l2cap_chan *l2cap_global_chan_by_psm(int state, __le16 psm,
+ 			src_match = !bacmp(&c->src, src);
+ 			dst_match = !bacmp(&c->dst, dst);
+ 			if (src_match && dst_match) {
+-				c = l2cap_chan_hold_unless_zero(c);
+-				if (c) {
+-					read_unlock(&chan_list_lock);
+-					return c;
+-				}
++				if (!l2cap_chan_hold_unless_zero(c))
++					continue;
++
++				read_unlock(&chan_list_lock);
++				return c;
+ 			}
+ 
+ 			/* Closest match */

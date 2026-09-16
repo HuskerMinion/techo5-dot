@@ -1,0 +1,22 @@
+# Upstream: 75e34f5cf69bd731d3b7375a786d4a15494fb8c6 "Bluetooth: Fix crash on SCO disconnect"
+# Taken from: mainline (the commit itself)
+# CVE: none assigned
+# 3.18 adaptation: None; applies to 3.18 unchanged (line offsets only).
+#
+diff --git a/net/bluetooth/sco.c b/net/bluetooth/sco.c
+--- a/net/bluetooth/sco.c
++++ b/net/bluetooth/sco.c
+@@ -170,11 +170,13 @@ static int sco_conn_del(struct hci_conn *hcon, int err)
+ 	sco_conn_unlock(conn);
+ 
+ 	if (sk) {
++		sock_hold(sk);
+ 		bh_lock_sock(sk);
+ 		sco_sock_clear_timer(sk);
+ 		sco_chan_del(sk, err);
+ 		bh_unlock_sock(sk);
+ 		sco_sock_kill(sk);
++		sock_put(sk);
+ 	}
+ 
+ 	hcon->sco_data = NULL;

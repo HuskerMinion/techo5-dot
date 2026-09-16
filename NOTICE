@@ -1,0 +1,35 @@
+TECHO5 Dot builds on the work of other open-source projects.
+
+TECHO5, https://github.com/HuskerMinion/techo5 (MIT)
+  The echod daemon (dot build), the Linux image tooling and the rootfs slot design.
+
+EchoLocal, https://github.com/ygelfand/echolocal
+  Copyright (c) 2026 Yuri Gelfand, MIT License.
+  The original Echo Dot 2 daemon; hardware facts recorded in docs/hardware.md.
+
+EchoMuse / emOS, https://github.com/wilbowes/EchoMuse
+  Copyright (c) 2026 Wil Bowes, MIT License.
+  Linux bring-up and microphone array findings on biscuit, cited in docs/.
+
+amonet, kaeru and the biscuit TWRP tree, https://github.com/R0rt1z2
+  The unlock and bootloader payload this project depends on (not redistributed).
+
+lineageos-echo-show-camera, https://github.com/jxlarrea/lineageos-echo-show-camera
+  Echo cancellation and microphone array measurements on the Echo Show family, cited in docs/.
+
+bluez-alsa, https://github.com/arkq/bluez-alsa
+  Copyright (c) arkq, MIT License. tools/linux/bluealsa-patches carries upstream commit 6ccf455;
+  the release root filesystem includes bluealsa 4.3.1 built from source with it.
+
+Linux kernel, https://git.kernel.org (GPL-2.0)
+  tools/linux/kernel-patches are upstream Bluetooth fixes backported to 3.18.19, each naming its
+  upstream commit. The kernel itself is built from Amazon's GPL source release for the Echo Dot
+  (2nd Generation) by tools/linux/build-kernel.sh; boot images are built per unit and not
+  distributed.
+
+Alpine Linux, https://alpinelinux.org
+  The release root filesystem is assembled from Alpine 3.24 armv7 packages, unmodified except
+  bluealsa; each package keeps its own license, and its source is published by Alpine.
+
+docs/dumps/*.config are kernel configurations generated from Amazon's GPL 3.18.19 kernel for
+biscuit, as embedded in the published boot images.

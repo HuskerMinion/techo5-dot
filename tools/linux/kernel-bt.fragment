@@ -1,0 +1,20 @@
+# kernel-bt.fragment — what the Dot's Bluetooth kernel adds to the running Fire OS 6 config
+# (docs/dumps/biscuit-fireos6-echolocal-boot-3.18.19.config). Applied by build-kernel.sh; every
+# other option stays as Amazon built it.
+#
+# Bluetooth core (HCI, L2CAP, SCO, SMP and the mgmt interface bluetoothd uses; 3.18 has no
+# separate BT_BREDR/BT_LE switches, both are always in). BT selects CRYPTO_AES, CRYPTO_ECB and
+# CRYPTO_SHA256, which the stock kernel already has built in; 3.18's SMP needs no CMAC.
+CONFIG_BT=y
+# Serial port profile and rfcomm TTYs.
+CONFIG_BT_RFCOMM=y
+CONFIG_BT_RFCOMM_TTY=y
+# PAN networking.
+CONFIG_BT_BNEP=y
+CONFIG_BT_BNEP_MC_FILTER=y
+CONFIG_BT_BNEP_PROTO_FILTER=y
+# Classic HID (keyboards, remotes). LE HID goes through UHID, which stock already has.
+CONFIG_BT_HIDP=y
+CONFIG_UHID=y
+# The virtual HCI driver btbridge feeds from the vendor driver's /dev/stpbt.
+CONFIG_BT_HCIVHCI=y

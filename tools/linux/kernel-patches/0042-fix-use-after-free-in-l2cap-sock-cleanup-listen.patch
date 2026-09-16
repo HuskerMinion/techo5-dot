@@ -1,0 +1,19 @@
+# Upstream: 862c628108562d8c7a516a900034823b381d3cba "Bluetooth: Fix use-after-free in l2cap_sock_cleanup_listen()"
+# Taken from: linux-5.4.y stable backport 964cbb198f9c46c2b2358cd1faffc04c1e8248cf
+# CVE: CVE-2025-39860
+# 3.18 adaptation: 3.18 has no L2CAP_NESTING_PARENT; SINGLE_DEPTH_NESTING is the lockdep subclass 3.18's l2cap_sock_accept() uses for the listening socket. Lockdep annotation only; same locking.
+#
+diff --git a/net/bluetooth/l2cap_sock.c b/net/bluetooth/l2cap_sock.c
+--- a/net/bluetooth/l2cap_sock.c
++++ b/net/bluetooth/l2cap_sock.c
+@@ -1142,7 +1142,10 @@ static int l2cap_sock_release(struct socket *sock)
+ 	if (!sk)
+ 		return 0;
+ 
++	lock_sock_nested(sk, SINGLE_DEPTH_NESTING);
+ 	l2cap_sock_cleanup_listen(sk);
++	release_sock(sk);
++
+ 	bt_sock_unlink(&l2cap_sk_list, sk);
+ 
+ 	err = l2cap_sock_shutdown(sock, 2);

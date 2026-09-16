@@ -1,0 +1,9 @@
+#!/bin/busybox.static sh
+# PID 1 in a rootfs slot on the Echo Dot.
+#
+# The initramfs has already picked this slot and switched into it (tools/linux/init). From here the
+# job is the device: bring the hardware up, join the network, and keep the daemon running. It hands
+# over to busybox init, which supervises from /etc/inittab, so a daemon that dies comes back without
+# this script having to watch it.
+BB=/bin/busybox.static
+exec $BB init

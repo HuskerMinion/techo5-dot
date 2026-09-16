@@ -1,0 +1,386 @@
+#!/bin/busybox.static sh
+# TECHO5 Dot initramfs init — the first Linux boot on biscuit (porting plan M2).
+#
+# Runs as PID 1 from the initramfs in a boot slot. This image proves the ground floor and nothing
+# more: the kernel starts, userspace runs, /dev can be populated without devtmpfs, and a root shell
+# is reachable over USB. Wi-Fi, the daemon and a real root filesystem come after.
+#
+# Everything it learns goes three ways, because a first boot has no console and no network:
+#
+#   1. the kernel log (/dev/kmsg), readable from TWRP afterwards in /proc/last_kmsg;
+#   2. breadcrumbs in the spare area of MISC, one line per stage (tools/readmisc.sh);
+#   3. a log on userdata, readable from Android or TWRP afterwards.
+#
+# And it always leaves a way back: unless something marks /tmp/stay, it asks the bootloader for
+# recovery and reboots into TWRP, where adb works. So an image that comes up but cannot be reached
+# still lands somewhere a cable can fix, with nobody at the device.
+#
+# The interpreter is the static busybox: PID 1 must not depend on a dynamic loader.
+
+BB=/bin/busybox.static
+
+# Partitions, by their numbers on this board (docs/hardware.md). No devtmpfs, so these are made by
+# hand before anything can mount them.
+MISC_DEV=8    # bootloader message, and the breadcrumb area past it
+SYSTEM_DEV=14 # system_b: Android's system, for the Wi-Fi loader and firmware
+STORE_DEV=15  # cache: Android's scratch space, and a corner of it holds the rootfs slots
+DATA_DEV=16   # userdata: Android's /data
+
+MISC=/dev/mmcblk0p$MISC_DEV
+SYSTEM=/dev/mmcblk0p$SYSTEM_DEV
+STORE=/dev/mmcblk0p$STORE_DEV
+DATA=/dev/mmcblk0p$DATA_DEV
+
+# STAY_MINUTES is how long an unreachable boot waits before going back to recovery.
+STAY_MINUTES=${STAY_MINUTES:-15}
+
+exec > /dev/kmsg 2>&1
+
+$BB mount -t proc proc /proc
+$BB mount -t sysfs sysfs /sys
+$BB mount -t tmpfs -o mode=0755 tmpfs /dev
+$BB mkdir -p /dev/pts /run /tmp /data
+$BB mount -t devpts devpts /dev/pts
+$BB mount -t tmpfs tmpfs /run
+$BB mount -t tmpfs tmpfs /tmp
+
+# mdev builds /dev from sysfs, which is what replaces devtmpfs here. The partitions come first and by
+# hand: mdev needs /sys mounted and the block nodes are wanted before it has walked everything.
+$BB mknod -m 600 $MISC b 179 $MISC_DEV 2>/dev/null
+$BB mknod -m 600 $DATA b 179 $DATA_DEV 2>/dev/null
+$BB mknod -m 600 $SYSTEM b 179 $SYSTEM_DEV 2>/dev/null
+$BB mknod -m 600 $STORE b 179 $STORE_DEV 2>/dev/null
+$BB mdev -s
+echo 7 4 1 7 > /proc/sys/kernel/printk
+
+CRUMB=0
+crumb() {
+	CRUMB=$((CRUMB + 1))
+	echo "techo5-dot crumb $CRUMB: $*"
+	# One 512-byte block per stage, from MISC byte offset 8 KiB. The bootloader message lives in the
+	# first 2 KiB and the A/B slot metadata after it, so the breadcrumbs start well past both.
+	printf 'TECHO5-DOT %02d %s\n' "$CRUMB" "$*" | $BB dd of=$MISC bs=512 seek=$((16 + CRUMB)) count=1 conv=notrunc,sync 2>/dev/null
+}
+
+crumb "init started: $($BB uname -r) $($BB uname -m), $($BB grep MemTotal /proc/meminfo)"
+crumb "cmdline: $($BB head -c 200 /proc/cmdline)"
+crumb "dev populated: $($BB ls /dev | $BB wc -l) nodes"
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root
+
+# --- The way back, before anything else can go wrong.
+#
+# This image lives in the recovery partition, because the bootloader adds skip_initramfs when it
+# boots a boot slot and the kernel then ignores the ramdisk this image is (docs/porting-plan.md,
+# M2). Every boot here re-arms the next (below), so going to Android means clearing that request —
+# it stays in Android until `adb reboot recovery` asks for Linux again.
+cat > /sbin/to-android <<'EOF'
+#!/bin/busybox.static sh
+/bin/busybox.static dd if=/dev/zero of=/dev/mmcblk0p8 bs=32 count=1 conv=notrunc,sync 2>/dev/null
+/bin/busybox.static sync
+echo "bootloader message cleared; rebooting into Android, which stays until recovery is asked for"
+/bin/busybox.static reboot -f
+EOF
+chmod 755 /sbin/to-android
+
+# And TWRP: /usr/local/sbin/to-twrp puts the unit's own TWRP copy from the store back into recovery.
+
+# --- Linux is the boot, not an excursion.
+#
+# The bootloader boots this partition when its message says boot-recovery, and a normal power-on
+# otherwise boots Android. So every boot through here asks for the next one to come here too, which
+# makes a power cut land back in Linux rather than Fire OS.
+#
+# With a way out. Each boot counts one try in MISC; the root filesystem clears the count once the
+# daemon has been up long enough to believe (etc/techo5/boot.sh). A count that reaches TRIES_MAX
+# means that many boots in a row never became healthy, and then no slot is booted: the unit stays in
+# this rescue environment, on the network with SSH and the USB console, until someone looks.
+# `techo5-retry` from there clears the count and tries the slots again; `/sbin/to-android` still boots
+# Fire OS, but only when asked. It used to fall back to Fire OS on its own, which put an old, unpatched
+# Android with root adb on the network in place of a unit that had merely stopped booting.
+#
+# The count lives past the bootloader message (the first 2 KiB) and the A/B slot metadata after it,
+# in its own block below the breadcrumbs.
+#
+# Five, because a slot fresh from an update gets two tries of its own before slotctl falls back to the
+# other slot (tools/linux/slotctl): a bad update must land back on the good slot, not in Fire OS. Two
+# failed trial boots, then boots of the good slot, and only a unit where neither slot comes up healthy
+# reaches five.
+TRIES_BLOCK=14
+TRIES_MAX=5
+tries=$($BB dd if=$MISC bs=512 skip=$TRIES_BLOCK count=1 2>/dev/null | $BB tr -d '\000' |
+	$BB sed -n 's/^TECHO5-TRIES \([0-9]*\).*/\1/p')
+tries=${tries:-0}
+UNHEALTHY=
+if [ "$tries" -ge $TRIES_MAX ]; then
+	UNHEALTHY=1
+	crumb "$tries boots in a row never became healthy: staying in rescue (techo5-retry tries the slots again)"
+else
+	tries=$((tries + 1))
+fi
+cat > /sbin/techo5-retry <<EOF
+#!/bin/busybox.static sh
+printf 'TECHO5-TRIES 0 retry\n' | /bin/busybox.static dd of=$MISC bs=512 seek=$TRIES_BLOCK count=1 conv=notrunc,sync 2>/dev/null
+/bin/busybox.static sync
+echo "boot count cleared; rebooting to try the slots again"
+/bin/busybox.static reboot -f
+EOF
+chmod 755 /sbin/techo5-retry
+printf 'TECHO5-TRIES %d\n' $tries | $BB dd of=$MISC bs=512 seek=$TRIES_BLOCK count=1 conv=notrunc,sync 2>/dev/null
+printf 'boot-recovery' | $BB dd of=$MISC bs=32 count=1 conv=notrunc,sync 2>/dev/null
+$BB sync
+crumb "boot try $tries of $TRIES_MAX; the next boot is Linux too"
+
+# --- The store, and the slot it says to boot.
+#
+# The store is a directory on the cache partition rather than a partition of its own: cache is
+# Android's scratch space, so a corner of it costs nothing and leaves both Android system slots
+# intact. Each slot is a directory holding a root filesystem; `active` names the one to boot.
+#
+# Failing any of that, this image stays up as the rescue environment it already is — which is why
+# the initramfs carries a shell, Wi-Fi and a console rather than only a switch_root.
+boot_slot() {
+	$BB mkdir -p /store /newroot
+	$BB mount -t ext4 -o noatime $STORE /store 2>/dev/null || { crumb "store partition would not mount"; return 1; }
+
+	if [ -e /store/techo5/rescue ]; then
+		$BB rm -f /store/techo5/rescue
+		$BB sync
+		crumb "rescue marker found: staying in the initramfs this boot"
+		return 1
+	fi
+
+	# A store from before slot states (one install, no marker) is one good slot: say so once, so slotctl
+	# can take over the choosing.
+	if [ -d /store/techo5/slots ] && [ ! -e /store/techo5/.techo5-store ]; then
+		local was
+		was=$($BB cat /store/techo5/active 2>/dev/null)
+		[ -n "$was" ] || was=a
+		: > /store/techo5/.techo5-store
+		[ -e /store/techo5/slots/$was.state ] || echo good > /store/techo5/slots/$was.state
+		$BB sync
+		crumb "store adopted into slot states: $was good"
+	fi
+
+	# slotctl picks the slot and takes one try off a slot on trial; a slot out of tries is marked bad and
+	# the other, good, one boots instead.
+	local slot root
+	slot=$(/usr/local/sbin/slotctl next 2>/tmp/slotctl.err)
+	crumb "slotctl: $($BB tr '\n' ' ' < /tmp/slotctl.err) -> ${slot:-none}"
+	[ -n "$slot" ] || return 1
+	root=/store/techo5/slots/$slot
+	[ -x $root/sbin/init ] || { crumb "slot $slot has no /sbin/init"; return 1; }
+
+	$BB mount --bind $root /newroot || { crumb "bind of slot $slot failed"; return 1; }
+	$BB mkdir -p /newroot/run/techo5
+	echo "$slot" > /newroot/run/techo5/slot 2>/dev/null
+	crumb "switching into slot $slot ($($BB cat $root/etc/techo5-release 2>/dev/null))"
+	$BB sync
+
+	# Nothing from the initramfs may keep running: its files are about to go.
+	for m in dev/pts dev sys proc; do
+		$BB mkdir -p /newroot/$m
+		$BB mount --move /$m /newroot/$m 2>/dev/null
+	done
+	exec $BB switch_root /newroot /sbin/init
+	crumb "switch_root failed"
+	return 1
+}
+
+[ -n "$UNHEALTHY" ] || boot_slot
+crumb "rescue mode: no slot to boot"
+
+# --- Userdata, for a log that outlives this boot.
+if $BB mount -t ext4 -o noatime $DATA /data 2>/dev/null; then
+	$BB mkdir -p /data/techo5-linux
+	LOGDIR=/data/techo5-linux
+	crumb "userdata mounted"
+else
+	LOGDIR=/tmp
+	crumb "userdata mount failed: $($BB dmesg | $BB tail -3 | $BB tr '\n' ' ')"
+fi
+
+snapshot() {
+	{
+		echo "=== uptime $($BB cut -d' ' -f1 /proc/uptime)"
+		echo "--- dmesg tail"; $BB dmesg | $BB tail -80
+		echo "--- mounts"; cat /proc/mounts
+		echo "--- mem"; $BB head -3 /proc/meminfo
+		echo "--- dev"; $BB ls /dev
+		echo "--- usb"; cat /sys/class/android_usb/android0/state 2>/dev/null
+	} > /tmp/snapshot 2>&1
+	$BB cp /tmp/snapshot $LOGDIR/first-boot.log 2>/dev/null
+	# Also into MISC from 64 KiB, so it survives with no filesystem at all.
+	$BB head -c 122880 /tmp/snapshot | $BB dd of=$MISC bs=512 seek=128 conv=notrunc 2>/dev/null
+	$BB sync
+}
+
+# --- A root shell over USB.
+#
+# This kernel has Android's gadget driver, not configfs, so the functions are a string in sysfs. Two
+# things are load-bearing, both learned from EchoMuse's emOS: the controller has to be put into
+# device mode, and the gadget has to be disabled before its functions change and enabled after.
+usb_console() {
+	local g=/sys/class/android_usb/android0
+	[ -d $g ] || { crumb "no android_usb gadget in sysfs"; return 1; }
+
+	echo 1 > /sys/devices/platform/mt_usb/cmode 2>/dev/null || crumb "mt_usb cmode not writable"
+	echo 0 > $g/enable 2>/dev/null
+	echo 18d1 > $g/idVendor 2>/dev/null
+	echo 4ee7 > $g/idProduct 2>/dev/null
+	echo "TECHO5" > $g/iManufacturer 2>/dev/null
+	echo "Echo Dot 2 Linux" > $g/iProduct 2>/dev/null
+	# The unit's own serial (there is no /proc/idme on this kernel), so the PC tells Dots apart.
+	local sn=$($BB sed -n 's/.*androidboot.serialno=\([^ ]*\).*/\1/p' /proc/cmdline)
+	[ -n "$sn" ] && echo "$sn" > $g/iSerial 2>/dev/null
+
+	# How many serial ports the acm function offers. Without it the function is configured with none:
+	# the gadget enumerates and the host then fails the configuration descriptor request, which is
+	# exactly what the first image did (Windows: "Configuration Descriptor Request Failed").
+	echo 1 > $g/f_acm/instances 2>/dev/null || crumb "no f_acm/instances in sysfs"
+
+	echo acm > $g/functions 2>/dev/null || { crumb "gadget will not take the acm function"; return 1; }
+
+	# A communications device at the device level, so the host reads the interfaces as CDC rather than
+	# looking for a per-interface class it will not find. Both of these come from EchoMuse's emOS,
+	# which met the same two failures on this kernel.
+	echo 02 > $g/bDeviceClass 2>/dev/null
+
+	echo 1 > $g/enable 2>/dev/null || { crumb "gadget will not enable"; return 1; }
+
+	local i=0
+	while [ $i -lt 20 ]; do
+		[ -e /dev/ttyGS0 ] && break
+		$BB mdev -s
+		$BB sleep 1
+		i=$((i + 1))
+	done
+	[ -e /dev/ttyGS0 ] || $BB mknod -m 600 /dev/ttyGS0 c 247 0 2>/dev/null
+	[ -e /dev/ttyGS0 ] || { crumb "no /dev/ttyGS0"; return 1; }
+	crumb "usb acm up, state $($BB cat $g/state 2>/dev/null)"
+	return 0
+}
+
+if usb_console; then
+	(
+		while true; do
+			# Not setsid: under this shell a respawn that forks looks like an exit and spawns for ever.
+			$BB sh -l < /dev/ttyGS0 > /dev/ttyGS0 2>&1
+			$BB sleep 2
+		done
+	) &
+	crumb "root shell on /dev/ttyGS0 (a COM port on the host)"
+fi
+
+# --- Wi-Fi: the combo chip, from a standing start.
+#
+# The same bring-up as the slots (etc/techo5/boot.sh): wmtup registers the chip's devices and answers
+# its patch searches, and the firmware is the unit's own copy in the store — or, on a unit whose store
+# has none yet, Android's system partition. The kernel reads it from two paths compiled into it,
+# /system/vendor/firmware and /vendor/firmware, so both lead there.
+wifi() {
+	# A rescue that skipped the slots never mounted the store; the unit's firmware copy is there.
+	if ! $BB grep -q ' /store ' /proc/mounts; then
+		$BB mkdir -p /store
+		$BB mount -t ext4 -o noatime $STORE /store 2>/dev/null
+	fi
+	local fw=/store/techo5/firmware
+	if [ ! -e $fw/WIFI_RAM_CODE_8163 ]; then
+		$BB mkdir -p /android
+		if $BB mount -t ext4 -o ro,noatime $SYSTEM /android 2>/dev/null; then
+			fw=/android/system/vendor/firmware
+		else
+			crumb "no firmware in the store and no system partition; no Wi-Fi"
+			return 1
+		fi
+	fi
+	$BB rm -rf /system /vendor /etc/firmware 2>/dev/null
+	$BB mkdir -p /system/vendor
+	$BB ln -sfn $fw /system/vendor/firmware
+	$BB ln -sfn /system/vendor /vendor
+	$BB ln -sfn $fw /etc/firmware
+	crumb "firmware from $fw: $($BB ls $fw 2>/dev/null | $BB wc -l) files"
+
+	if [ -x /usr/local/bin/wmtup ]; then
+		# It stays running: the driver asks again after a chip reset, and blocks until answered.
+		/usr/local/bin/wmtup -patches $fw/ -power >> $LOGDIR/wmtup.log 2>&1 &
+		local i=0
+		while [ $i -lt 45 ]; do
+			[ -e /sys/class/net/wlan0 ] && break
+			$BB sleep 1
+			i=$((i + 1))
+		done
+		if [ -e /sys/class/net/wlan0 ]; then
+			crumb "wlan0 exists after ${i}s"
+			return 0
+		fi
+		crumb "no wlan0 after ${i}s: $($BB tail -3 $LOGDIR/wmtup.log | $BB tr '\n' ' ')"
+	else
+		crumb "wmtup not in this image"
+	fi
+	return 1
+}
+
+# --- The network (usr/local/sbin/techo5-net, the same script the slots use), and SSH with the keys
+# kept on userdata.
+network() {
+	IP=$(/usr/local/sbin/techo5-net 2>/tmp/net.err)
+	[ -n "$IP" ] || { crumb "no network: $($BB tr '\n' ' ' < /tmp/net.err)"; return 1; }
+	crumb "address $IP"
+	$BB touch /tmp/network-up
+	rescue_ssh
+	return 0
+}
+
+# SSH in rescue, keys only: the keys Home Assistant gave the daemon (or, on a unit not yet migrated,
+# the ones the installer put in /data/techo5-linux/ssh), and the host key the slots use, so the
+# fingerprint is the same either way. Rescue is for getting a unit back, so it does not wait for the
+# daemon's switch. No key, no server.
+rescue_ssh() {
+	pidof dropbear > /dev/null && return 0
+	local keys=/data/misc/echolocal/ssh hostkeys=/data/techo5-linux/dropbear
+	[ -s $keys/authorized_keys ] || keys=/data/techo5-linux/ssh
+	[ -x /usr/sbin/dropbear ] && [ -s $keys/authorized_keys ] || return 0
+	$BB mkdir -p $hostkeys /root
+	$BB chmod 700 $hostkeys /root
+	[ -s $hostkeys/dropbear_ed25519_host_key ] || [ ! -s /data/techo5-linux/ssh/dropbear_ed25519_host_key ] ||
+		$BB cp /data/techo5-linux/ssh/dropbear_ed25519_host_key $hostkeys/
+	[ -s $hostkeys/dropbear_ed25519_host_key ] ||
+		/usr/bin/dropbearkey -t ed25519 -f $hostkeys/dropbear_ed25519_host_key > /dev/null 2>&1
+	$BB ln -sfn $keys /root/.ssh
+	/usr/sbin/dropbear -s -p 22 -r $hostkeys/dropbear_ed25519_host_key >> $LOGDIR/dropbear.log 2>&1 &&
+		crumb "ssh on port 22"
+}
+
+# Inbound closed except what the unit serves, before the network (usr/local/sbin/techo5-firewall).
+/usr/local/sbin/techo5-firewall > /dev/null 2>&1 && crumb "firewall up" || crumb "firewall not applied"
+
+if wifi; then
+	if network; then
+		# On the network and reachable: nothing should reboot this out from under anyone.
+		$BB touch /tmp/stay
+		crumb "on the network; staying up"
+	fi
+else
+	crumb "Wi-Fi did not come up; the shell is still there"
+fi
+
+snapshot
+crumb "rescue ready: USB console, and SSH once on the network; Fire OS only with /sbin/to-android"
+
+# The unit stays here until someone acts. A lease that arrives after the first try (udhcpc keeps
+# asking in the background) still gets SSH started, so a slow network does not leave the unit
+# reachable only over USB.
+while true; do
+	$BB sleep 30
+	snapshot
+	if [ ! -e /tmp/network-up ] && [ -e /sys/class/net/wlan0 ]; then
+		IP=$($BB ifconfig wlan0 2>/dev/null | $BB sed -n 's/.*inet addr:\([0-9.]*\).*/\1/p' | $BB head -1)
+		if [ -n "$IP" ]; then
+			crumb "late address $IP"
+			$BB touch /tmp/network-up
+			rescue_ssh
+		fi
+	fi
+done

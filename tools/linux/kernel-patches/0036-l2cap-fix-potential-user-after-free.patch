@@ -1,0 +1,71 @@
+# Upstream: df5703348813235874d851934e957c3723d71644 "Bluetooth: L2CAP: Fix potential user-after-free"
+# Taken from: linux-4.14.y stable backport b2fde8cb2a25125111f2144604e0e7c0ebcc4bba
+# CVE: CVE-2023-54214
+# 3.18 adaptation: Context only: 3.18 sets bt_cb(skb)->chan rather than bt_cb(skb)->l2cap.chan. Code change identical.
+#
+diff --git a/net/bluetooth/l2cap_core.c b/net/bluetooth/l2cap_core.c
+--- a/net/bluetooth/l2cap_core.c
++++ b/net/bluetooth/l2cap_core.c
+@@ -2434,14 +2434,6 @@ int l2cap_chan_send(struct l2cap_chan *chan, struct msghdr *msg, size_t len)
+ 		if (IS_ERR(skb))
+ 			return PTR_ERR(skb);
+ 
+-		/* Channel lock is released before requesting new skb and then
+-		 * reacquired thus we need to recheck channel state.
+-		 */
+-		if (chan->state != BT_CONNECTED) {
+-			kfree_skb(skb);
+-			return -ENOTCONN;
+-		}
+-
+ 		l2cap_do_send(chan, skb);
+ 		return len;
+ 	}
+@@ -2491,14 +2483,6 @@ int l2cap_chan_send(struct l2cap_chan *chan, struct msghdr *msg, size_t len)
+ 		if (IS_ERR(skb))
+ 			return PTR_ERR(skb);
+ 
+-		/* Channel lock is released before requesting new skb and then
+-		 * reacquired thus we need to recheck channel state.
+-		 */
+-		if (chan->state != BT_CONNECTED) {
+-			kfree_skb(skb);
+-			return -ENOTCONN;
+-		}
+-
+ 		l2cap_do_send(chan, skb);
+ 		err = len;
+ 		break;
+@@ -2519,14 +2503,6 @@ int l2cap_chan_send(struct l2cap_chan *chan, struct msghdr *msg, size_t len)
+ 		 */
+ 		err = l2cap_segment_sdu(chan, &seg_queue, msg, len);
+ 
+-		/* The channel could have been closed while segmenting,
+-		 * check that it is still connected.
+-		 */
+-		if (chan->state != BT_CONNECTED) {
+-			__skb_queue_purge(&seg_queue);
+-			err = -ENOTCONN;
+-		}
+-
+ 		if (err)
+ 			break;
+ 
+diff --git a/net/bluetooth/l2cap_sock.c b/net/bluetooth/l2cap_sock.c
+--- a/net/bluetooth/l2cap_sock.c
++++ b/net/bluetooth/l2cap_sock.c
+@@ -1321,6 +1321,14 @@ static struct sk_buff *l2cap_sock_alloc_skb_cb(struct l2cap_chan *chan,
+ 	if (!skb)
+ 		return ERR_PTR(err);
+ 
++	/* Channel lock is released before requesting new skb and then
++	 * reacquired thus we need to recheck channel state.
++	 */
++	if (chan->state != BT_CONNECTED) {
++		kfree_skb(skb);
++		return ERR_PTR(-ENOTCONN);
++	}
++
+ 	skb->priority = sk->sk_priority;
+ 
+ 	bt_cb(skb)->chan = chan;

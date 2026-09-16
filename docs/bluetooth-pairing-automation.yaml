@@ -1,0 +1,42 @@
+# "Pair Bluetooth": turns on Bluetooth pairing on the TECHO5 Dot that heard it.
+#
+# Paste into Settings > Automations & scenes > Create automation > Edit in YAML. One automation covers
+# every Dot: the sentence trigger says which voice satellite heard it, and the Dot's own "Bluetooth
+# pairing" switch is found from that. "Stop Bluetooth pairing" turns it off again. Pairing mode ends
+# by itself after 3 minutes, or once a phone pairs.
+alias: Bluetooth pairing by voice
+description: Turns Bluetooth pairing on or off on the Dot that heard the command.
+mode: parallel
+triggers:
+  - trigger: conversation
+    id: "on"
+    command:
+      - "[start] (pair|pairing) [with] bluetooth"
+      - "bluetooth (pair|pairing) [mode] [on]"
+      - "[turn on|start] bluetooth pairing [mode]"
+  - trigger: conversation
+    id: "off"
+    command:
+      - "(stop|cancel|end) [bluetooth] pairing [mode]"
+      - "turn off bluetooth pairing [mode]"
+      - "bluetooth pairing [mode] off"
+variables:
+  pairing_switch: >-
+    {{ (device_entities(trigger.device_id) if trigger.device_id else [])
+       | select('match', 'switch\..*bluetooth_pairing$') | first | default('') }}
+  dot_name: >-
+    {{ device_attr(trigger.device_id, 'name_by_user') or device_attr(trigger.device_id, 'name')
+       if trigger.device_id else '' }}
+actions:
+  - if:
+      - condition: template
+        value_template: "{{ pairing_switch == '' }}"
+    then:
+      - set_conversation_response: "Ask one of the Dots, so I know which one to pair."
+      - stop: no Bluetooth pairing switch on the device that heard it
+  - action: "switch.turn_{{ trigger.id }}"
+    target:
+      entity_id: "{{ pairing_switch }}"
+  - set_conversation_response: >-
+      {% if trigger.id == 'on' %}Pairing mode is on. Pick {{ dot_name }} in your phone's Bluetooth
+      settings.{% else %}Pairing mode is off.{% endif %}

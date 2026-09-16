@@ -311,6 +311,20 @@ Done on the bench unit 2026-09-16 (see `docs/hardware.md`, Bluetooth kernel):
   - pausing the phone releases the speaker after 5 s;
   - whichever of the phone and Home Assistant media started last plays.
 
+**Pairing without Home Assistant (v0.3.1, verified on the bench unit with a phone):**
+- Holding the action button for 5 s toggles pairing mode, with a rising (on) or falling (off)
+  three-note chime; the ring pulses blue while pairing mode is on, however it was turned on. With no
+  second assistant set up, the 0.7 s hold on the way does nothing; with one, the turn it starts is
+  cancelled at 5 s. Home Assistant sees the hold as a `long_hold` button event.
+- A phone pairing, or the Dot connecting a speaker it picked, plays a two-note chime and holds the
+  ring solid blue for 1.5 s.
+- Saying "pair Bluetooth" works through a Home Assistant sentence automation
+  ([bluetooth-pairing-automation.yaml](bluetooth-pairing-automation.yaml)) that turns on the pairing
+  switch of the Dot that heard it.
+- Fixed with it: a phone that paused and resumed within 5 s could find its stream still held by the
+  old track, and was not tried again, so the music stayed silent. A failed open is now retried at
+  the next look, and a stream already playing is not reopened.
+
 ## M6 — Installer
 
 `tools/install-dot.ps1 -Serial <serial>` takes an unlocked Dot running Fire OS 6 with root adb

@@ -44,8 +44,8 @@ Echo Show 5. Both run the same daemon source, built per device.
 | Buttons (action, volume, mic mute) | Yes | Yes, all four ✅. Mute is the hardware mute line |
 | Timers | Yes | Yes (Home Assistant timers) |
 | 3.5 mm audio out | Yes | In the daemon (jack detection, headphone path). Not yet tested on this image |
-| Bluetooth: Dot to a speaker or headphones | Yes | Yes ✅. Pairing mode from Home Assistant picks the strongest speaker it hears, since there's no screen to choose on |
-| Bluetooth: phone to Dot (Dot as a speaker) | Yes | **Not yet** |
+| Bluetooth: phone to Dot (Dot as a speaker) | Yes | Yes ✅. Turn on **Bluetooth pairing** in Home Assistant and pick the Dot on your phone. Phone volume works, the wake word still works over the music, and whichever started last plays: phone or Home Assistant media |
+| Bluetooth: Dot to a speaker or headphones | Yes | Yes ✅. If no phone pairs within 20 s, pairing mode connects the strongest speaker it hears, since there's no screen to choose on |
 | Home Assistant Bluetooth proxy | No | Yes ✅, alongside Bluetooth audio |
 | Multi-room music | Alexa groups | Sendspin (Music Assistant) client on port 8928. Built in, not yet tested on this image |
 | Calling, Drop In, announcements, skills, shopping | Yes | **No.** Those are Alexa cloud services |

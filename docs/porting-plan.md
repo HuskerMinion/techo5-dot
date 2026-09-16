@@ -296,9 +296,20 @@ Done on the bench unit 2026-09-16 (see `docs/hardware.md`, Bluetooth kernel):
 - btbridge with H4 framing and `-max-feature-page 1`;
 - BlueZ and bluealsa, with A2DP to a speaker verified;
 - the Home Assistant BLE proxy through a raw HCI socket alongside BlueZ, verified;
-- screenless pairing: pairing mode connects the strongest audio device heard.
+- screenless pairing that guesses: a phone that pairs in plays to the Dot; otherwise, after 20 s,
+  the strongest speaker heard is connected to.
 
-Not yet built: the Dot as a Bluetooth speaker (A2DP sink).
+**The Dot as a Bluetooth speaker (v0.3.0, verified on the bench unit with a phone):**
+- bluealsa runs `a2dp-sink` beside `a2dp-source`, and bluetoothd's class makes the Dot a loudspeaker
+  to phones.
+- The daemon reads the phone's stream and plays it as a media track (`feature/media/bluetooth.go`),
+  resampling 44.1 kHz to the speaker's 48 kHz. The phone tested sent AAC at 44.1 kHz; bluealsa used
+  about 2% CPU and the wake word kept 50 frames per second.
+- Behaviour:
+  - the wake word ducks or pauses the phone's music;
+  - the phone's volume slider controls the level;
+  - pausing the phone releases the speaker after 5 s;
+  - whichever of the phone and Home Assistant media started last plays.
 
 ## M6 — Installer
 

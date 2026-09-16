@@ -100,7 +100,8 @@ chown -R 120:18 $STATE/bluealsa
 rm -f $STATE/bluealsa.pad
 ( while true; do
 	echo "techo5-bt: starting bluealsa at $(date)" >> $LOG/bluealsa.log
-	su -s /bin/sh bluealsa -c 'exec bluealsa -p a2dp-source' >> $LOG/bluealsa.log 2>&1
+	# a2dp-source plays to speakers and headphones; a2dp-sink is the device as a speaker for a phone.
+	su -s /bin/sh bluealsa -c 'exec bluealsa -p a2dp-source -p a2dp-sink' >> $LOG/bluealsa.log 2>&1
 	sleep 3
 done ) &
 # The daemon looks for org.bluealsa once when it starts: wait for it to be on the bus.

@@ -1,9 +1,45 @@
-# TECHO5 Dot
+<p align="center">
+  <img src="https://raw.githubusercontent.com/HuskerMinion/techo5/main/logo/TECHO5_logo.png" alt="TECHO5" width="200">
+</p>
 
-**The 2016 Echo Dot, minus the cloud.** TECHO5 Dot replaces Fire OS on the Amazon Echo Dot 2nd
-generation (codename `biscuit`) with a small Alpine Linux image and one daemon. The Dot becomes a
-Home Assistant voice satellite: it hears the wake word on the device, talks to Home Assistant over
-its encrypted native API, and sends nothing to Amazon.
+<h1 align="center">TECHO5 Dot</h1>
+
+<h3 align="center">The 2016 Echo Dot, minus Amazon's cloud. Linux inside, Home Assistant in charge.</h3>
+
+<p align="center">
+  <a href="https://github.com/HuskerMinion/techo5-dot/releases/latest"><img src="https://img.shields.io/github/v/release/HuskerMinion/techo5-dot?label=release&color=e9a23b" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/Linux-Alpine-0D597F?logo=alpinelinux&logoColor=white" alt="Alpine Linux">
+  <img src="https://img.shields.io/badge/Fire%20OS-none-3a2c22" alt="No Fire OS">
+  <img src="https://img.shields.io/badge/Alexa-none-3a2c22" alt="No Alexa">
+  <img src="https://img.shields.io/badge/Home%20Assistant-ESPHome%20API-41BDF5?logo=homeassistant&logoColor=white" alt="Home Assistant">
+  <img src="https://img.shields.io/badge/updates-signed-2ea44f" alt="Signed updates">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <a href="#what-happened-to-the-dot">What changed</a> ·
+  <a href="#stock-echo-dot-2-vs-techo5-dot">Stock vs TECHO5 Dot</a> ·
+  <a href="#installing">Install</a> ·
+  <a href="#credits">Credits</a> ·
+  <a href="https://github.com/HuskerMinion/techo5">TECHO5 for the Echo Show 5</a>
+</p>
+
+---
+
+TECHO5 Dot replaces Fire OS on the Amazon Echo Dot 2nd generation (codename `biscuit`) with a small
+Alpine Linux image and one daemon. The Dot becomes a Home Assistant voice satellite: it hears the
+wake word on the device, talks to Home Assistant over its encrypted native API, and sends nothing to
+Amazon. It still uses the internet for what you'd expect: checking this repo for signed updates and
+setting its clock.
+
+|  |  |
+|---|---|
+| 🐧 **Real Linux, no Fire OS** | Linux boots from the recovery partition and no Android process runs, not even for Wi-Fi. |
+| 🚫 **No Alexa, no Amazon account** | Your voice goes to your Home Assistant, over its encrypted API, and nowhere else. |
+| 🎙️ **All seven microphones** | Averaged, with echo cancellation, and a wake word heard on the device. |
+| 🔊 **A Bluetooth speaker again** | Pair a phone, or send the Dot's audio to a speaker; a Home Assistant Bluetooth proxy on top. |
+| 🔐 **Locked down** | A firewall that lets in only Home Assistant, mDNS, SSH and Sendspin; SSH is keys-only and starts off. |
+| 🔄 **Signed updates with rollback** | ed25519-signed releases install into a spare slot and roll back on their own if they don't come up healthy. |
 
 It's a sibling of [TECHO5](https://github.com/HuskerMinion/techo5), which did the same for the
 Echo Show 5. Both run the same daemon source, built per device.
@@ -133,6 +169,18 @@ See [NOTICE](NOTICE) for the full list.
 - [bluez-alsa](https://github.com/arkq/bluez-alsa) (arkq): the upstream fix for the fdk-aac
   capability crash (6ccf455).
 - The Linux kernel's Bluetooth developers: every backported fix is listed with its commit.
+- [TECHO5](https://github.com/HuskerMinion/techo5): the daemon, the Linux image tooling and the
+  root filesystem slot design this project shares.
+- Amazon's GPL kernel source release for the Echo Dot (2nd generation): the kernel the Dot's
+  Bluetooth build starts from.
+- [Alpine Linux](https://alpinelinux.org/), [BlueZ](https://www.bluez.org/) and BusyBox: the system
+  underneath.
+- [microWakeWord](https://github.com/kahrendt/microWakeWord) (Kevin Ahrendt) and the
+  [ESPHome wake word models](https://github.com/esphome/micro-wake-word-models): the wake word on
+  the device.
+- [Home Assistant](https://www.home-assistant.io/), [ESPHome](https://esphome.io/) and
+  [go-esphome-device](https://github.com/ygelfand/go-esphome-device): the voice pipeline and the API
+  the Dot speaks; [Music Assistant](https://www.music-assistant.io/) for Sendspin.
 
 ## License
 

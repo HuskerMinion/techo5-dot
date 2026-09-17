@@ -189,7 +189,7 @@ See [NOTICE](NOTICE) for the full list.
   userspace on this hardware. Its notes on the USB gadget, Wi-Fi patch download and the mic array
   saved days.
 - amonet and kaeru ([R0rt1z2](https://github.com/R0rt1z2)): the unlock.
-- [proffalken](https://github.com/proffalken): the
+- [@proffalken](https://github.com/proffalken): the
   [step-by-step install from Linux](https://gist.github.com/proffalken/377ae50146affe1886dddaaacb87926b)
   (the exact Fire OS build, trusting the adb key, byte-safe backups, the Linux serial console lookup)
   that the getting started guide and the cross-platform installer are based on.

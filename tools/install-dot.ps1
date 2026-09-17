@@ -7,8 +7,8 @@
     1. checks the device: biscuit, Fire OS 6, adb running as root, a saved Wi-Fi network
     2. backs up every partition that boots the unit (preloader through recovery) to the PC and checks
        each copy against an md5 read on the device
-    3. builds this unit's boot image from its own recovery backup (the kernel is Amazon's, so an image
-       is never shared between units) and the root filesystem
+    3. gets the release (root filesystem, Bluetooth kernel, rescue packages) and builds this unit's boot
+       image from its own recovery backup, so an image is never shared between units
     4. keeps the unit's Home Assistant identity if it has one (/data/misc/echolocal name and key, as
        EchoLocal leaves them), or makes one from -Name
     5. writes the boot image to the recovery partition and checks it read back
@@ -23,14 +23,20 @@
   (docs/porting-plan.md, "The way back").
 
   Prerequisites on the Dot: unlocked with amonet, and either booted in TWRP (where unlocking leaves it)
-  or in Fire OS with adb as root (EchoLocal's install leaves it that way). It must have joined Wi-Fi at
-  least once in Fire OS, since the credentials are taken from there. On the PC: adb, python 3, the inputs directory (Alpine armv7 minirootfs, static
-  busybox, the supplicant's .apk packages in apks-dot) and the daemon built with the dot tag.
+  or in Fire OS with adb as root (EchoLocal's install, or boot-root.zip, leaves it that way). Fire OS 6
+  must be in its system slot. Wi-Fi comes from the network Fire OS saved; with none, the installer asks.
 
+  On the PC: PowerShell 7 (pwsh; Windows PowerShell 5.1 also works on Windows), adb, python 3 and tar.
+  Windows, Linux and macOS alike. Nothing needs building: by default everything comes from this
+  repository's signed release (the root filesystem, the Bluetooth kernel and the rescue environment's
+  packages, each checked against the release's checksums) and Alpine's pinned base image. -FromSource
+  builds the root filesystem from local inputs instead (docs/building.md).
+
+  Step by step, from a stock Dot: https://github.com/HuskerMinion/techo5/blob/main/docs/getting-started.md
 .EXAMPLE
-  .\tools\install-dot.ps1 -Serial <serial> -DryRun
-  .\tools\install-dot.ps1 -Serial <serial>
-  .\tools\install-dot.ps1 -Serial <serial> -Name "Kitchen"
+  ./tools/install-dot.ps1 -Serial <serial> -DryRun
+  ./tools/install-dot.ps1 -Serial <serial>
+  ./tools/install-dot.ps1 -Serial <serial> -Name "Kitchen"
   (a unit with no Home Assistant identity asks for a name when -Name is not given, and makes the key)
 #>
 param(
@@ -39,21 +45,28 @@ param(
     [string]$Name,
     [string]$KeyFile,
     [string]$Adb = 'adb',
-    [string]$Python = 'python',
-    [string]$BackupRoot = 'D:\platform-tools\echodot',
-    [string]$Inputs = 'D:\platform-tools\echoshow\linux-image',
-    [string]$Daemon = (Join-Path $PSScriptRoot '..\bin\echod-dot'),
-    [string]$Wmtup = (Join-Path $PSScriptRoot '..\bin\wmtup'),
-    # The kernel: the Bluetooth build (tools/linux/build-kernel.sh) when it is there, otherwise the one in
-    # the unit's recovery backup, which has no Bluetooth.
-    [string]$Kernel = 'D:\platform-tools\echodot\kernel-build\out\zImage-dtb',
-    [string]$Btbridge = (Join-Path $PSScriptRoot '..\bin\btbridge'),
-    # bluealsa built from source with upstream's AAC capability fix (tools/linux/build-bluealsa.sh);
-    # Alpine's 4.3.1 crashes at start.
-    [string]$Bluealsa = 'D:\platform-tools\echodot\bluealsa-build\out\bluealsa',
+    [string]$Python = $(if ($IsWindows -or $env:OS -eq 'Windows_NT') { 'python' } else { 'python3' }),
+    # Where each unit's partition backups and its boot image go: the repository's backups/ unless set.
+    [string]$BackupRoot = $(if ($env:TECHO5_BACKUPS) { $env:TECHO5_BACKUPS } else { Join-Path (Join-Path $PSScriptRoot '..') 'backups' }),
+    # Downloads and extracted release files: the repository's build/ unless set.
+    [string]$WorkDir = $(if ($env:TECHO5_WORK) { $env:TECHO5_WORK } else { Join-Path (Join-Path $PSScriptRoot '..') 'build' }),
+    # The release to install ("latest", or a tag such as v0.5.0).
+    [string]$Release = 'latest',
+    # Build the root filesystem from local inputs rather than use the release's (docs/building.md).
+    [switch]$FromSource,
+    # With -FromSource: the inputs directory, and the daemon and tools built for the Dot.
+    [string]$Inputs = $(if ($env:TECHO5_INPUTS) { $env:TECHO5_INPUTS } else { Join-Path (Join-Path $PSScriptRoot '..') 'inputs' }),
+    [string]$Daemon = (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'bin' 'echod-dot')),
+    [string]$Wmtup = (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'bin' 'wmtup')),
+    [string]$Btbridge = (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'bin' 'btbridge')),
+    [string]$Bluealsa,
+    # The kernel with Bluetooth. By default the release's; a path here uses that build instead
+    # (tools/linux/build-kernel.sh). -NoBluetoothKernel keeps the unit's own kernel, which has no Bluetooth.
+    [string]$Kernel,
+    [switch]$NoBluetoothKernel,
     [string[]]$WakeWords = @('okay_nabu', 'hey_jarvis', 'hey_mycroft'),
-    # Public key allowed to log in over SSH as root (keys only; no password exists).
-    [string]$SshKey = (Join-Path $HOME '.ssh\id_ed25519.pub'),
+    # Public key allowed to log in over SSH as root (keys only; no password exists). Only when given.
+    [string]$SshKey,
     # A Wi-Fi network to join instead of the one Fire OS saved; asked for when there is neither.
     [string]$WifiSsid,
     # Checks, backs up and builds, and writes nothing to the unit.
@@ -70,6 +83,24 @@ function Push([string]$local, [string]$remote) {
     if ($LASTEXITCODE -ne 0) { throw "adb push $local failed" }
 }
 function Md5File([string]$path) { (Get-FileHash -Algorithm MD5 $path).Hash.ToLower() }
+# The release and the boot image (Get-DotRelease, New-DotBootImage, RepoPath, Get-Checked).
+. (Join-Path (Join-Path $PSScriptRoot 'lib') 'release.ps1')
+
+# A partition read straight into a file as bytes. Start-Process's redirect reads the child's output as text
+# under PowerShell 7, which corrupts binary data; the raw stream does not.
+function Save-Partition([string]$src, [string]$dest) {
+    $psi = New-Object Diagnostics.ProcessStartInfo $Adb
+    $psi.Arguments = "-s $Serial exec-out ""cat $src"""
+    $psi.RedirectStandardOutput = $true
+    $psi.UseShellExecute = $false
+    $proc = [Diagnostics.Process]::Start($psi)
+    $file = [IO.File]::Create($dest)
+    try { $proc.StandardOutput.BaseStream.CopyTo($file) } finally { $file.Close() }
+    $proc.WaitForExit()
+    $proc.ExitCode
+}
+
+
 
 # ---------------------------------------------------------------------------------------------- 1
 Step "device $Serial"
@@ -168,8 +199,7 @@ foreach ($p in $parts) {
     # Start-Process hands a redirect to the device shell as a literal operand. A copy is written to a
     # temporary name first and kept only once its md5 matches the device.
     $tmp = "$dest.partial"
-    $proc = Start-Process -FilePath $Adb -ArgumentList @('-s', $Serial, 'exec-out', "cat $src") -RedirectStandardOutput $tmp -NoNewWindow -Wait -PassThru
-    if ($proc.ExitCode -ne 0) { Remove-Item -Force $tmp -ErrorAction SilentlyContinue; throw "reading $p failed" }
+    if ((Save-Partition $src $tmp) -ne 0) { Remove-Item -Force $tmp -ErrorAction SilentlyContinue; throw "reading $p failed" }
     $host5 = Md5File $tmp
     if ($host5 -ne $dev) { Remove-Item -Force $tmp; throw "$p copy does not match the device ($host5 vs $dev)" }
     Move-Item -Force $tmp $dest
@@ -182,37 +212,43 @@ $rec = [IO.File]::ReadAllBytes((Join-Path $unit 'recovery.img'))
 if ([Text.Encoding]::ASCII.GetString($rec[0..7]) -ne 'ANDROID!') { throw "recovery backup is not an Android boot image" }
 
 # ---------------------------------------------------------------------------------------------- 3
-Step "building this unit's boot image and the root filesystem"
-foreach ($f in @($Daemon, $Wmtup, $Btbridge, $Bluealsa, (Join-Path $Inputs 'busybox.static'))) {
-    if (-not (Test-Path $f)) { throw "missing $f (see the help for how to build it)" }
-}
-$alpine = Get-ChildItem (Join-Path $Inputs 'alpine-minirootfs-*-armv7.tar.gz') | Select-Object -First 1
-if (-not $alpine) { throw "no Alpine armv7 minirootfs in $Inputs" }
-$apks = Join-Path $Inputs 'apks-dot'
+Step "the release, and this unit's boot image"
+New-Item -ItemType Directory -Force $WorkDir | Out-Null
 $image = Join-Path $unit 'techo5-dot-linux.img'
 $rootfs = Join-Path $unit 'techo5-dot-rootfs.tar.gz'
-$commit = (git -C $Repo rev-parse --short HEAD).Trim()
 
-$mkimage = @((Join-Path $Repo 'tools\linux\mkimage.py'), '--kernel-image', (Join-Path $unit 'recovery.img'),
-    '--rootfs', $alpine.FullName, '--init', (Join-Path $Repo 'tools\linux\init'),
-    '--add', "$(Join-Path $Inputs 'busybox.static')=/bin/busybox.static",
-    '--add', "$Wmtup=/usr/local/bin/wmtup",
-    '--cmdline-drop', 'skip_initramfs', '--cmdline-drop', 'root=', '--cmdline-drop', 'dm=',
-    '--cmdline-append', 'techo5.stay_minutes=15', '-o', $image)
-if ($Kernel -and (Test-Path $Kernel)) { $mkimage += @('--kernel', $Kernel) }
-Get-ChildItem (Join-Path $apks '*.apk') | ForEach-Object { $mkimage += @('--apk', $_.FullName) }
-# The rescue environment runs the same slot, network and TWRP tools as the slots.
-foreach ($tool in 'slotctl', 'techo5-net', 'wifi-set', 'to-twrp', 'techo5-firewall') {
-    $mkimage += @('--script', "$(Join-Path $Repo "tools\linux\rootfs\usr\local\sbin\$tool")=/usr/local/sbin/$tool")
+if ($FromSource) {
+    # Everything from local inputs, as a developer builds it (docs/building.md).
+    if (-not $Bluealsa) { $Bluealsa = Join-Path $Inputs 'bluealsa' }
+    $Busybox = Join-Path $Inputs 'busybox.static'
+    foreach ($f in @($Daemon, $Wmtup, $Btbridge, $Bluealsa, $Busybox)) {
+        if (-not (Test-Path $f)) { throw "missing ${f}: -FromSource needs the inputs and builds described in docs/building.md" }
+    }
+    $alpine = Get-ChildItem (Join-Path $Inputs 'alpine-minirootfs-*-armv7.tar.gz') -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $alpine) { throw "no Alpine armv7 minirootfs in $Inputs (docs/building.md)" }
+    $alpine = $alpine.FullName
+    $apks = Join-Path $Inputs 'apks-dot'
+    if (-not $NoBluetoothKernel -and -not $Kernel) { $Kernel = Join-Path (Join-Path $WorkDir 'kernel') 'zImage-dtb' }
+    $commit = (git -C $Repo rev-parse --short HEAD).Trim()
+    & $Python (RepoPath 'tools', 'linux', 'mkrootfs.py') --rootfs $alpine --apkdir $apks --apkdir (Join-Path $Inputs 'apks-bt-dot') `
+        --add "$Busybox=/bin/busybox.static" --add "$Wmtup=/usr/local/bin/wmtup" `
+        --add "$Daemon=/usr/local/bin/echod" --add "$Btbridge=/usr/local/bin/btbridge" --add "$Bluealsa=/usr/bin/bluealsa" --overlay (RepoPath 'tools', 'linux', 'rootfs') `
+        --release "techo5-dot ($commit)" -o $rootfs
+    if ($LASTEXITCODE -ne 0) { throw "building the root filesystem failed" }
+} else {
+    # The signed release, each file checked against its checksum.
+    $rel = Get-DotRelease -WorkDir $WorkDir -Release $Release
+    Note "TECHO5 Dot $($rel.Version): root filesystem, Bluetooth kernel and rescue packages checked"
+    Copy-Item -Force $rel.Rootfs $rootfs
+    $alpine, $apks, $Wmtup, $Busybox = $rel.Alpine, $rel.Apks, $rel.Wmtup, $rel.Busybox
+    if (-not $NoBluetoothKernel -and -not $Kernel) { $Kernel = $rel.Kernel }
 }
-& $Python @mkimage
-if ($LASTEXITCODE -ne 0) { throw "building the boot image failed" }
+if ($NoBluetoothKernel) { $Kernel = $null }
+if ($Kernel -and -not (Test-Path $Kernel)) { throw "no kernel at $Kernel (build it with tools/linux/build-kernel.sh, or leave -Kernel out to use the release's)" }
+if ($Kernel) { Note "kernel: $(Split-Path -Leaf $Kernel) (Bluetooth)" } else { Note "kernel: the unit's own (no Bluetooth)" }
 
-& $Python (Join-Path $Repo 'tools\linux\mkrootfs.py') --rootfs $alpine.FullName --apkdir $apks --apkdir (Join-Path $Inputs 'apks-bt-dot') `
-    --add "$(Join-Path $Inputs 'busybox.static')=/bin/busybox.static" --add "$Wmtup=/usr/local/bin/wmtup" `
-    --add "$Daemon=/usr/local/bin/echod" --add "$Btbridge=/usr/local/bin/btbridge" --add "$Bluealsa=/usr/bin/bluealsa" --overlay (Join-Path $Repo 'tools\linux\rootfs') `
-    --release "techo5-dot ($commit)" -o $rootfs
-if ($LASTEXITCODE -ne 0) { throw "building the root filesystem failed" }
+New-DotBootImage -Recovery (Join-Path $unit 'recovery.img') -Out $image -Alpine $alpine -Busybox $Busybox `
+    -Wmtup $Wmtup -Apks $apks -Kernel $Kernel -Python $Python
 Note "boot image $((Get-Item $image).Length) bytes, root filesystem $((Get-Item $rootfs).Length) bytes"
 
 # ---------------------------------------------------------------------------------------------- 4
@@ -273,11 +309,11 @@ Step "boot image into the recovery partition"
 # The image goes into the store first and stays there: to-twrp and back-to-linux.sh use that copy.
 Sh "mkdir -p $Stage /cache/techo5" | Out-Null
 Push $image /cache/techo5/linux.img
-Push (Join-Path $Inputs 'busybox.static') $Stage/busybox
+Push $Busybox $Stage/busybox
 $len = (Get-Item $image).Length
 $want = Md5File $image
 $got = (Sh "chmod 755 $Stage/busybox; dd if=/cache/techo5/linux.img of=$BN/recovery bs=1048576 2>/dev/null; sync; $Stage/busybox head -c $len $BN/recovery | md5sum").Split(' ')[0].Trim()
-if ($got -ne $want) { throw "recovery partition reads back $got, wanted $want. The TWRP backup is at $unit\recovery.img." }
+if ($got -ne $want) { throw "recovery partition reads back $got, wanted $want. The TWRP backup is at $(Join-Path $unit 'recovery.img')." }
 Note "written and read back, md5 $got"
 
 # ---------------------------------------------------------------------------------------------- 6
@@ -325,7 +361,7 @@ if ($recHead.StartsWith('ANDROID!') -and $recHead -notmatch 'techo5') {
     Push $rec /cache/techo5/twrp.img
     $tw = (Sh 'md5sum /cache/techo5/twrp.img').Split(' ')[0].Trim()
     if ($tw -ne (Md5File $rec)) { throw "the TWRP copy on the unit does not match $rec" }
-    Push (Join-Path $Repo 'tools\linux\back-to-linux.sh') /cache/techo5/back-to-linux.sh
+    Push (RepoPath 'tools', 'linux', 'back-to-linux.sh') /cache/techo5/back-to-linux.sh
     Note "TWRP copy kept on the unit (to-twrp puts it back; /cache/techo5/back-to-linux.sh returns)"
 } else {
     Note "no TWRP backup for $Serial to keep on the unit (to-twrp will say so)"
@@ -384,11 +420,28 @@ Sh "printf 'TECHO5-TRIES 0 installed\n' | dd of=$BN/misc bs=512 seek=14 count=1 
 # The unit is found on its USB serial console, by its own serial number, and asked how the boot went:
 # that works whatever address DHCP hands Linux, and from TWRP, where no address was known at all.
 function Find-LinuxPort {
-    $all = @(Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPDeviceID -like 'USB\VID_18D1&PID_4EE7\*' -and $_.Name -match '\(COM\d+\)' })
-    $mine = @($all | Where-Object { $_.PNPDeviceID -like "*\$Serial" })
     # An image from before the gadget carried the serial reports a placeholder: only trusted when alone.
-    if (-not $mine -and $all.Count -eq 1 -and $all[0].PNPDeviceID -like '*\0123456789ABCDEF') { $mine = $all }
-    if ($mine) { [regex]::Match($mine[0].Name, 'COM\d+').Value }
+    $placeholder = '0123456789ABCDEF'
+    if ($IsLinux) {
+        # Linux: the ACM ports, each asked for its USB ids and serial.
+        $all = @()
+        foreach ($tty in @(Get-ChildItem /dev/ttyACM* -ErrorAction SilentlyContinue)) {
+            $props = (& udevadm info -q property -n $tty.FullName 2>$null) -join "`n"
+            if ($props -match '(?m)^ID_VENDOR_ID=18d1$' -and $props -match '(?m)^ID_MODEL_ID=4ee7$') {
+                $all += [pscustomobject]@{ Port = $tty.FullName; Serial = [regex]::Match($props, '(?m)^ID_SERIAL_SHORT=(.*)$').Groups[1].Value }
+            }
+        }
+    } elseif ($IsMacOS) {
+        # macOS names a USB modem port after the device's serial number.
+        $all = @(Get-ChildItem /dev/cu.usbmodem* -ErrorAction SilentlyContinue | ForEach-Object {
+            [pscustomobject]@{ Port = $_.FullName; Serial = $_.Name.Substring('cu.usbmodem'.Length) } })
+    } else {
+        $all = @(Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPDeviceID -like 'USB\VID_18D1&PID_4EE7\*' -and $_.Name -match '\(COM\d+\)' } | ForEach-Object {
+            [pscustomobject]@{ Port = [regex]::Match($_.Name, 'COM\d+').Value; Serial = ($_.PNPDeviceID -split '\\')[-1] } })
+    }
+    $mine = @($all | Where-Object { $_.Serial -like "$Serial*" })
+    if (-not $mine -and $all.Count -eq 1 -and $all[0].Serial -like "$placeholder*") { $mine = $all }
+    if ($mine) { $mine[0].Port }
 }
 function Invoke-Console([string]$port, [string]$cmd) {
     $sp = New-Object IO.Ports.SerialPort $port, 115200
@@ -462,6 +515,6 @@ if ($healthy -and $up) {
 } else {
     Write-Host "Rebooted, but the unit was not confirmed up$(if ($ip) { " (${ip}:6053 did not answer)" })."
     Write-Host "After five boots that never become healthy it stays in rescue (techo5-retry tries again). The USB console"
-    Write-Host "shows the boot and the crumbs (tools\linux\readmisc.sh)."
+    Write-Host "shows the boot and the crumbs (tools/linux/readmisc.sh)."
     exit 1
 }

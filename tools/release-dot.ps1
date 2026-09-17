@@ -17,14 +17,22 @@
   boot image (those are built per unit by the installer from the unit's own backup).
 
 .EXAMPLE
-  .\tools\release-dot.ps1 -Version v0.2.0 -Notes "First release." -DryRun
-  .\tools\release-dot.ps1 -Version v0.2.0 -Notes "First release."
+  ./tools/release-dot.ps1 -Version v0.2.0 -Notes "First release." -DryRun
+  ./tools/release-dot.ps1 -Version v0.2.0 -Notes "First release."
 #>
 param(
     [Parameter(Mandatory)][ValidatePattern('^v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$')][string]$Version,
     [Parameter(Mandatory)][string]$Notes,
-    [string]$Techo5 = 'E:\projects\techo5-wt-dot-mics',
-    [string]$SignKey = 'D:\platform-tools\keys\techo5-release.key',
+    # A TECHO5 checkout on main (or dot/mic-average): $env:TECHO5, else ../techo5 beside this repository.
+    [string]$Techo5 = $(if ($env:TECHO5) { $env:TECHO5 } else { Join-Path (Join-Path (Join-Path $PSScriptRoot '..') '..') 'techo5' }),
+    # The release signing key (ed25519 seed, base64); only the maintainer has it: $env:TECHO5_SIGN_KEY.
+    [string]$SignKey = $env:TECHO5_SIGN_KEY,
+    # The Dot's Bluetooth kernel (tools/linux/build-kernel.sh -o build/kernel), published with the release.
+    [string]$Kernel = $(if ($env:TECHO5_DOT_KERNEL) { $env:TECHO5_DOT_KERNEL } else { Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'build') 'kernel') 'zImage-dtb' }),
+    # bluez-alsa with its crash fix (tools/linux/build-bluealsa.sh -o build/bluealsa).
+    [string]$Bluealsa = $(if ($env:TECHO5_BLUEALSA) { $env:TECHO5_BLUEALSA } else { Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'build') 'bluealsa') 'bluealsa' }),
+    # The build inputs (docs/building.md): $env:TECHO5_INPUTS, else inputs/ in this repository.
+    [string]$Inputs = $(if ($env:TECHO5_INPUTS) { $env:TECHO5_INPUTS } else { Join-Path (Join-Path $PSScriptRoot '..') 'inputs' }),
     [string]$Go = 'go',
     [switch]$Prerelease,
     # Build and sign everything into bin\release\<version>, publish nothing.
@@ -33,12 +41,14 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = 'HuskerMinion/techo5-dot'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
-$out = Join-Path $root "bin\release\$Version"
+$out = Join-Path (Join-Path (Join-Path $root 'bin') 'release') $Version
 New-Item -ItemType Directory -Force $out | Out-Null
-if (-not (Test-Path $SignKey)) { throw "no release signing key at $SignKey" }
+if (-not $SignKey -or -not (Test-Path $SignKey)) { throw "no release signing key: set TECHO5_SIGN_KEY or pass -SignKey" }
+if (-not (Test-Path $Kernel)) { throw "no Bluetooth kernel at ${Kernel}: build it (tools/linux/build-kernel.sh -o build/kernel) or pass -Kernel" }
+if (-not (Test-Path (Join-Path $Techo5 'echod'))) { throw "no TECHO5 checkout at ${Techo5}: set TECHO5 or pass -Techo5" }
 
 $branch = (git -C $Techo5 branch --show-current).Trim()
-if ($branch -ne 'dot/mic-average') { throw "$Techo5 is on '$branch', not dot/mic-average" }
+if ($branch -notin 'main', 'dot/mic-average') { throw "$Techo5 is on '$branch', not main or dot/mic-average" }
 if (git -C $Techo5 status --porcelain -- echod cmd) { throw "$Techo5 has uncommitted daemon changes; commit them first" }
 if (git -C $root status --porcelain -- tools) { throw "this repository has uncommitted tool changes; commit them first" }
 $commit = (git -C $Techo5 rev-parse --short HEAD).Trim()
@@ -54,11 +64,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'daemon build failed' }
     Pop-Location
     Push-Location $Techo5
-    & $Go build -trimpath -ldflags '-s -w' -o (Join-Path $root 'bin\btbridge') ./cmd/btbridge
+    & $Go build -trimpath -ldflags '-s -w' -o (Join-Path (Join-Path $root 'bin') 'btbridge') ./cmd/btbridge
     if ($LASTEXITCODE -ne 0) { throw 'btbridge build failed' }
     Pop-Location
     Push-Location $root
-    & $Go build -trimpath -ldflags '-s -w' -o (Join-Path $root 'bin\wmtup') ./cmd/wmtup
+    & $Go build -trimpath -ldflags '-s -w' -o (Join-Path (Join-Path $root 'bin') 'wmtup') ./cmd/wmtup
     if ($LASTEXITCODE -ne 0) { throw 'wmtup build failed' }
     Pop-Location
 } finally {
@@ -67,7 +77,16 @@ try {
 
 Write-Host "== root filesystem"
 $rootfs = Join-Path $out 'techo5-dot-rootfs.tar.gz'
-& (Join-Path $root 'tools\linux\build-dot-rootfs.ps1') -Daemon (Join-Path $out 'echod-arm-dot') -Release $Version -Out $rootfs
+& (Join-Path (Join-Path (Join-Path $root 'tools') 'linux') 'build-dot-rootfs.ps1') -Daemon (Join-Path $out 'echod-arm-dot') -Release $Version -Inputs $Inputs -Bluealsa $Bluealsa -Out $rootfs
+
+Write-Host "== Bluetooth kernel, rescue packages and checksums"
+Copy-Item -Force $Kernel (Join-Path $out 'techo5-dot-kernel-bt.zImage-dtb')
+$apks = Get-ChildItem (Join-Path (Join-Path $Inputs 'apks-dot') '*.apk')
+if (-not $apks) { throw "no rescue packages in $(Join-Path $Inputs 'apks-dot')" }
+Push-Location (Join-Path $Inputs 'apks-dot')
+tar -cf (Join-Path $out 'techo5-dot-rescue-apks.tar') ($apks | ForEach-Object { $_.Name })
+if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'packing the rescue packages failed' }
+Pop-Location
 
 Write-Host "== signed manifest"
 Push-Location (Join-Path $Techo5 'echod')
@@ -80,12 +99,17 @@ if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'mkmanifest failed' }
 Pop-Location
 Get-Content (Join-Path $out 'manifest.json')
 
-$assets = @('echod-arm-dot', 'techo5-dot-rootfs.tar.gz', 'manifest.json', 'manifest.json.sig') | ForEach-Object { Join-Path $out $_ }
+$names = 'echod-arm-dot', 'techo5-dot-rootfs.tar.gz', 'manifest.json', 'manifest.json.sig', 'techo5-dot-kernel-bt.zImage-dtb', 'techo5-dot-rescue-apks.tar'
+# SHA256SUMS: what the installer checks the kernel and the rescue packages against.
+$sums = $names | ForEach-Object { "$((Get-FileHash -Algorithm SHA256 (Join-Path $out $_)).Hash.ToLower())  $_" }
+[IO.File]::WriteAllText((Join-Path $out 'SHA256SUMS'), ($sums -join "`n") + "`n")
+$assets = ($names + 'SHA256SUMS') | ForEach-Object { Join-Path $out $_ }
 if ($DryRun) {
     Write-Host "Dry run: release files are in $out; nothing published."
     return
 }
 Write-Host "== release $Version on $repo"
+$Notes += "`n`nThe Bluetooth kernel (techo5-dot-kernel-bt.zImage-dtb, Linux 3.18.19, GPL-2.0) is built by tools/linux/build-kernel.sh from Amazon's GPL source for the Echo Dot 2nd gen (Echo_Dot_src-6.5.7.1) with the configuration and backports in tools/linux."
 $ghArgs = @('release', 'create', $Version) + $assets + @('--repo', $repo, '--title', "TECHO5 Dot $Version", '--notes', $Notes)
 if ($Prerelease) { $ghArgs += '--prerelease' }
 & gh @ghArgs

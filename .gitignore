@@ -6,3 +6,8 @@ bin/
 .DS_Store
 Thumbs.db
 __pycache__/
+
+# Per-unit backups, build inputs and downloads: never committed.
+backups/
+build/
+inputs/

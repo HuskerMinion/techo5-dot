@@ -42,6 +42,13 @@ setting its clock.
 | 🔐 **Locked down** | A firewall that lets in only Home Assistant, mDNS, SSH and Sendspin; SSH is keys-only and starts off. |
 | 🔄 **Signed updates with rollback** | ed25519-signed releases install into a spare slot and roll back on their own if they don't come up healthy. |
 
+**Built on [EchoLocal](https://github.com/ygelfand/echolocal)** by Yuri Gelfand (MIT), which first
+made the Echo Dot 2 an ESPHome-native Home Assistant satellite with one Go daemon on Fire OS. TECHO5
+Dot's daemon is that daemon, by way of TECHO5's `echod` (EchoLocal's code vendored and developed
+further), and much of it is still EchoLocal's. What this project adds is Linux in place of Fire OS:
+the boot image and slots, Wi-Fi without Android, the seven-microphone work, rebuilt Bluetooth, signed
+updates and the installer. See [NOTICE](NOTICE).
+
 It's a sibling of [TECHO5](https://github.com/HuskerMinion/techo5), which did the same for the
 Echo Show 5. Both run the same daemon source, built per device.
 
@@ -160,8 +167,8 @@ Updates after that come from this repo's releases, through Home Assistant's upda
 ## Credits
 
 See [NOTICE](NOTICE) for the full list.
-- [EchoLocal](https://github.com/ygelfand/echolocal) (MIT, Yuri Gelfand): the Dot daemon TECHO5's
-  `echod` grew from.
+- [EchoLocal](https://github.com/ygelfand/echolocal) (MIT, Yuri Gelfand): the Echo Dot 2 daemon this
+  project is built on (see above).
 - [EchoMuse / emOS](https://github.com/wilbowes/EchoMuse) (MIT, Wil Bowes): the first Linux
   userspace on this hardware. Its notes on the USB gadget, Wi-Fi patch download and the mic array
   saved days.

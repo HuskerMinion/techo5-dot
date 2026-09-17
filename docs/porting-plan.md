@@ -311,6 +311,13 @@ Done on the bench unit 2026-09-16 (see `docs/hardware.md`, Bluetooth kernel):
   - pausing the phone releases the speaker after 5 s;
   - whichever of the phone and Home Assistant media started last plays.
 
+**Phone calls (v0.4.0, verified on the bench unit with VoIP.ms):** TECHO5 main's `feature/phone`,
+merged into the Dot branch. The Dot signs in over TLS, rings with its ring pulsing green, and the
+action button answers and hangs up. Tested: calls to and from mobiles and between devices, the help
+call (both phones alerted, a spoken message into the answered call), announcements into a call. The
+firewall needs nothing: registration and media are connections the Dot makes, answered through its
+ESTABLISHED rule.
+
 **Pairing without Home Assistant (v0.3.1, verified on the bench unit with a phone):**
 - Holding the action button for 5 s toggles pairing mode, with a rising (on) or falling (off)
   three-note chime; the ring pulses blue while pairing mode is on, however it was turned on. With no

@@ -38,14 +38,15 @@ setting its clock.
 | 🚫 **No Alexa, no Amazon account** | Your voice goes to your Home Assistant, over its encrypted API, and nowhere else. |
 | 🎙️ **All seven microphones** | Averaged, with echo cancellation, and a wake word heard on the device. |
 | 🔊 **A Bluetooth speaker again** | Pair a phone, or send the Dot's audio to a speaker; a Home Assistant Bluetooth proxy on top. |
+| 📞 **A speakerphone again** | Calls through your own SIP provider, placed by voice or from Home Assistant, answered with the action button; a help call that alerts your phones and dials people in turn. |
 | 🔐 **Locked down** | A firewall that lets in only Home Assistant, mDNS, SSH and Sendspin; SSH is keys-only and starts off. |
 | 🔄 **Signed updates with rollback** | ed25519-signed releases install into a spare slot and roll back on their own if they don't come up healthy. |
 
 It's a sibling of [TECHO5](https://github.com/HuskerMinion/techo5), which did the same for the
 Echo Show 5. Both run the same daemon source, built per device.
 
-> **Status: working, tested on one unit.** Everything marked ✅ below was verified on a bench Dot
-> that came from Fire OS 6574.1. It hasn't been tried on a second unit yet. Expect rough edges, and
+> **Status: in daily use on three units.** Everything marked ✅ below was verified on a bench Dot
+> that came from Fire OS 6574.1, and the installer and updates on two more. Expect rough edges, and
 > keep your backups.
 
 ## What happened to the Dot
@@ -84,7 +85,8 @@ Echo Show 5. Both run the same daemon source, built per device.
 | Bluetooth: Dot to a speaker or headphones | Yes | Yes ✅. If no phone pairs within 20 s, pairing mode connects the strongest speaker it hears, since there's no screen to choose on |
 | Home Assistant Bluetooth proxy | No | Yes ✅, alongside Bluetooth audio |
 | Multi-room music | Alexa groups | Sendspin (Music Assistant) client on port 8928. Built in, not yet tested on this image |
-| Calling, Drop In, announcements, skills, shopping | Yes | **No.** Those are Alexa cloud services |
+| Calling | Alexa calling and Drop In | Yes ✅, through your own SIP provider (TLS and SRTP): "call Alex" by voice, a help call that alerts phones and dials people in turn, calls between your own devices. The action button answers and hangs up, and the ring pulses green. Off until Home Assistant signs the Dot in. See [TECHO5's phone.md](https://github.com/HuskerMinion/techo5/blob/main/docs/phone.md) |
+| Skills, shopping | Yes | **No.** Those are Alexa cloud services |
 | Routines and smart home control | Alexa | Whatever Home Assistant does ✅ |
 | Updates | Amazon, automatic | Signed releases from this repo, offered in Home Assistant, A/B slots with automatic rollback ✅ |
 | Remote access | None | SSH, keys only, behind a Home Assistant switch that starts off ✅ |

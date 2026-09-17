@@ -131,6 +131,10 @@ now Bluetooth comes up in the background and a paired speaker reconnects when it
 
 ## Installing
 
+Starting from a stock Dot? [Getting started](https://github.com/HuskerMinion/techo5/blob/main/docs/getting-started.md)
+walks through it in order: updating Fire OS, the amonet unlock (linked), this installer, and Home
+Assistant.
+
 ```powershell
 .\tools\install-dot.ps1 -Serial <adb serial> -DryRun   # checks, backups and builds; writes nothing
 .\tools\install-dot.ps1 -Serial <adb serial>

@@ -1,0 +1,17 @@
+dbus-libs-1.16.2-r2.apk
+dropbear-2026.91-r0.apk
+iptables-1.8.13-r0.apk
+iptables-legacy-1.8.13-r0.apk
+libcrypto3-3.5.8-r0.apk
+libip4tc-1.8.13-r0.apk
+libip6tc-1.8.13-r0.apk
+libmnl-1.0.5-r2.apk
+libnftnl-1.3.1-r0.apk
+libnl3-3.11.0-r0.apk
+libssl3-3.5.8-r0.apk
+libxtables-1.8.13-r0.apk
+pcsc-lite-libs-2.4.0-r4.apk
+skalibs-libs-2.15.0.0-r0.apk
+utmps-libs-0.1.3.3-r0.apk
+wpa_supplicant-2.11-r4.apk
+zlib-1.3.2-r0.apk

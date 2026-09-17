@@ -123,11 +123,14 @@ now Bluetooth comes up in the background and a paired speaker reconnects when it
 
 ## What you need
 
-- An Echo Dot 2nd gen, **already unlocked** with amonet and sitting in TWRP, or running Fire OS 6
-  with root adb (for example with [EchoLocal](https://github.com/ygelfand/echolocal) installed).
-  Unlocking isn't part of this project.
+- An Echo Dot 2nd gen, **already unlocked** with amonet, with Fire OS 6574.1 in its system slots, and
+  sitting in TWRP or running Fire OS with root adb (for example with
+  [EchoLocal](https://github.com/ygelfand/echolocal) installed). Unlocking isn't part of this project;
+  [Getting started](https://github.com/HuskerMinion/techo5/blob/main/docs/getting-started.md#echo-dot-2nd-gen)
+  has every command.
 - The Dot joined to Wi-Fi once in Fire OS. If it hasn't been, the installer asks for a network.
-- A Windows PC with adb, Python 3, Go and WSL, plus Home Assistant.
+- A Windows, Linux or macOS computer with [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell)
+  (`pwsh`), adb, Python 3 and git, plus Home Assistant. Nothing is compiled.
 
 ## Installing
 
@@ -135,23 +138,31 @@ Starting from a stock Dot? [Getting started](https://github.com/HuskerMinion/tec
 walks through it in order: updating Fire OS, the amonet unlock (linked), this installer, and Home
 Assistant.
 
-```powershell
-.\tools\install-dot.ps1 -Serial <adb serial> -DryRun   # checks, backups and builds; writes nothing
-.\tools\install-dot.ps1 -Serial <adb serial>
+```
+git clone https://github.com/HuskerMinion/techo5-dot
+cd techo5-dot
+pwsh ./tools/install-dot.ps1 -Serial <adb serial> -DryRun   # checks, backups, download, boot image; writes nothing
+pwsh ./tools/install-dot.ps1 -Serial <adb serial> -Name "Kitchen"
 ```
 
 The installer:
-1. Backs up every boot-critical partition to the PC and checks each copy against the device. On
-   TWRP it reads the real bootloader partitions, not amonet's decoys.
-2. Builds this unit's boot image from **its own** recovery backup. No Amazon binary is ever
-   downloaded or published.
-3. Writes the image to recovery, and the root filesystem into slot a.
-4. Keeps an existing Home Assistant name and key, or asks for a name and makes a key.
-5. Reboots, then waits on the Dot's USB console until the boot reports healthy.
+1. Backs up every boot-critical partition to `backups/<serial>/` and checks each copy against the
+   device. On TWRP it reads the real bootloader partitions, not amonet's decoys.
+2. Downloads the latest signed release (the root filesystem, the Bluetooth kernel and the rescue
+   environment's packages) and checks every file against the release's checksums. `-Release v0.5.0`
+   picks a version; `-FromSource` uses your own builds ([docs/building.md](docs/building.md)).
+3. Builds this unit's boot image from **its own** recovery backup, with the Bluetooth kernel
+   (`-NoBluetoothKernel` keeps the unit's own, without Bluetooth). No Amazon binary is ever downloaded
+   or published.
+4. Writes the image to recovery, and the root filesystem into slot a.
+5. Keeps an existing Home Assistant name and key, or asks for a name and makes a key.
+6. Reboots, then waits on the Dot's USB console until the boot reports healthy.
 
 Home Assistant then finds the Dot as an ESPHome device.
 
-Updates after that come from this repo's releases, through Home Assistant's update card.
+Updates after that come from this repo's releases, through Home Assistant's update card. They carry the
+root filesystem only; a Dot installed before the Bluetooth kernel gets it with
+`pwsh ./tools/update-boot.ps1 -Serial <serial> -Address <address>` (SSH switched on in Home Assistant).
 
 ## Where things are
 
@@ -164,8 +175,9 @@ Updates after that come from this repo's releases, through Home Assistant's upda
 - `tools/`: the installer, the Wi-Fi tool, the boot image updater, and `tools/linux/` (initramfs,
   root filesystem overlay, slot tool, firewall, kernel and bluez-alsa build scripts and patches).
 - `cmd/wmtup`: Wi-Fi chip bring-up without Android.
-- The daemon's source: TECHO5, branch
-  [`dot/mic-average`](https://github.com/HuskerMinion/techo5/tree/dot/mic-average), built with
+- [docs/building.md](docs/building.md): building the kernel, bluez-alsa, the daemon and the root
+  filesystem yourself.
+- The daemon's source: [TECHO5](https://github.com/HuskerMinion/techo5), branch `main`, built with
   `-tags dot`.
 
 ## Credits
@@ -177,6 +189,10 @@ See [NOTICE](NOTICE) for the full list.
   userspace on this hardware. Its notes on the USB gadget, Wi-Fi patch download and the mic array
   saved days.
 - amonet and kaeru ([R0rt1z2](https://github.com/R0rt1z2)): the unlock.
+- [proffalken](https://github.com/proffalken): the
+  [step-by-step install from Linux](https://gist.github.com/proffalken/377ae50146affe1886dddaaacb87926b)
+  (the exact Fire OS build, trusting the adb key, byte-safe backups, the Linux serial console lookup)
+  that the getting started guide and the cross-platform installer are based on.
 - [jxlarrea](https://github.com/jxlarrea/lineageos-echo-show-camera): echo cancellation
   measurements on the Echo Show family.
 - [bluez-alsa](https://github.com/arkq/bluez-alsa) (arkq): the upstream fix for the fdk-aac

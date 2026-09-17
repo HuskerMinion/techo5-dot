@@ -40,8 +40,8 @@
 # Environment:
 #   WORK    scratch on a case-sensitive Linux filesystem (default ~/biscuit-build; the kernel
 #           tree has names differing only in case, so not /mnt/<drive>)
-#   DL      downloads (default /mnt/d/platform-tools/echodot/kernel-build/dl)
-#   OUTDIR  results (default /mnt/d/platform-tools/echodot/kernel-build/out)
+#   DL      downloads (default WORK/dl)
+#   OUTDIR  results (default build/kernel in this repository, where the installer looks; or -o)
 #   TOOLCHAIN  arm-eabi-4.8 checkout (default ~/toolchain/arm-eabi-4.8)
 #   REF     a recovery or boot image from the unit to compare the appended device trees against
 #           (optional)
@@ -55,8 +55,8 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 WORK=${WORK:-$HOME/biscuit-build}
-DL=${DL:-/mnt/d/platform-tools/echodot/kernel-build/dl}
-OUTDIR=${OUTDIR:-/mnt/d/platform-tools/echodot/kernel-build/out}
+DL=${DL:-$WORK/dl}
+OUTDIR=${OUTDIR:-$REPO/build/kernel}
 TOOLCHAIN=${TOOLCHAIN:-$HOME/toolchain/arm-eabi-4.8}
 REF=${REF:-}
 STOCK=

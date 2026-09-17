@@ -14,8 +14,9 @@
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-UNIT=${TECHO5_DOT_UNIT:-/d/platform-tools/echodot/<serial>}
-INPUTS=${TECHO5_INPUTS:-/d/platform-tools/echoshow/linux-image}
+# The unit's backups (the installer's backups/<serial>) and the build inputs (docs/building.md).
+UNIT=${TECHO5_DOT_UNIT:?set TECHO5_DOT_UNIT to the backup directory of the unit, e.g. backups/<serial>}
+INPUTS=${TECHO5_INPUTS:-$HERE/../../inputs}
 REF=$UNIT/recovery.img
 OUT=$UNIT/techo5-dot-linux-first.img
 STAY=15

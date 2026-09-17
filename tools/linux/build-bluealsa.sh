@@ -31,18 +31,18 @@
 #
 # Environment:
 #   WORK          scratch on a Linux filesystem (default ~/bluealsa-build)
-#   DL            downloads (default /mnt/d/platform-tools/echodot/bluealsa-build/dl)
-#   OUTDIR        results (default /mnt/d/platform-tools/echodot/bluealsa-build/out)
-#   APKINDEX_DIR  Alpine v3.24 armv7 indexes, main/APKINDEX and community/APKINDEX
-#                 (default /mnt/d/platform-tools/echodot/kernel-build/apkindex)
+#   DL            downloads (default WORK/dl)
+#   OUTDIR        results (default build/bluealsa in this repository; or -o)
+#   APKINDEX_DIR  Alpine v3.24 armv7 indexes, main/APKINDEX and community/APKINDEX (default
+#                 WORK/apkindex, fetched from ALPINE_MIRROR over HTTPS when they are not there)
 #   JOBS          make -j (default nproc)
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 WORK=${WORK:-$HOME/bluealsa-build}
-DL=${DL:-/mnt/d/platform-tools/echodot/bluealsa-build/dl}
-OUTDIR=${OUTDIR:-/mnt/d/platform-tools/echodot/bluealsa-build/out}
-APKINDEX_DIR=${APKINDEX_DIR:-/mnt/d/platform-tools/echodot/kernel-build/apkindex}
+DL=${DL:-$WORK/dl}
+OUTDIR=${OUTDIR:-$(cd "$HERE/../.." && pwd)/build/bluealsa}
+APKINDEX_DIR=${APKINDEX_DIR:-$WORK/apkindex}
 JOBS=${JOBS:-$(nproc)}
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -88,6 +88,12 @@ fetch() { # url sha512 [name]
 }
 
 mkdir -p "$DL/deb" "$DL/apk" "$OUTDIR" "$WORK"
+for repo in main community; do
+	if [ ! -f "$APKINDEX_DIR/$repo/APKINDEX" ]; then
+		mkdir -p "$APKINDEX_DIR/$repo"
+		curl -fsSL "$ALPINE_MIRROR/$repo/armv7/APKINDEX.tar.gz" | tar -xzf - -C "$APKINDEX_DIR/$repo" APKINDEX
+	fi
+done
 HOST=$WORK/host TC=$WORK/toolchain SYSROOT=$WORK/sysroot BUILD=$WORK/bluez-alsa-$PKGVER
 rm -rf "$HOST" "$TC" "$SYSROOT" "$BUILD"
 

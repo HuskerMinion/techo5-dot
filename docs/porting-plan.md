@@ -209,7 +209,7 @@ As built, differing from the original plan:
     - a rootfs with a daemon that exits at once went trial 1, then trial 0, then bad;
     - slot b came back healthy with the try count at 0, never touching Fire OS.
   - Home Assistant is shown an update only when the release carries a Dot rootfs
-    (`Manifest.Serves`, TECHO5 dot/mic-average). `tools/linux/build-dot-rootfs.ps1` builds the
+    (`Manifest.Serves`, TECHO5 dot/mic-average). `tools/linux/build-dot-rootfs.py` builds the
     published tarball and TECHO5's `release.ps1 -DotRootfs` publishes it. No release has been
     published yet.
   - The boot image (kernel and initramfs) is per unit and never published, so changes to
@@ -226,11 +226,11 @@ As built, differing from the original plan:
   - A unit set up before this moved its key and host key over once, with the switch left on.
   - The rescue initramfs starts its own server with the same keys, without waiting for the switch.
 - **Wi-Fi without Fire OS:**
-  - `wifi-set "name" "passphrase"` on the unit, or `tools/set-wifi.ps1 -Serial <s> -Ssid <name>`
+  - `wifi-set "name" "passphrase"` on the unit, or `tools/set-wifi.py --serial <s> --ssid <name>`
     from the PC over the USB console, which works with the network down. Either writes
     `/data/techo5-linux/wifi.conf` (the name and WPA key as hex) and rejoins at once.
   - `wifi-set --forget` returns to the network Fire OS saved.
-  - The PC derives the key (`tools/wifi-key.ps1`, checked against the IEEE 802.11i test vector),
+  - The PC derives the key (`techo5lib.wifi_conf` in tools/, checked against the IEEE 802.11i test vector),
     so the passphrase never reaches the unit.
   - The installer asks for a network when the unit has none.
   - `techo5-net` is the one bring-up used by boot, rescue and `wifi-set`. udhcpc now stays running
@@ -334,7 +334,7 @@ ESTABLISHED rule.
 
 ## M6 — Installer
 
-`tools/install-dot.ps1 -Serial <serial>` takes an unlocked Dot running Fire OS 6 with root adb
+`tools/install-dot.py --serial <serial>` (first written in PowerShell) takes an unlocked Dot running Fire OS 6 with root adb
 (EchoLocal) to the M3 end state. Verified on the bench unit 2026-09-16: it came back under its existing Home Assistant
 name, healthy at 110 s. The steps:
 

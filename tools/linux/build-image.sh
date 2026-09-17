@@ -53,7 +53,9 @@ for a in "$APKDIR"/*.apk; do
 	[ -f "$a" ] && EXTRA+=(--apk "$a")
 done
 
-python "$HERE/mkimage.py" \
+# python3 where it is (Linux, macOS), else python (Windows).
+PY=${PYTHON:-$( (python3 -c 1) >/dev/null 2>&1 && echo python3 || echo python )}
+"$PY" "$HERE/mkimage.py" \
 	--kernel-image "$REF" \
 	--rootfs "$ROOTFS" \
 	--init "$HERE/init" \

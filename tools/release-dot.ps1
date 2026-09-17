@@ -9,7 +9,7 @@
 
   Built from the TECHO5 worktree on its dot/mic-average branch with -tags dot:
     echod-arm-dot             the daemon (also what a Fire OS Dot would take as a binary update)
-    techo5-dot-rootfs.tar.gz  the whole root filesystem for a slot (tools/linux/build-dot-rootfs.ps1)
+    techo5-dot-rootfs.tar.gz  the whole root filesystem for a slot (tools/linux/build-dot-rootfs.py)
     manifest.json             versions, URLs, sizes and sha256 of both (cmd/mkmanifest)
     manifest.json.sig         the release key's ed25519 signature over manifest.json
 
@@ -77,7 +77,9 @@ try {
 
 Write-Host "== root filesystem"
 $rootfs = Join-Path $out 'techo5-dot-rootfs.tar.gz'
-& (Join-Path (Join-Path (Join-Path $root 'tools') 'linux') 'build-dot-rootfs.ps1') -Daemon (Join-Path $out 'echod-arm-dot') -Release $Version -Inputs $Inputs -Bluealsa $Bluealsa -Out $rootfs
+$py = if ($IsLinux -or $IsMacOS) { 'python3' } else { 'python' }
+& $py (Join-Path (Join-Path (Join-Path $root 'tools') 'linux') 'build-dot-rootfs.py') --daemon (Join-Path $out 'echod-arm-dot') --release $Version --inputs $Inputs --bluealsa $Bluealsa --out $rootfs
+if ($LASTEXITCODE -ne 0) { throw 'building the root filesystem failed' }
 
 Write-Host "== Bluetooth kernel, rescue packages and checksums"
 Copy-Item -Force $Kernel (Join-Path $out 'techo5-dot-kernel-bt.zImage-dtb')

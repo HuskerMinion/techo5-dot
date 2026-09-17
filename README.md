@@ -98,7 +98,7 @@ Echo Show 5. Both run the same daemon source, built per device.
 | Updates | Amazon, automatic | Signed releases from this repo, offered in Home Assistant, A/B slots with automatic rollback ✅ |
 | Remote access | None | SSH, keys only, behind a Home Assistant switch that starts off ✅ |
 | Network exposure | Amazon's | Firewall: inbound only the Home Assistant API, mDNS, SSH and Sendspin ✅ |
-| Changing Wi-Fi | Alexa app | `wifi-set` on the Dot, or `tools/set-wifi.ps1` from a PC over USB ✅ |
+| Changing Wi-Fi | Alexa app | `wifi-set` on the Dot, or `tools/set-wifi.py` from a computer over USB ✅ |
 | If it won't boot | Factory reset | Rescue mode (USB console, SSH, firewall) after five bad boots. Fire OS and TWRP are still on the device, one command away ✅ |
 
 Numbers from the bench unit:
@@ -129,8 +129,9 @@ now Bluetooth comes up in the background and a paired speaker reconnects when it
   [Getting started](https://github.com/HuskerMinion/techo5/blob/main/docs/getting-started.md#echo-dot-2nd-gen)
   has every command.
 - The Dot joined to Wi-Fi once in Fire OS. If it hasn't been, the installer asks for a network.
-- A Windows, Linux or macOS computer with [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell)
-  (`pwsh`), adb, Python 3 and git, plus Home Assistant. Nothing is compiled.
+- A Windows, Linux or macOS computer with Python 3, adb and git
+  ([setup for each](https://github.com/HuskerMinion/techo5/blob/main/docs/getting-started.md#set-up-your-computer-once)),
+  plus Home Assistant. Nothing is compiled.
 
 ## Installing
 
@@ -141,8 +142,8 @@ Assistant.
 ```
 git clone https://github.com/HuskerMinion/techo5-dot
 cd techo5-dot
-pwsh ./tools/install-dot.ps1 -Serial <adb serial> -DryRun   # checks, backups, download, boot image; writes nothing
-pwsh ./tools/install-dot.ps1 -Serial <adb serial> -Name "Kitchen"
+python3 tools/install-dot.py --serial <adb serial> --dry-run   # checks, backups, download, boot image; writes nothing
+python3 tools/install-dot.py --serial <adb serial> --name "Kitchen"
 ```
 
 The installer:
@@ -162,7 +163,8 @@ Home Assistant then finds the Dot as an ESPHome device.
 
 Updates after that come from this repo's releases, through Home Assistant's update card. They carry the
 root filesystem only; a Dot installed before the Bluetooth kernel gets it with
-`pwsh ./tools/update-boot.ps1 -Serial <serial> -Address <address>` (SSH switched on in Home Assistant).
+`python3 tools/update-boot.py --serial <serial> --address <address>` (SSH switched on in Home Assistant).
+On Windows, type `python` for `python3`.
 
 ## Where things are
 

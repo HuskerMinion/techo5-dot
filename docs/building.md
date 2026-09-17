@@ -1,103 +1,132 @@
 # Building TECHO5 Dot yourself
 
-You don't need any of this to install or update a Dot. `tools/install-dot.ps1` and Home Assistant's
+You don't need any of this to install or update a Dot. `tools/install-dot.py` and Home Assistant's
 update card use the signed releases. This page is for changing the daemon, the kernel or the root
-filesystem. The shared parts (the daemon, Go, the environment variables) are in TECHO5's
-[docs/building.md](https://github.com/HuskerMinion/techo5/blob/main/docs/building.md).
+filesystem.
 
-## Checkouts and tools
+## 1. Set up your computer
+
+Everything is Go, Python 3 and bash. The kernel and bluez-alsa build on Linux.
+
+**Linux** (Ubuntu 24.04 or Debian; other distributions have the same packages under similar names):
+
+```
+sudo apt install git python3 build-essential bc bison flex libssl-dev curl xz-utils bzip2
+```
+
+and Go 1.26 or later from [go.dev/dl](https://go.dev/dl/) (distribution packages are often older).
+
+**Windows:** install [Git for Windows](https://git-scm.com/download/win) (Git Bash runs the `.sh`
+scripts), [Go](https://go.dev/dl/) and [Python 3](https://www.python.org/downloads/). For the kernel
+and bluez-alsa, install WSL with Ubuntu (`wsl --install -d Ubuntu`) and the Linux packages above inside
+it. On Windows, type `python` where this page says `python3`.
+
+**macOS:** `xcode-select --install` (git, bash, Python 3), then `brew install go`. Everything but the
+kernel and bluez-alsa builds on macOS; for those two, use a Linux machine or virtual machine, or the
+release's kernel and root filesystem.
+
+Get the code. The Dot's daemon lives in TECHO5, so both repositories go side by side:
 
 ```
 git clone https://github.com/HuskerMinion/techo5
 git clone https://github.com/HuskerMinion/techo5-dot
+cd techo5-dot
 ```
 
-Side by side, as above, the scripts find each other; otherwise set `TECHO5` to the TECHO5 checkout.
-You need Go, Python 3 and PowerShell 7 (`pwsh`) on Windows, Linux or macOS. The kernel and bluez-alsa
-build in Linux or WSL (Ubuntu 24.04), with no root needed.
-
-Everything goes into git-ignored folders in this checkout: `inputs/` (`TECHO5_INPUTS`), `build/`
-(`TECHO5_WORK`) and `backups/` (`TECHO5_BACKUPS`).
-
-## 1. Inputs
+## 2. Fetch the inputs
 
 ```
-cd techo5
-pwsh ./tools/fetch-inputs.ps1 -Device dot -Dot ../techo5-dot -Out ../techo5-dot/inputs
+python3 ../techo5/tools/fetch-inputs.py --device dot --dot . --out inputs
 ```
 
-That fetches the Alpine base image, `busybox.static`, the wake word models, and the packages listed in
-[tools/linux/packages-rescue.txt](../tools/linux/packages-rescue.txt) (`inputs/apks-dot/`: the rescue
-environment's Wi-Fi, SSH and firewall) and [tools/linux/packages-bt.txt](../tools/linux/packages-bt.txt)
-(`inputs/apks-bt-dot/`: BlueZ, bluez-alsa's libraries and codecs), all from Alpine v3.24 armv7.
+That fills `inputs/` (git-ignored) with Alpine's base image, `busybox.static`, the wake word models, and
+the packages in [tools/linux/packages-rescue.txt](../tools/linux/packages-rescue.txt) (`apks-dot/`: the
+rescue environment's Wi-Fi, SSH and firewall) and [tools/linux/packages-bt.txt](../tools/linux/packages-bt.txt)
+(`apks-bt-dot/`: BlueZ, bluez-alsa's libraries and codecs).
 
-No firmware is an input: each Dot adopts its own firmware from its Fire OS system partition into the
-slot store on first boot (`tools/linux/rootfs/etc/techo5/boot.sh`).
+No firmware is an input: each Dot adopts its own from its Fire OS system partition into the slot store
+on first boot (`tools/linux/rootfs/etc/techo5/boot.sh`).
 
-## 2. The Bluetooth kernel
+## 3. The daemon and tools
+
+In bash (Linux, macOS, or Git Bash on Windows):
+
+```
+export GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0
+(cd ../techo5/echod && go build -tags dot -o ../../techo5-dot/bin/echod-dot ./cmd/echod)
+(cd ../techo5 && go build -o ../techo5-dot/bin/btbridge ./cmd/btbridge)
+go build -o bin/wmtup ./cmd/wmtup
+unset GOOS GOARCH GOARM CGO_ENABLED
+```
+
+## 4. The Bluetooth kernel (Linux)
 
 The stock Fire OS kernel has no Bluetooth stack. [tools/linux/build-kernel.sh](../tools/linux/build-kernel.sh)
-rebuilds it from Amazon's GPL source for Fire OS 6574.1 with Bluetooth added and the security
-backports in [tools/linux/kernel-patches](../tools/linux/kernel-patches). It downloads the source, the
-upstream Bluetooth files and the toolchain itself; the header explains each.
+rebuilds it from Amazon's GPL source for Fire OS 6574.1 with Bluetooth added and the security backports
+in [tools/linux/kernel-patches](../tools/linux/kernel-patches). It downloads the source, the upstream
+Bluetooth files and the toolchain itself; the header explains each. On Linux, or inside WSL's Ubuntu:
 
 ```
-# in Linux or WSL, from this checkout
 bash tools/linux/build-kernel.sh          # -> build/kernel/zImage-dtb
-bash tools/linux/build-kernel.sh --stock  # the control build: should match the unit's own kernel
 ```
 
-## 3. bluez-alsa
+## 5. bluez-alsa (Linux)
 
-Alpine's `bluealsa` crashes at start-up on the Dot.
-[tools/linux/build-bluealsa.sh](../tools/linux/build-bluealsa.sh) builds 4.3.1 the way Alpine does, plus
-the upstream fix, from checksummed downloads:
+Alpine's `bluealsa` crashes at start-up on the Dot. [tools/linux/build-bluealsa.sh](../tools/linux/build-bluealsa.sh)
+builds 4.3.1 the way Alpine does, plus the upstream fix, from checksummed downloads:
 
 ```
 bash tools/linux/build-bluealsa.sh        # -> build/bluealsa/bluealsa
 ```
 
-## 4. The daemon and tools
+Skipping steps 4 and 5? Take the release's kernel (the installer's default), and its bluez-alsa out of
+the release's root filesystem (`usr/bin/bluealsa` in `techo5-dot-rootfs.tar.gz`).
 
-`tools/release-dot.ps1` builds all three. By hand, for a test:
-
-```
-cd ../techo5/echod
-GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -tags dot -o ../../techo5-dot/bin/echod-dot ./cmd/echod
-cd .. && GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -o ../techo5-dot/bin/btbridge ./cmd/btbridge
-cd ../techo5-dot && GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -o bin/wmtup ./cmd/wmtup
-```
-
-(In PowerShell, set `$env:GOOS='linux'; $env:GOARCH='arm'; $env:GOARM='7'; $env:CGO_ENABLED='0'` first.)
-
-## 5. The root filesystem
+## 6. The root filesystem
 
 ```
-pwsh ./tools/linux/build-dot-rootfs.ps1 -Daemon bin/echod-dot -Release v0.0.0-test -Out build/rootfs.tar.gz
+python3 tools/linux/build-dot-rootfs.py --daemon bin/echod-dot --release v0.0.0-test --out build/rootfs.tar.gz
 ```
 
 [mkrootfs.py](../tools/linux/mkrootfs.py) unpacks the Alpine base and the packages, adds the binaries
-and [tools/linux/rootfs](../tools/linux/rootfs), and writes the tarball with root ownership, with no
-root, QEMU or WSL needed.
+and [tools/linux/rootfs](../tools/linux/rootfs), and writes the tarball with root ownership. It needs no
+root, QEMU or Linux.
 
-## 6. Installing your build
+## 7. Install your build
+
+On a Dot in TWRP or rooted Fire OS, the installer takes your files in place of the release's:
 
 ```
-pwsh ./tools/install-dot.ps1 -Serial <serial> -FromSource -Daemon bin/echod-dot -DryRun
-pwsh ./tools/install-dot.ps1 -Serial <serial> -FromSource -Daemon bin/echod-dot
+python3 tools/install-dot.py --serial <serial> --rootfs build/rootfs.tar.gz --kernel build/kernel/zImage-dtb --dry-run
+python3 tools/install-dot.py --serial <serial> --rootfs build/rootfs.tar.gz --kernel build/kernel/zImage-dtb
 ```
 
-`-FromSource` takes the root filesystem, packages and busybox from `inputs/` and the kernel from
-`build/kernel/zImage-dtb` (or `-Kernel`, or `-NoBluetoothKernel`). On a Dot already running TECHO5,
-a new kernel goes in with `tools/update-boot.ps1 -Kernel build/kernel/zImage-dtb`, and a new daemon
-can be copied over `/usr/local/bin/techo5` over SSH for a quick test.
+On a Dot already running TECHO5 (SSH switched on in Home Assistant, with a key):
 
-## 7. Releases (maintainer)
+- a new kernel: `python3 tools/update-boot.py --serial <serial> --address <address> --kernel build/kernel/zImage-dtb`;
+- a new daemon, until the next reboot:
+  `scp bin/echod-dot root@<address>:/tmp/echod-test` then
+  `ssh root@<address> 'mount --bind /tmp/echod-test /usr/local/bin/echod && killall echod'`.
+
+## Package versions
+
+The package lists name exact Alpine versions. Alpine keeps only the newest build of each package, so an
+old version eventually disappears from its mirror; `fetch-inputs.py` then takes the newest and says so.
+Releases don't depend on this: the rescue packages are published with each release, and the lists are
+brought up to date (and tested) before a release.
+
+## Releases (maintainer)
 
 ```
 pwsh ./tools/release-dot.ps1 -Version v0.6.0 -Notes "..." -DryRun
 ```
 
-It builds the daemon from the TECHO5 checkout, `btbridge` and `wmtup`, the root filesystem, and
-signs the manifest with `TECHO5_SIGN_KEY`. It publishes the kernel, the rescue packages and
-`SHA256SUMS` with it, which is what the installer downloads.
+A PowerShell script for the maintainer's Windows machine: it builds the daemon from the TECHO5
+checkout, `btbridge`, `wmtup` and the root filesystem, signs the manifest with `TECHO5_SIGN_KEY`, and
+publishes the kernel, the rescue packages and `SHA256SUMS` with it, which is what the installer
+downloads.
+
+## Where things default
+
+Everything goes into git-ignored folders in this checkout, and each can be moved with an environment
+variable: `inputs/` (`TECHO5_INPUTS`), `build/` (`TECHO5_WORK`), `backups/` (`TECHO5_BACKUPS`).

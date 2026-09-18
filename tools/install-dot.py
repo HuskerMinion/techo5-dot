@@ -22,6 +22,7 @@ https://github.com/HuskerMinion/techo5/blob/main/docs/getting-started.md
 """
 import argparse
 import glob
+import json
 import os
 import re
 import socket
@@ -35,6 +36,22 @@ from techo5lib import (CONSOLE_DOT, Adb, Console, ask, ask_wifi, default_dir, fa
 from dotimage import DotRelease, build_boot_image  # noqa: E402
 
 PARTS = ['preloader', 'kb', 'dkb', 'lk_a', 'lk_b', 'tee1', 'tee2', 'expdb', 'misc', 'persist', 'boot_a', 'boot_b', 'recovery']
+
+# Wake words beyond esphome's built-in set, from the community collection at
+# https://github.com/fwartner/home-assistant-wakewords-collection, which ships models with no manifest
+# alongside them — the phrase is supplied here and written into one. Kept in step with TECHO5's own
+# tools/fetch-inputs.py, which bundles the same set into the Show/Spot image.
+EXTRA_MODELS = {
+    'computer': ('en/computer/computer_v2.tflite', 'Computer'),
+    'jarvis': ('en/jarvis/jarvis_v2.tflite', 'Jarvis'),
+    'hey_friday': ('en/hey_friday/hey_Friday!.tflite', 'Hey Friday'),
+    'glados': ('en/glados/glados.tflite', 'GLaDOS'),
+    'hal': ('en/hal/hal_v2.tflite', 'HAL'),
+    'terminator': ('en/terminator/Terminator.tflite', 'Terminator'),
+    'marvin': ('en/marvin/marvin_v2.tflite', 'Marvin'),
+    'home_assistant': ('en/home_assistant/Home_assistant.tflite', 'Home Assistant'),
+}
+EXTRA_MODELS_REPO = 'https://raw.githubusercontent.com/fwartner/home-assistant-wakewords-collection/main'
 
 SLOT_SCRIPT = r'''set -e
 T=$1
@@ -80,7 +97,7 @@ def main():
     ap.add_argument('--kernel', help="a kernel you built (tools/linux/build-kernel.sh) instead of the release's")
     ap.add_argument('--no-bluetooth-kernel', action='store_true', help="keep the unit's own kernel, which has no Bluetooth")
     ap.add_argument('--rootfs', help="a root filesystem you built (tools/linux/build-dot-rootfs.py) instead of the release's")
-    ap.add_argument('--wake-words', default='okay_nabu,hey_jarvis,hey_mycroft', help='models for a unit that has none')
+    ap.add_argument('--wake-words', default='okay_nabu,hey_jarvis,hey_mycroft,' + ','.join(EXTRA_MODELS), help='models for a unit that has none')
     ap.add_argument('--ssh-key', help='an SSH public key allowed to log in as root once SSH is switched on')
     ap.add_argument('--wifi-ssid', help="a Wi-Fi network to join instead of the one Fire OS saved (asks for the passphrase)")
     ap.add_argument('--dry-run', action='store_true', help='checks, backups, download and boot image; write nothing')
@@ -234,10 +251,19 @@ def main():
         os.makedirs(models, exist_ok=True)
         words = [w.strip() for w in a.wake_words.split(',') if w.strip()]
         for w in words:
-            for ext in ('json', 'tflite'):
-                out = os.path.join(models, '%s.%s' % (w, ext))
-                if not os.path.exists(out):
-                    urllib.request.urlretrieve('https://raw.githubusercontent.com/esphome/micro-wake-word-models/main/models/v2/%s.%s' % (w, ext), out)
+            tf = os.path.join(models, '%s.tflite' % w)
+            js = os.path.join(models, '%s.json' % w)
+            if w in EXTRA_MODELS:
+                path, phrase = EXTRA_MODELS[w]
+                if not os.path.exists(tf):
+                    urllib.request.urlretrieve('%s/%s' % (EXTRA_MODELS_REPO, path), tf)
+                if not os.path.exists(js):
+                    with open(js, 'w') as f:
+                        json.dump({'wake_word': phrase, 'model': '%s.tflite' % w, 'trained_languages': ['en']}, f, indent=2)
+            else:
+                for ext, out in (('json', js), ('tflite', tf)):
+                    if not os.path.exists(out):
+                        urllib.request.urlretrieve('https://raw.githubusercontent.com/esphome/micro-wake-word-models/main/models/v2/%s.%s' % (w, ext), out)
         note('wake word models: %s' % ', '.join(words))
     else:
         note('%s wake word models already on the unit' % have_models)

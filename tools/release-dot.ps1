@@ -35,6 +35,10 @@ param(
     [string]$Inputs = $(if ($env:TECHO5_INPUTS) { $env:TECHO5_INPUTS } else { Join-Path (Join-Path $PSScriptRoot '..') 'inputs' }),
     [string]$Go = 'go',
     [switch]$Prerelease,
+    # An already-built, already-attested echod-arm-dot from TECHO5's "Build release binaries" GitHub
+    # Actions workflow (verify with `gh attestation verify <file> --repo HuskerMinion/techo5`). When
+    # given, skips building the daemon here, so the release ships exactly what CI attested.
+    [string]$PrebuiltArmDot = '',
     # Build and sign everything into bin\release\<version>, publish nothing.
     [switch]$DryRun
 )
@@ -56,13 +60,24 @@ $date = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 $pkg = 'github.com/HuskerMinion/techo5/echod/internal/layout'
 $ldflags = "-s -w -X '$pkg.Version=$Version' -X '$pkg.GitCommit=$commit' -X '$pkg.BuildDate=$date'"
 
-Write-Host "== building echod-arm-dot $Version (TECHO5 $commit)"
+if ($PrebuiltArmDot) {
+    Write-Host "== using prebuilt echod-arm-dot (CI, TECHO5 $commit)"
+    if (-not (Test-Path -LiteralPath $PrebuiltArmDot -PathType Leaf)) { throw "prebuilt binary not found: $PrebuiltArmDot" }
+    Copy-Item $PrebuiltArmDot (Join-Path $out 'echod-arm-dot') -Force
+} else {
+    Write-Host "== building echod-arm-dot $Version (TECHO5 $commit)"
+    $env:GOOS = 'linux'; $env:GOARCH = 'arm'; $env:GOARM = '7'; $env:CGO_ENABLED = '0'
+    try {
+        Push-Location (Join-Path $Techo5 'echod')
+        & $Go build -tags dot -trimpath -ldflags $ldflags -o (Join-Path $out 'echod-arm-dot') ./cmd/echod
+        if ($LASTEXITCODE -ne 0) { throw 'daemon build failed' }
+        Pop-Location
+    } finally {
+        $env:GOOS = $null; $env:GOARCH = $null; $env:GOARM = $null; $env:CGO_ENABLED = $null
+    }
+}
 $env:GOOS = 'linux'; $env:GOARCH = 'arm'; $env:GOARM = '7'; $env:CGO_ENABLED = '0'
 try {
-    Push-Location (Join-Path $Techo5 'echod')
-    & $Go build -tags dot -trimpath -ldflags $ldflags -o (Join-Path $out 'echod-arm-dot') ./cmd/echod
-    if ($LASTEXITCODE -ne 0) { throw 'daemon build failed' }
-    Pop-Location
     Push-Location $Techo5
     & $Go build -trimpath -ldflags '-s -w' -o (Join-Path (Join-Path $root 'bin') 'btbridge') ./cmd/btbridge
     if ($LASTEXITCODE -ne 0) { throw 'btbridge build failed' }

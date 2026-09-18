@@ -35,9 +35,12 @@ param(
     [string]$Inputs = $(if ($env:TECHO5_INPUTS) { $env:TECHO5_INPUTS } else { Join-Path (Join-Path $PSScriptRoot '..') 'inputs' }),
     [string]$Go = 'go',
     [switch]$Prerelease,
-    # An already-built, already-attested echod-arm-dot from TECHO5's "Build release binaries" GitHub
-    # Actions workflow (verify with `gh attestation verify <file> --repo HuskerMinion/techo5`). When
-    # given, skips building the daemon here, so the release ships exactly what CI attested.
+    # The echod-arm-dot TECHO5's "Build release binaries" GitHub Actions workflow built for this release
+    # (in the TECHO5 checkout: git tag dot-$Version; git push origin dot-$Version). When given, skips
+    # building the daemon here, so the release ships exactly what CI attested — but only once
+    # `gh attestation verify` confirms CI built it from refs/tags/dot-$Version: a binary built from a
+    # branch or by hand is stamped with another version, and Home Assistant would then offer the
+    # update forever after it was installed.
     [string]$PrebuiltArmDot = '',
     # Build and sign everything into bin\release\<version>, publish nothing.
     [switch]$DryRun
@@ -61,8 +64,10 @@ $pkg = 'github.com/HuskerMinion/techo5/echod/internal/layout'
 $ldflags = "-s -w -X '$pkg.Version=$Version' -X '$pkg.GitCommit=$commit' -X '$pkg.BuildDate=$date'"
 
 if ($PrebuiltArmDot) {
-    Write-Host "== using prebuilt echod-arm-dot (CI, TECHO5 $commit)"
+    Write-Host "== using prebuilt echod-arm-dot (CI, tag dot-$Version)"
     if (-not (Test-Path -LiteralPath $PrebuiltArmDot -PathType Leaf)) { throw "prebuilt binary not found: $PrebuiltArmDot" }
+    & gh attestation verify $PrebuiltArmDot --repo HuskerMinion/techo5 --source-ref "refs/tags/dot-$Version" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "$PrebuiltArmDot is not attested as built by CI from tag dot-$Version" }
     Copy-Item $PrebuiltArmDot (Join-Path $out 'echod-arm-dot') -Force
 } else {
     Write-Host "== building echod-arm-dot $Version (TECHO5 $commit)"

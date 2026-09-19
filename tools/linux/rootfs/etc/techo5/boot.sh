@@ -71,6 +71,18 @@ say "userdata $([ -d /data/techo5-linux ] && echo mounted || echo unavailable)"
 # EchoLocal's install left the state directory writable by everyone.
 $BB chmod 700 /data/techo5-linux 2>/dev/null
 [ -d /data/misc/echolocal ] && $BB chmod 700 /data/misc/echolocal
+# The wake word models the image carries, any this unit does not have yet: the installer copied
+# a set once, and a model added to the image since reaches the unit at its next update, so every
+# unit offers the same words. Nothing on the unit is replaced or removed.
+if [ -d /usr/share/techo5/models ] && [ -d /data/misc/echolocal ]; then
+	$BB mkdir -p /data/misc/echolocal/models
+	n=0
+	for f in /usr/share/techo5/models/*; do
+		[ -e "/data/misc/echolocal/models/${f##*/}" ] && continue
+		$BB cp "$f" /data/misc/echolocal/models/ && n=$((n + 1))
+	done
+	[ $n -gt 0 ] && say "wake word models: $n files added from the image"
+fi
 
 # --- Inbound closed except what the Dot serves, before any network exists (usr/local/sbin/techo5-firewall).
 /usr/local/sbin/techo5-firewall 2>&1 | while read -r l; do say "$l"; done

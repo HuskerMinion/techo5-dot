@@ -35,6 +35,10 @@ def main():
     for f in (a.daemon, a.wmtup, a.btbridge, a.bluealsa, busybox):
         if not os.path.exists(f):
             sys.exit('missing %s (docs/building.md says how to fetch or build it)' % f)
+    # The wake word models every unit offers: boot.sh adds any a unit is missing.
+    models = sorted(glob.glob(j(a.inputs, 'models', '*.tflite')) + glob.glob(j(a.inputs, 'models', '*.json')))
+    if not any(m.endswith('.tflite') for m in models):
+        sys.exit('no wake word models in %s (tools/fetch-inputs.py in TECHO5)' % j(a.inputs, 'models'))
     alpine = sorted(glob.glob(j(a.inputs, 'alpine-minirootfs-*-armv7.tar.gz')))
     if not alpine:
         sys.exit('no Alpine armv7 minirootfs in %s (tools/fetch-inputs.py in TECHO5)' % a.inputs)
@@ -48,6 +52,8 @@ def main():
            '--add', a.daemon + '=/usr/local/bin/echod', '--add', a.btbridge + '=/usr/local/bin/btbridge',
            '--add', a.bluealsa + '=/usr/bin/bluealsa', '--overlay', j(HERE, 'rootfs'),
            '--release', 'techo5-dot %s (%s)' % (a.release, commit), '-o', a.out]
+    for m in models:
+        cmd += ['--data', '%s=/usr/share/techo5/models/%s' % (m, os.path.basename(m))]
     if subprocess.run(cmd).returncode != 0:
         sys.exit('building the root filesystem failed')
     print('rootfs for release %s -> %s' % (a.release, a.out))

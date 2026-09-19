@@ -124,6 +124,7 @@ def main():
     ap.add_argument("--apkdir", action="append", default=[],
                     help="directory of .apk packages to unpack (repeatable)")
     ap.add_argument("--add", action="append", default=[], metavar="SRC=DEST", help="an executable")
+    ap.add_argument("--data", action="append", default=[], metavar="SRC=DEST", help="a data file (0644)")
     ap.add_argument("--overlay", help="directory copied in as it stands")
     ap.add_argument("--release", default="", help="what to write in /etc/techo5-release")
     ap.add_argument("-o", "--output", required=True)
@@ -137,16 +138,16 @@ def main():
             if f.endswith(".apk"):
                 r.add_tar(os.path.join(d, f), skip_dotfiles=True)
 
-    for spec in a.add:
+    for spec, mode in [(s, 0o755) for s in a.add] + [(s, 0o644) for s in a.data]:
         src, _, dest = spec.partition("=")
         if not dest:
-            sys.exit(f"--add wants SRC=DEST, got {spec!r}")
+            sys.exit(f"--add and --data want SRC=DEST, got {spec!r}")
         # A shell that rewrites unix paths for Windows turns /usr/local/bin/x into
         # C:/Program Files/Git/usr/local/bin/x, and the tree then grows a C: directory. Take the
         # destination back rather than trusting what arrived.
         if ":" in dest:
             dest = "/" + dest.split(":", 1)[1].split("/", 3)[-1]
-        r.file(dest, open(src, "rb").read(), 0o755)
+        r.file(dest, open(src, "rb").read(), mode)
 
     if a.overlay:
         r.add_dir(a.overlay)

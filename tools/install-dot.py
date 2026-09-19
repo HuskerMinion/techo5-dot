@@ -97,7 +97,7 @@ def main():
     ap.add_argument('--kernel', help="a kernel you built (tools/linux/build-kernel.sh) instead of the release's")
     ap.add_argument('--no-bluetooth-kernel', action='store_true', help="keep the unit's own kernel, which has no Bluetooth")
     ap.add_argument('--rootfs', help="a root filesystem you built (tools/linux/build-dot-rootfs.py) instead of the release's")
-    ap.add_argument('--wake-words', default='okay_nabu,hey_jarvis,hey_mycroft,' + ','.join(EXTRA_MODELS), help='models for a unit that has none')
+    ap.add_argument('--wake-words', default='okay_nabu,hey_jarvis,hey_mycroft,alexa,' + ','.join(EXTRA_MODELS), help='models for a unit that has none')
     ap.add_argument('--ssh-key', help='an SSH public key allowed to log in as root once SSH is switched on')
     ap.add_argument('--wifi-ssid', help="a Wi-Fi network to join instead of the one Fire OS saved (asks for the passphrase)")
     ap.add_argument('--dry-run', action='store_true', help='checks, backups, download and boot image; write nothing')

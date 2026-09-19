@@ -225,8 +225,16 @@ def main():
     have_name = adb.sh('cat /data/misc/echolocal/name 2>/dev/null')
     have_key = adb.sh('test -s /data/misc/echolocal/psk && echo yes') == 'yes'
     name, psk, key_file = None, None, None
+    shown = None  # the name and key printed at the end, for adding the Dot to Home Assistant
     if have_name and have_key:
         note("keeping '%s' and its key: Home Assistant sees the same device" % have_name)
+        key = adb.sh('cat /data/misc/echolocal/psk')
+        if valid_api_key(key):
+            key_file = a.key_file or os.path.join(unit, 'home-assistant.key')
+            if not os.path.exists(key_file):
+                with open(key_file, 'w') as f:
+                    f.write(key)
+            shown = (have_name, key)
     else:
         note('%s has no Home Assistant identity yet' % a.serial)
         name = a.name or ask('Name for this Dot in Home Assistant (for example: Kitchen)')
@@ -244,6 +252,7 @@ def main():
                 f.write(psk)
             note('new key written to %s; Home Assistant asks for it when the device is added' % key_file)
         note("will provision '%s'" % name)
+        shown = (name, psk)
     models = None
     have_models = adb.sh('ls /data/misc/echolocal/models/*.tflite 2>/dev/null | wc -l') or '0'
     if int(have_models or 0) == 0:
@@ -385,8 +394,8 @@ def main():
             up = api_port_open(ip)
 
     print()
-    if name:
-        print("Home Assistant will discover '%s' as an ESPHome device. When it asks for the encryption key, paste:\n\n    %s\n\n(also saved in %s)\n" % (name, psk, key_file))
+    if shown:
+        print("Home Assistant will discover '%s' as an ESPHome device. When it asks for the encryption key, paste:\n\n    %s\n\n(also saved in %s)\n" % (shown + (key_file,)))
     if healthy and up:
         print("Done: %s is running TECHO5 Linux, healthy, and Home Assistant's API port answers at %s:6053." % (a.serial, ip))
         print('      SSH: switch it on in Home Assistant, then ssh root@%s (wifi-set, slotctl status, to-twrp)' % ip)

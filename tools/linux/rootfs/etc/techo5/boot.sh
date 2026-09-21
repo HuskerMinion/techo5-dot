@@ -108,12 +108,35 @@ if [ -d $g ]; then
 	say "usb console $([ -e /dev/ttyGS0 ] && echo up || echo missing)"
 fi
 
+# --- The unit's audio coefficients: the speaker's tuning (lib/asp) and the microphones' beamformer
+# (lib/subband), which Fire OS keeps beside the firmware and which nothing carried across until now.
+# Without them the speaker plays untuned, the Speaker EQ switch cannot turn on because there is no
+# chain for it to enable, and the seven microphones run without the vendor's beamforming. Amazon's,
+# so never in a published rootfs: every unit takes its own, exactly as it does its firmware.
+adopt_audio() {
+	[ -e $AA/MBCL.cfg ] && return 0
+	$BB mkdir -p $AA
+	if [ -d /etc/audio-algorithms ] && [ ! -L /etc/audio-algorithms ]; then
+		$BB cp /etc/audio-algorithms/* $AA/ 2>/dev/null
+		say "audio coefficients taken from this slot into $AA"
+	elif $BB mount -t ext4 -o ro,noatime $SYSTEM /android 2>/dev/null; then
+		$BB cp /android/system/vendor/etc/audio-algorithms/* $AA/ 2>/dev/null
+		$BB umount /android
+		say "audio coefficients adopted from the system partition: $($BB ls $AA 2>/dev/null | $BB wc -l) files"
+	else
+		say "no audio coefficients to adopt: the speaker plays untuned"
+	fi
+	$BB sync
+}
+
 # --- Wi-Fi firmware. The unit's own, adopted once into the store and shared by both slots, so a slot
 # that arrives by update needs nothing from Android. It is Amazon's, so it is never in a published
 # rootfs — every unit takes it from itself: from a slot that adopted it before the store kept it, or
 # from Android's system partition, which is then never mounted again.
 FW=$S/firmware
+AA=$S/audio-algorithms
 [ -d $S ] || FW=/etc/firmware.slot
+[ -d $S ] || AA=/etc/audio-algorithms.slot
 if [ ! -e $FW/WIFI_RAM_CODE_8163 ]; then
 	$BB mkdir -p $FW
 	if [ -e /etc/firmware/WIFI_RAM_CODE_8163 ] && [ ! -L /etc/firmware ]; then
@@ -142,6 +165,18 @@ if [ -e $FW/WIFI_RAM_CODE_8163 ]; then
 	# Without it the chip powers on and wlanProbe fails with "Open FW image: WIFI_RAM_CODE failed" — the
 	# write to /dev/wmtWifi returns EIO a second later and nothing else says why.
 	[ -e /vendor/firmware/WIFI_RAM_CODE_8163 ] || $BB ln -sfn /system/vendor /vendor
+	adopt_audio
+	if [ -e $AA/MBCL.cfg ]; then
+		# lib/asp and lib/subband read /vendor/etc/audio-algorithms. /vendor is usually the symlink to
+		# /system/vendor made just above; where it is a directory of its own, the link goes in it.
+		$BB mkdir -p /system/vendor/etc
+		$BB ln -sfn $AA /system/vendor/etc/audio-algorithms
+		if [ ! -L /vendor ]; then
+			$BB mkdir -p /vendor/etc
+			$BB ln -sfn $AA /vendor/etc/audio-algorithms
+		fi
+		say "audio coefficients at /vendor/etc/audio-algorithms"
+	fi
 	/usr/local/bin/wmtup -patches $FW/ -power >> /data/techo5-linux/wmtup.log 2>&1 &
 	i=0
 	while [ $i -lt 45 ] && [ ! -e /sys/class/net/wlan0 ]; do $BB sleep 1; i=$((i + 1)); done

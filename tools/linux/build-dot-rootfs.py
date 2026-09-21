@@ -48,6 +48,7 @@ def main():
         commit = 'unknown'
     cmd = [sys.executable, j(HERE, 'mkrootfs.py'), '--rootfs', alpine[0],
            '--apkdir', j(a.inputs, 'apks-dot'), '--apkdir', j(a.inputs, 'apks-bt-dot'),
+           '--apkdir', j(a.inputs, 'apks-rootfs-dot'),
            '--add', busybox + '=/bin/busybox.static', '--add', a.wmtup + '=/usr/local/bin/wmtup',
            '--add', a.daemon + '=/usr/local/bin/echod', '--add', a.btbridge + '=/usr/local/bin/btbridge',
            '--add', a.bluealsa + '=/usr/bin/bluealsa', '--overlay', j(HERE, 'rootfs'),

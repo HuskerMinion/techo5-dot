@@ -1,0 +1,8 @@
+# Packages the running system wants that the rescue initramfs does not. They are unpacked into the
+# root filesystem only (apks-rootfs-dot/), because the initramfs is flashed to a partition with a size
+# of its own and everything in packages-rescue.txt lands in both.
+#
+# tzdata: the zone database. Without it a time zone can only be followed from Home Assistant - the
+# setup page's list of regions and zones is read out of /usr/share/zoneinfo, and a device that has
+# never paired has no way to say where it is.
+tzdata-2026d-r0.apk

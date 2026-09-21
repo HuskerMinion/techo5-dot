@@ -41,8 +41,10 @@ python3 ../techo5/tools/fetch-inputs.py --device dot --dot . --out inputs
 
 That fills `inputs/` (git-ignored) with Alpine's base image, `busybox.static`, the wake word models, and
 the packages in [tools/linux/packages-rescue.txt](../tools/linux/packages-rescue.txt) (`apks-dot/`: the
-rescue environment's Wi-Fi, SSH and firewall) and [tools/linux/packages-bt.txt](../tools/linux/packages-bt.txt)
-(`apks-bt-dot/`: BlueZ, bluez-alsa's libraries and codecs).
+rescue environment's Wi-Fi, SSH and firewall), [tools/linux/packages-bt.txt](../tools/linux/packages-bt.txt)
+(`apks-bt-dot/`: BlueZ, bluez-alsa's libraries and codecs) and
+[tools/linux/packages-rootfs.txt](../tools/linux/packages-rootfs.txt) (`apks-rootfs-dot/`: what only the
+running system needs, which the rescue initramfs is too small to carry).
 
 No firmware is an input: each Dot adopts its own from its Fire OS system partition into the slot store
 on first boot (`tools/linux/rootfs/etc/techo5/boot.sh`).

@@ -134,6 +134,8 @@ def main():
     r.add_tar(a.rootfs, skip_dotfiles=True)
 
     for d in a.apkdir:
+        if not os.path.isdir(d):
+            sys.exit(f"no package directory at {d} (fetch-inputs.py fills it)")
         for f in sorted(os.listdir(d)):
             if f.endswith(".apk"):
                 r.add_tar(os.path.join(d, f), skip_dotfiles=True)

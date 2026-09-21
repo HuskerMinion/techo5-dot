@@ -39,7 +39,7 @@ setting its clock.
 | 🎙️ **All seven microphones** | Averaged, with echo cancellation, and a wake word heard on the device. |
 | 🔊 **A Bluetooth speaker again** | Pair a phone, or send the Dot's audio to a speaker; a Home Assistant Bluetooth proxy on top. |
 | 📞 **A speakerphone again** | Calls through your own SIP provider, placed by voice or from Home Assistant, answered with the action button; a help call that alerts your phones and dials people in turn. |
-| 🔐 **Locked down** | A firewall that lets in only Home Assistant, mDNS, SSH and Sendspin; SSH is keys-only and starts off. |
+| 🔐 **Locked down** | A firewall that lets in only Home Assistant, mDNS, SSH, Sendspin and the setup page; SSH is keys-only and starts off, and the setup page answers only while it is open. |
 | 🔄 **Signed updates with rollback** | ed25519-signed releases install into a spare slot and roll back on their own if they don't come up healthy. |
 
 **Built on [EchoLocal](https://github.com/ygelfand/echolocal)** by Yuri Gelfand (MIT), which first
@@ -97,7 +97,7 @@ Echo Show 5. Both run the same daemon source, built per device.
 | Routines and smart home control | Alexa | Whatever Home Assistant does ✅ |
 | Updates | Amazon, automatic | Signed releases from this repo, offered in Home Assistant, A/B slots with automatic rollback ✅ |
 | Remote access | None | SSH, keys only, behind a Home Assistant switch that starts off ✅ |
-| Network exposure | Amazon's | Firewall: inbound only the Home Assistant API, mDNS, SSH and Sendspin ✅ |
+| Network exposure | Amazon's | Firewall: inbound only the Home Assistant API, mDNS, SSH, Sendspin and the setup page ✅ |
 | Changing Wi-Fi | Alexa app | `wifi-set` on the Dot, or `tools/set-wifi.py` from a computer over USB ✅ |
 | If it won't boot | Factory reset | Rescue mode (USB console, SSH, firewall) after five bad boots. Fire OS and TWRP are still on the device, one command away ✅ |
 

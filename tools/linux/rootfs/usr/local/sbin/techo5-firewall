@@ -3,8 +3,10 @@
 # by the rescue initramfs before the network comes up; safe to run again.
 #
 # In:  Home Assistant's API (6053/tcp), mDNS (5353/udp), SSH (22/tcp; dropbear listens only while
-#      the SSH switch is on and a key is set), Sendspin audio (8928/tcp), DHCP replies, ping, IPv6
-#      neighbour discovery, and anything answering a connection the Dot made.
+#      the SSH switch is on and a key is set), Sendspin audio (8928/tcp), the setup page (8181/tcp;
+#      the daemon binds it only while the page is open, so it refuses connections the rest of the
+#      time, the same arrangement as Sendspin's), DHCP replies, ping, IPv6 neighbour discovery, and
+#      anything answering a connection the Dot made.
 # Out: everything, as before.
 #
 # The kernel has iptables but not nftables, so the legacy tools are the ones that work.
@@ -24,6 +26,7 @@ for T in iptables-legacy ip6tables-legacy; do
 	$T -A INPUT -p udp --dport 5353 -j ACCEPT
 	$T -A INPUT -p tcp --dport 22 -j ACCEPT
 	$T -A INPUT -p tcp --dport 8928 -j ACCEPT
+	$T -A INPUT -p tcp --dport 8181 -j ACCEPT
 done
 iptables-legacy -A INPUT -p udp --sport 67 --dport 68 -j ACCEPT
 iptables-legacy -A INPUT -p icmp -j ACCEPT
@@ -33,4 +36,4 @@ ip6tables-legacy -A INPUT -p udp --sport 547 --dport 546 -j ACCEPT
 ok=1
 iptables-legacy -P INPUT DROP || ok=
 ip6tables-legacy -P INPUT DROP || ok=
-[ -n "$ok" ] && echo "techo5-firewall: inbound closed except 6053, 5353, 22, 8928" >&2
+[ -n "$ok" ] && echo "techo5-firewall: inbound closed except 6053, 5353, 22, 8928, 8181" >&2

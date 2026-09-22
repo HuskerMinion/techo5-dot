@@ -119,14 +119,53 @@ def read_bootimg(path):
     return hdr, kernel, ramdisk, ps
 
 
+def cmdline_words(cmd):
+    """The kernel command line split into words, with quoted values kept whole.
+
+    A word can carry spaces inside double quotes, and on an Android image one routinely does:
+    dm="system none ro,0 1 android-verity". Splitting on whitespace tears that into five pieces, so
+    dropping the one that starts with dm= leaves the other four behind as words in their own right -
+    a command line that is worse than the one we were trying to clean up, and which still looks
+    plausible at a glance. The kernel's own parser (lib/cmdline.c) works this way.
+    """
+    words, word, quoted = [], bytearray(), False
+    for b in cmd:
+        c = bytes([b])
+        if c == b'"':
+            quoted = not quoted
+            word += c
+        elif c.isspace() and not quoted:
+            if word:
+                words.append(bytes(word))
+                word = bytearray()
+        else:
+            word += c
+    if word:
+        words.append(bytes(word))
+    return words
+
+
 def write_bootimg(hdr, kernel, ramdisk, ps, out, cmdline_append=None, cmdline_drop=()):
     pg = lambda n: ((n + ps - 1) // ps) * ps
     struct.pack_into("<I", hdr, 8, len(kernel))
     struct.pack_into("<I", hdr, 16, len(ramdisk))
     struct.pack_into("<I", hdr, 24, 0)  # no second stage
-    if cmdline_append:
+    if cmdline_append or cmdline_drop:
         cmd = bytes(hdr[64:576]).split(b"\0")[0]
-        cmd = (cmd + b" " + cmdline_append.encode()).strip()
+        # Dropping first, so that a word can be replaced by dropping it and appending the new one in
+        # the same run. The match is on a prefix, because what has to go is "root=<whatever the donor
+        # image booted>", not a word anyone can spell out in advance.
+        #
+        # This was accepted and then ignored: the parameter was declared, threaded through both call
+        # sites and passed by every caller, and the body never looked at it. So dotimage.py and
+        # build-image.sh have both been asking for skip_initramfs, root= and dm= to come out, and
+        # every Dot boot image built since carries them - a command line telling the kernel to skip
+        # the initramfs and mount a root nobody meant it to mount. It works because what is appended
+        # afterwards is what the image's own init reads, not because the donor's words are harmless.
+        cmd = b" ".join(w for w in cmdline_words(cmd)
+                        if not any(w.startswith(d.encode()) for d in cmdline_drop))
+        if cmdline_append:
+            cmd = (cmd + b" " + cmdline_append.encode()).strip()
         if len(cmd) > 511:
             sys.exit("command line too long")
         hdr[64:576] = cmd + b"\0" * (512 - len(cmd))

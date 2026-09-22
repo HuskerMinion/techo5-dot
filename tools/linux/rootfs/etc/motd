@@ -1,0 +1,2 @@
+TECHO5 — Echo Dot 2 on Linux. State is on /data, slots are managed with slotctl,
+the daemon log is /data/techo5-linux/echod.log and the binary is echod, not techo5.

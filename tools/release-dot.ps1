@@ -8,10 +8,13 @@
   separate from the Echo Show's, so a Dot release never becomes the Show's latest.
 
   Built from the TECHO5 worktree on its dot/mic-average branch with -tags dot:
-    echod-arm-dot             the daemon (also what a Fire OS Dot would take as a binary update)
-    techo5-dot-rootfs.tar.gz  the whole root filesystem for a slot (tools/linux/build-dot-rootfs.py)
-    manifest.json             versions, URLs, sizes and sha256 of both (cmd/mkmanifest)
-    manifest.json.sig         the release key's ed25519 signature over manifest.json
+    echod-arm-dot                     the daemon (also what a Fire OS Dot would take as a binary update)
+    techo5-dot-rootfs-<version>.tar.gz  the whole root filesystem for a slot (tools/linux/build-dot-rootfs.py)
+    manifest.json                     versions, URLs, sizes and sha256 of both (cmd/mkmanifest)
+    manifest.json.sig                 the release key's ed25519 signature over manifest.json
+
+  The release is tagged dot-vX.Y.Z; the version inside it is vX.Y.Z. Those are different strings and
+  the script keeps them apart, because a manifest carrying the tag is an update card nobody can clear.
 
   Nothing unit-specific is in any of them: no firmware, keys, Wi-Fi or Home Assistant identity, and no
   boot image (those are built per unit by the installer from the unit's own backup).
@@ -47,6 +50,13 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $repo = 'HuskerMinion/techo5-dot'
+# The tag says which device a release is for; the version says which build it is. They are not the same
+# string and must not be swapped: the tag names the release (and the CI tag the binary was attested
+# from), while $Version is what the daemon is stamped with and the only thing that belongs in the
+# manifest. A manifest naming the tag differs forever from what a Dot reports as running, and Home
+# Assistant offers an update whenever the two differ - which is how v0.5.9 and v0.5.10 shipped with an
+# update card nobody could clear. mkmanifest refuses a tag now; this script keeps them apart.
+$tag = "dot-$Version"
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
 $out = Join-Path (Join-Path (Join-Path $root 'bin') 'release') $Version
 New-Item -ItemType Directory -Force $out | Out-Null
@@ -64,10 +74,10 @@ $pkg = 'github.com/HuskerMinion/techo5/echod/internal/layout'
 $ldflags = "-s -w -X '$pkg.Version=$Version' -X '$pkg.GitCommit=$commit' -X '$pkg.BuildDate=$date'"
 
 if ($PrebuiltArmDot) {
-    Write-Host "== using prebuilt echod-arm-dot (CI, tag dot-$Version)"
+    Write-Host "== using prebuilt echod-arm-dot (CI, tag $tag)"
     if (-not (Test-Path -LiteralPath $PrebuiltArmDot -PathType Leaf)) { throw "prebuilt binary not found: $PrebuiltArmDot" }
-    & gh attestation verify $PrebuiltArmDot --repo HuskerMinion/techo5 --source-ref "refs/tags/dot-$Version" | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "$PrebuiltArmDot is not attested as built by CI from tag dot-$Version" }
+    & gh attestation verify $PrebuiltArmDot --repo HuskerMinion/techo5 --source-ref "refs/tags/$tag" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "$PrebuiltArmDot is not attested as built by CI from tag $tag" }
     Copy-Item $PrebuiltArmDot (Join-Path $out 'echod-arm-dot') -Force
 } else {
     Write-Host "== building echod-arm-dot $Version (TECHO5 $commit)"
@@ -96,10 +106,16 @@ try {
 }
 
 Write-Host "== root filesystem"
-$rootfs = Join-Path $out 'techo5-dot-rootfs.tar.gz'
+$rootfs = Join-Path $out "techo5-dot-rootfs-$Version.tar.gz"
 $py = if ($IsLinux -or $IsMacOS) { 'python3' } else { 'python' }
 & $py (Join-Path (Join-Path (Join-Path $root 'tools') 'linux') 'build-dot-rootfs.py') --daemon (Join-Path $out 'echod-arm-dot') --release $Version --inputs $Inputs --bluealsa $Bluealsa --out $rootfs
 if ($LASTEXITCODE -ne 0) { throw 'building the root filesystem failed' }
+# The root filesystem records which release it is, and that is what a Dot reports as running once it
+# boots. Home Assistant compares it against what the manifest offers and shows an update whenever the
+# two differ, so a disagreement here becomes a card no install clears. Proved on the tarball that was
+# just built, as the Spot's release does, rather than on somebody's unit.
+$release = (& tar -xzOf $rootfs ./etc/techo5-release) -join ''
+if ($release -notmatch "techo5-dot $([regex]::Escape($Version)) ") { throw "the root filesystem says '$release', not $Version" }
 
 Write-Host "== Bluetooth kernel, rescue packages and checksums"
 Copy-Item -Force $Kernel (Join-Path $out 'techo5-dot-kernel-bt.zImage-dtb')
@@ -112,16 +128,16 @@ Pop-Location
 
 Write-Host "== signed manifest"
 Push-Location (Join-Path $Techo5 'echod')
-$from = "https://github.com/$repo/releases/download/$Version"
+$from = "https://github.com/$repo/releases/download/$tag"
 & $Go run ./cmd/mkmanifest -version $Version -title "TECHO5 Dot $Version" -notes $Notes `
-    -release-url "https://github.com/$repo/releases/tag/$Version" -from $from `
+    -release-url "https://github.com/$repo/releases/tag/$tag" -from $from `
     -arm-dot (Join-Path $out 'echod-arm-dot') -rootfs-arm-dot $rootfs `
     -out (Join-Path $out 'manifest.json') -sign-key $SignKey
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'mkmanifest failed' }
 Pop-Location
 Get-Content (Join-Path $out 'manifest.json')
 
-$names = 'echod-arm-dot', 'techo5-dot-rootfs.tar.gz', 'manifest.json', 'manifest.json.sig', 'techo5-dot-kernel-bt.zImage-dtb', 'techo5-dot-rescue-apks.tar'
+$names = 'echod-arm-dot', "techo5-dot-rootfs-$Version.tar.gz", 'manifest.json', 'manifest.json.sig', 'techo5-dot-kernel-bt.zImage-dtb', 'techo5-dot-rescue-apks.tar'
 # SHA256SUMS: what the installer checks the kernel and the rescue packages against.
 $sums = $names | ForEach-Object { "$((Get-FileHash -Algorithm SHA256 (Join-Path $out $_)).Hash.ToLower())  $_" }
 [IO.File]::WriteAllText((Join-Path $out 'SHA256SUMS'), ($sums -join "`n") + "`n")
@@ -130,10 +146,10 @@ if ($DryRun) {
     Write-Host "Dry run: release files are in $out; nothing published."
     return
 }
-Write-Host "== release $Version on $repo"
+Write-Host "== release $tag on $repo"
 $Notes += "`n`nThe Bluetooth kernel (techo5-dot-kernel-bt.zImage-dtb, Linux 3.18.19, GPL-2.0) is built by tools/linux/build-kernel.sh from Amazon's GPL source for the Echo Dot 2nd gen (Echo_Dot_src-6.5.7.1) with the configuration and backports in tools/linux."
-$ghArgs = @('release', 'create', $Version) + $assets + @('--repo', $repo, '--title', "TECHO5 Dot $Version", '--notes', $Notes)
+$ghArgs = @('release', 'create', $tag) + $assets + @('--repo', $repo, '--title', "TECHO5 Dot $Version", '--notes', $Notes)
 if ($Prerelease) { $ghArgs += '--prerelease' }
 & gh @ghArgs
 if ($LASTEXITCODE -ne 0) { throw 'gh release create failed' }
-Write-Host "published: https://github.com/$repo/releases/tag/$Version"
+Write-Host "published: https://github.com/$repo/releases/tag/$tag"

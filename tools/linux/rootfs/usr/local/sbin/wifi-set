@@ -2,7 +2,7 @@
 # wifi-set: change the Wi-Fi network this Dot joins, without Fire OS.
 #
 #   wifi-set "Network name" "passphrase"     join this network from now on
-#   wifi-set --hex <ssid-hex> <psk-hex>      the same, already encoded (what tools/set-wifi.ps1 sends)
+#   wifi-set --hex <ssid-hex> <psk-hex>      the same, already encoded (what tools/set-wifi.py sends)
 #   wifi-set --forget                        go back to the network Fire OS saved
 #
 # The passphrase is never stored: wpa_passphrase turns it into the 64-hex key wpa_supplicant uses, and

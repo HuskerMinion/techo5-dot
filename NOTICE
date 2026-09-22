@@ -39,7 +39,7 @@ proffalken (@proffalken), https://github.com/proffalken
   "Installing TECHO5 Dot on Linux", https://gist.github.com/proffalken/377ae50146affe1886dddaaacb87926b
   The step-by-step install (Fire OS 6574.1 in both slots, root, trusting the adb key) and the Linux
   fixes (byte-safe partition backups, serial console lookup, forward-slash paths) that
-  tools/install-dot.ps1 and TECHO5's docs/getting-started.md are based on.
+  tools/install-dot.py and TECHO5's docs/getting-started.md are based on.
 
 amonet, kaeru and the biscuit TWRP tree, https://github.com/R0rt1z2
   The unlock and bootloader payload this project depends on (not redistributed).

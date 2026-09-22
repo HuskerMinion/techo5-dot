@@ -32,7 +32,7 @@ def main():
     ap.add_argument('--address', required=True, help="the unit's address on your network")
     ap.add_argument('--kernel', help="a kernel you built instead of the release's")
     ap.add_argument('--no-bluetooth-kernel', action='store_true', help="keep the kernel from the unit's recovery backup")
-    ap.add_argument('--release', default='latest')
+    ap.add_argument('--release', default='latest', help="a release tag (dot-vX.Y.Z), or latest")
     ap.add_argument('--backups', default=default_dir('TECHO5_BACKUPS', 'backups'))
     ap.add_argument('--work', default=default_dir('TECHO5_WORK', 'build'))
     ap.add_argument('--ssh', default='ssh')

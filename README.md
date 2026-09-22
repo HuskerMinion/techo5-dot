@@ -152,11 +152,12 @@ The installer:
 2. Downloads the latest signed release (the root filesystem, the Bluetooth kernel and the rescue
    environment's packages). The manifest is only believed once the release key's signature over it
    checks out — the same key the device itself trusts — and every file is checked against the
-   checksums it carries. `-Release v0.5.0`
-   picks a version; `-FromSource` uses your own builds ([docs/building.md](docs/building.md)).
+   checksums it carries. `--release dot-v0.6.0` picks a version instead of the newest — releases here
+   are tagged `dot-vX.Y.Z`, so the tag is what goes in, not the bare version; `--rootfs` and `--kernel`
+   take your own builds ([docs/building.md](docs/building.md)).
 3. Builds this unit's boot image from **its own** recovery backup, with the Bluetooth kernel
-   (`-NoBluetoothKernel` keeps the unit's own, without Bluetooth). No Amazon binary is ever downloaded
-   or published.
+   (`--no-bluetooth-kernel` keeps the unit's own, without Bluetooth). No Amazon binary is ever
+   downloaded or published.
 4. Writes the image to recovery, and the root filesystem into slot a.
 5. Keeps an existing Home Assistant name and key, or asks for a name and makes a key.
 6. Reboots, then waits on the Dot's USB console until the boot reports healthy.

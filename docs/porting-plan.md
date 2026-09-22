@@ -349,7 +349,7 @@ name, healthy at 110 s. The steps:
 5. **Write** the image to recovery and read it back. Unpack the rootfs into slot a (the old slot
    is kept as `a.old`), reset the tries, and reboot into Linux.
 
-`-DryRun` stops after step 4 and writes nothing to the device. Unlocking (amonet, TWRP) stays a
+`--dry-run` stops after step 4 and writes nothing to the device. Unlocking (amonet, TWRP) stays a
 separate step.
 
 **Starting from TWRP** (verified on the bench unit 2026-09-16) works the same way. The installer

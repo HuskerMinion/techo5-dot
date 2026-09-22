@@ -93,7 +93,7 @@ def main():
     ap.add_argument('--serial', required=True, help="the unit's adb serial (adb devices)")
     ap.add_argument('--name', help='the name Home Assistant shows, for a unit with no identity yet (asked for when missing)')
     ap.add_argument('--key-file', help='where a new Home Assistant key is kept (default backups/<serial>/home-assistant.key)')
-    ap.add_argument('--release', default='latest', help='a release tag, or latest')
+    ap.add_argument('--release', default='latest', help="a release tag (dot-vX.Y.Z), or latest")
     ap.add_argument('--kernel', help="a kernel you built (tools/linux/build-kernel.sh) instead of the release's")
     ap.add_argument('--no-bluetooth-kernel', action='store_true', help="keep the unit's own kernel, which has no Bluetooth")
     ap.add_argument('--rootfs', help="a root filesystem you built (tools/linux/build-dot-rootfs.py) instead of the release's")

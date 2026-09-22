@@ -138,7 +138,11 @@ export PATH="$TC/bin:$PATH"
 
 # 3. Sysroot from verified Alpine packages.
 python3 - "$APKINDEX_DIR" "$ALPINE_MIRROR" "$DL/apk" "$SYSROOT" $SYSROOT_PKGS <<'PY'
-import base64, hashlib, io, os, re, sys, tarfile, urllib.request, zlib
+import base64, hashlib, io, os, re, socket, sys, tarfile, urllib.request, zlib
+
+# urlretrieve has no timeout of its own, so a mirror that accepts the connection and then says nothing
+# would hang the build for as long as the kernel lets it.
+socket.setdefaulttimeout(60)
 
 index_dir, mirror, apkdir, sysroot, roots = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5:]
 pkgs, provides = {}, {}
@@ -292,7 +296,8 @@ $CROSS-strip -o "$OUTDIR/bluealsa" src/bluealsa
 REF=$WORK/alpine-ref
 rm -rf "$REF" && mkdir -p "$REF"
 python3 - "$APKINDEX_DIR" "$ALPINE_MIRROR" "$DL/apk" "$REF" <<'PY'
-import base64, hashlib, io, os, sys, tarfile, urllib.request, zlib
+import base64, hashlib, io, os, socket, sys, tarfile, urllib.request, zlib
+socket.setdefaulttimeout(60)  # urlretrieve has none of its own; see the sysroot fetch above
 index_dir, mirror, apkdir, ref = sys.argv[1:]
 entry = None
 with open(os.path.join(index_dir, "community", "APKINDEX"), encoding="utf-8") as f:

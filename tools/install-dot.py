@@ -28,11 +28,11 @@ import re
 import socket
 import sys
 import time
-import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from techo5lib import (CONSOLE_DOT, Adb, Console, ask, ask_wifi, default_dir, fail, head_is_android, md5,  # noqa: E402
-                       need, new_api_key, note, repo_root, run_main, step, valid_api_key, write_private)
+from techo5lib import (CONSOLE_DOT, Adb, Console, ask, ask_wifi, default_dir, download_checked, fail,  # noqa: E402
+                       head_is_android, md5, need, new_api_key, note, repo_root, run_main, step,
+                       valid_api_key, write_private)
 from dotimage import DotRelease, build_boot_image  # noqa: E402
 
 PARTS = ['preloader', 'kb', 'dkb', 'lk_a', 'lk_b', 'tee1', 'tee2', 'expdb', 'misc', 'persist', 'boot_a', 'boot_b', 'recovery']
@@ -51,7 +51,38 @@ EXTRA_MODELS = {
     'marvin': ('en/marvin/marvin_v2.tflite', 'Marvin'),
     'home_assistant': ('en/home_assistant/Home_assistant.tflite', 'Home Assistant'),
 }
-EXTRA_MODELS_REPO = 'https://raw.githubusercontent.com/fwartner/home-assistant-wakewords-collection/main'
+EXTRA_MODELS_COMMIT = '8bcd2f20bb7b76c351b2eff871fa1ce873fe9be2'  # fwartner/home-assistant-wakewords-collection, 2026-01-13
+EXTRA_MODELS_REPO = ('https://raw.githubusercontent.com/fwartner/home-assistant-wakewords-collection/%s'
+                     % EXTRA_MODELS_COMMIT)
+MODELS_COMMIT = '05b65922cc433c9df13e98e32a7fe520758c837e'  # esphome/micro-wake-word-models, 2025-03-21
+MODELS_REPO = 'https://raw.githubusercontent.com/esphome/micro-wake-word-models/%s/models/v2' % MODELS_COMMIT
+
+# Both repositories are other people's, and a branch points at whatever its owner pushed last. These
+# models are written into /data/misc/echolocal/models, which the daemon parses as root on every boot,
+# so they come from a commit that was looked at and have to hash to what that commit served. The pins
+# and the sums are the same ones TECHO5's tools/fetch-inputs.py carries; keep the two in step.
+#
+# Moving a pin: put the new commit here, delete the downloaded models under the work directory and run
+# the installer with --dry-run. It stops at the first file whose sha256 is not the one listed and
+# prints what the file now hashes to; check the repository's history, then paste the new sums in.
+MODEL_SHA256 = {
+    'okay_nabu.tflite': '0689abe1912a95a3318a0d8cb2e67bad0cbcfe3e24dd6e050c75debddfb6f891',
+    'okay_nabu.json': '6dd65604f70fe5ea9d1af73a7bf239529d1fbabc363807f45d2b22ce464ddbed',
+    'hey_jarvis.tflite': '21a7976add39ee24ec96c63d96b7aaa18e24d1d9824b963e451da8feb4b78b77',
+    'hey_jarvis.json': 'b153867d818675d8abcc9dace474afe7f83551ae0d5a9b1d71a98681320185af',
+    'hey_mycroft.tflite': 'c2a9b6ed51182db72e014781d5a4ece1929dc232a40b5b4be384f0295f0e1571',
+    'hey_mycroft.json': '57b2b06fe5fdbbe834a242fabc7af31e4194a550fc382b2c88636a6d62d0d57e',
+    'alexa.tflite': '9011a8155b04de858c48038529235cbc0e42e9fca05a55bf588cb80a653a723b',
+    'alexa.json': '1d999798b35b1fe2606465b75ab840be51c1811d2909d5e620cefb6e96f8abd0',
+    'computer.tflite': '411db364955bf7b7a13a50d732a8b59c129e2fbe130a54f9eb3c20ca183bc4d0',
+    'jarvis.tflite': 'cb2102fc9a76d4e02a740760d5ba2060978d766869489000b3565c8c4f8493a5',
+    'hey_friday.tflite': 'eb127d82d884a1ef4167b455ec67682bf362b9de3e232c3f8d544a5e6ab4cb8b',
+    'glados.tflite': '7564b95e5deed29cecfd55fd34cac70da5307c0d86108a7f87bfc610c9724dec',
+    'hal.tflite': '8ddbdc859eed8fbd648f4b5fe137f82e5e8480c1756fd12257e3ef5645275117',
+    'terminator.tflite': '7feb69397a56a6933d3248ecca3ca6aaca7b6bf2c36f5beb9b63bb3d17647686',
+    'marvin.tflite': 'ed91c4d83e28bcc0af1cdebe3ab4f2a4f2d4c9908101ad8476d2e1b9b77f4e0c',
+    'home_assistant.tflite': '9f54305884abde30d484f18dbff582ed6e2f1a141b93d6fa5f7feb505a0c94aa',
+}
 
 SLOT_SCRIPT = r'''set -e
 T=$1
@@ -260,17 +291,19 @@ def main():
         for w in words:
             tf = os.path.join(models, '%s.tflite' % w)
             js = os.path.join(models, '%s.json' % w)
+            # A name with no checksum recorded for it would be a download nothing could vouch for.
+            if '%s.tflite' % w not in MODEL_SHA256:
+                fail("no wake word model '%s' is pinned here; --wake-words takes any of: %s"
+                     % (w, ', '.join(sorted(n[:-7] for n in MODEL_SHA256 if n.endswith('.tflite')))))
             if w in EXTRA_MODELS:
                 path, phrase = EXTRA_MODELS[w]
-                if not os.path.exists(tf):
-                    urllib.request.urlretrieve('%s/%s' % (EXTRA_MODELS_REPO, path), tf)
+                download_checked('%s/%s' % (EXTRA_MODELS_REPO, path), tf, MODEL_SHA256['%s.tflite' % w])
                 if not os.path.exists(js):
                     with open(js, 'w') as f:
                         json.dump({'wake_word': phrase, 'model': '%s.tflite' % w, 'trained_languages': ['en']}, f, indent=2)
             else:
                 for ext, out in (('json', js), ('tflite', tf)):
-                    if not os.path.exists(out):
-                        urllib.request.urlretrieve('https://raw.githubusercontent.com/esphome/micro-wake-word-models/main/models/v2/%s.%s' % (w, ext), out)
+                    download_checked('%s/%s.%s' % (MODELS_REPO, w, ext), out, MODEL_SHA256['%s.%s' % (w, ext)])
         note('wake word models: %s' % ', '.join(words))
     else:
         note('%s wake word models already on the unit' % have_models)

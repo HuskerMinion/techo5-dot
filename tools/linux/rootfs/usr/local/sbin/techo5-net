@@ -85,6 +85,31 @@ fi
 
 [ -e /sys/class/net/wlan0 ] || { say "no wlan0"; exit 1; }
 
+# Keep the unit's IPv6 addresses from spelling out its MAC. Linux builds the interface identifier
+# out of the hardware address by default, so a global address reads as the prefix the ISP handed out
+# followed by this Dot's own MAC, and goes on naming the hardware through every prefix change the
+# ISP ever makes. A random identifier says nothing and costs nothing here: the daemon is reached
+# over IPv4 and mDNS, never over IPv6.
+#
+# addr_gen_mode is the setting that does it and wants Linux 4.5; this unit runs 3.18, so it will not
+# be there and the log says so rather than leaving it a silent difference between devices. Temporary
+# addresses are set either way, for anything the unit itself starts. Before the link comes up: the
+# identifier is chosen when the address is generated, and one already there does not change.
+ipv6mode=
+for w in default wlan0; do
+	d=/proc/sys/net/ipv6/conf/$w
+	[ -d $d ] || continue
+	[ -e $d/use_tempaddr ] && echo 2 > $d/use_tempaddr 2>/dev/null
+	[ -e $d/addr_gen_mode ] || continue
+	echo 3 > $d/addr_gen_mode 2>/dev/null
+	ipv6mode=$(cat $d/addr_gen_mode 2>/dev/null)
+done
+case "$ipv6mode" in
+3) say "ipv6: addresses take a random identifier, not this unit's MAC" ;;
+"") say "ipv6: this kernel has no addr_gen_mode; addresses carry this unit's MAC" ;;
+*) say "ipv6: addr_gen_mode stayed $ipv6mode; addresses may still carry this unit's MAC" ;;
+esac
+
 # A configuration already built is the one to use, networks and all — unless wifi-set has written a
 # network since, which is somebody at the unit saying which one it is to be on.
 if [ -s $CONF ] && { [ ! -s $OWN ] || [ $CONF -nt $OWN ]; }; then

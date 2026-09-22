@@ -150,7 +150,9 @@ The installer:
 1. Backs up every boot-critical partition to `backups/<serial>/` and checks each copy against the
    device. On TWRP it reads the real bootloader partitions, not amonet's decoys.
 2. Downloads the latest signed release (the root filesystem, the Bluetooth kernel and the rescue
-   environment's packages) and checks every file against the release's checksums. `-Release v0.5.0`
+   environment's packages). The manifest is only believed once the release key's signature over it
+   checks out — the same key the device itself trusts — and every file is checked against the
+   checksums it carries. `-Release v0.5.0`
    picks a version; `-FromSource` uses your own builds ([docs/building.md](docs/building.md)).
 3. Builds this unit's boot image from **its own** recovery backup, with the Bluetooth kernel
    (`-NoBluetoothKernel` keeps the unit's own, without Bluetooth). No Amazon binary is ever downloaded

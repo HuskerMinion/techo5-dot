@@ -32,7 +32,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from techo5lib import (CONSOLE_DOT, Adb, Console, ask, ask_wifi, default_dir, fail, head_is_android, md5,  # noqa: E402
-                       need, new_api_key, note, repo_root, run_main, step, valid_api_key)
+                       need, new_api_key, note, repo_root, run_main, step, valid_api_key, write_private)
 from dotimage import DotRelease, build_boot_image  # noqa: E402
 
 PARTS = ['preloader', 'kb', 'dkb', 'lk_a', 'lk_b', 'tee1', 'tee2', 'expdb', 'misc', 'persist', 'boot_a', 'boot_b', 'recovery']
@@ -232,8 +232,7 @@ def main():
         if valid_api_key(key):
             key_file = a.key_file or os.path.join(unit, 'home-assistant.key')
             if not os.path.exists(key_file):
-                with open(key_file, 'w') as f:
-                    f.write(key)
+                write_private(key_file, key)
             shown = (have_name, key)
     else:
         note('%s has no Home Assistant identity yet' % a.serial)
@@ -248,8 +247,7 @@ def main():
                 fail('the key in %s is not 32 bytes of base64' % key_file)
         else:
             psk = new_api_key()
-            with open(key_file, 'w') as f:
-                f.write(psk)
+            write_private(key_file, psk)
             note('new key written to %s; Home Assistant asks for it when the device is added' % key_file)
         note("will provision '%s'" % name)
         shown = (name, psk)

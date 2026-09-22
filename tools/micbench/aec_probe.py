@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Second-pass checks on a capture session: tones in the quiet floor, and what a linear echo
 canceller (a least-squares FIR fitted on the music-only lead-in) leaves behind, per mic and
-for mixes of cancelled mics.
+for mixes of canceled mics.
 
     python aec_probe.py <capture dir>
 """
@@ -12,7 +12,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
-from analyze import CENTRE, FRAME, MICS, RATE, bandpass, db, frame_power, load  # noqa: E402
+from analyze import CENTER, FRAME, MICS, RATE, bandpass, db, frame_power, load  # noqa: E402
 
 TAPS = 768
 PRE = 64  # taps before the loopback sample, for the acausal side of the fit
@@ -89,13 +89,13 @@ def main():
         pho = (e[lead:talk0] ** 2).mean()
         print(f"| {m} | {db(pin):.1f} | {db(pfit):.1f} | {db(pho):.1f} | {db(pin / pfit):.1f} | {db(pin_ho / pho):.1f} |")
 
-    # Speech over the residual: speech frames from the cancelled centre mic in the talk section.
+    # Speech over the residual: speech frames from the canceled center mic in the talk section.
     seg = slice(talk0, x.shape[1])
-    cen = bandpass(out[CENTRE, seg][None], 200, 4000)
+    cen = bandpass(out[CENTER, seg][None], 200, 4000)
     p = frame_power(cen)[0]
-    quiet_p = frame_power(bandpass(out[CENTRE, 2 * RATE:lead][None], 200, 4000))[0].mean()
+    quiet_p = frame_power(bandpass(out[CENTER, 2 * RATE:lead][None], 200, 4000))[0].mean()
     speech = p > quiet_p * 4
-    print(f"\nTalk section: {speech.sum()} speech frames of {len(p)} (6 dB over the cancelled music-only residual)")
+    print(f"\nTalk section: {speech.sum()} speech frames of {len(p)} (6 dB over the canceled music-only residual)")
     if speech.sum() < 10:
         return
 
@@ -106,8 +106,8 @@ def main():
 
     res = slice(2 * RATE, lead)
     cands = {
-        "centre, no AEC": (mics[CENTRE, seg], mics[CENTRE, res]),
-        "centre + AEC": (out[CENTRE, seg], out[CENTRE, res]),
+        "center, no AEC": (mics[CENTER, seg], mics[CENTER, res]),
+        "center + AEC": (out[CENTER, seg], out[CENTER, res]),
         "average of 7, no AEC": (mics[:, seg].mean(0), mics[:, res].mean(0)),
         "average of 7 AEC'd mics": (out[:, seg].mean(0), out[:, res].mean(0)),
     }

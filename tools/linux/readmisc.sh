@@ -12,7 +12,7 @@ MISC=/dev/block/mmcblk0p8
 echo "=== bootloader message (first 64 bytes)"
 dd if=$MISC bs=64 count=1 2>/dev/null | od -c | head -4
 
-echo "=== boot tries (Linux falls back to Android after three unhealthy boots)"
+echo "=== boot tries (the initramfs stays in rescue after five unhealthy boots)"
 dd if=$MISC bs=512 skip=14 count=1 2>/dev/null | tr -d '\000'
 
 echo "=== crumbs"

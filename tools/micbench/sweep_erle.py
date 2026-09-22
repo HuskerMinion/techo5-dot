@@ -3,7 +3,7 @@
 import os, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(__file__))
-from analyze import CENTRE, MICS, RATE, bandpass, db, load
+from analyze import CENTER, MICS, RATE, bandpass, db, load
 from aec_probe import cancel, TAPS, PRE
 
 d = sys.argv[1]
@@ -19,7 +19,7 @@ def windows(n, ps, lo, hi):
     for p in ps: m[int((p+lo)*RATE):int((p+hi)*RATE)] = True
     return m
 
-print("| file level | echo at centre mic | echo at the 7-mic average | ERLE, average | residual | talker over residual |")
+print("| file level | echo at center mic | echo at the 7-mic average | ERLE, average | residual | talker over residual |")
 print("|---|---|---|---|---|---|")
 for lvl in [33, 27, 21, 15]:
     name = f"sweep_l{lvl}"
@@ -33,4 +33,4 @@ for lvl in [33, 27, 21, 15]:
     e = cancel(ref, avg, h.astype(np.float64))
     pin, pres = (avg[gaps]**2).mean(), (e[gaps]**2).mean()
     margin = db(max((e[talk]**2).mean() - pres, 1e-20) / pres)
-    print(f"| -{lvl} dBFS | {db((mics[CENTRE][gaps]**2).mean()):.1f} dBFS | {db(pin):.1f} dBFS | {db(pin/pres):.1f} dB | {db(pres):.1f} dBFS | {margin:+.1f} dB |")
+    print(f"| -{lvl} dBFS | {db((mics[CENTER][gaps]**2).mean()):.1f} dBFS | {db(pin):.1f} dBFS | {db(pin/pres):.1f} dB | {db(pres):.1f} dBFS | {margin:+.1f} dB |")

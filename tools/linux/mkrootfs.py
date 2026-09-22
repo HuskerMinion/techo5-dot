@@ -99,7 +99,7 @@ class Root:
                 full = os.path.join(dirpath, f)
                 rel = os.path.relpath(full, path).replace("\\", "/")
                 data = open(full, "rb").read()
-                # Everything that lands on the device runs there, so normalise line endings: a
+                # Everything that lands on the device runs there, so normalize line endings: a
                 # script with CRLF fails with "not found" naming its own interpreter.
                 if data[:2] == b"#!":
                     data = data.replace(b"\r\n", b"\n")

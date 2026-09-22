@@ -62,7 +62,7 @@ Echo Show 5. Both run the same daemon source, built per device.
   runs, not even for Wi-Fi: [`cmd/wmtup`](cmd/wmtup) talks to MediaTek's combo chip directly,
   where Amazon's loader used to.
 - **All seven microphones work together.** The daemon averages all seven microphones and cancels
-  the speaker's own echo from that average. Measured against the centre mic alone, the average heard
+  the speaker's own echo from that average. Measured against the center mic alone, the average heard
   speech 1–2.5 dB better, and 2–4 dB better between 1.5 and 4.7 kHz. Steering a delay-and-sum beam
   added nothing on this 72 mm ring, so it isn't the default. The numbers and method are in
   [docs/microphones.md](docs/microphones.md).
@@ -79,12 +79,12 @@ Echo Show 5. Both run the same daemon source, built per device.
 
 | | Stock Echo Dot 2 (Alexa) | TECHO5 Dot |
 |---|---|---|
-| Voice assistant | Alexa, in Amazon's cloud | Home Assistant Assist ✅. Wake word on the device (microWakeWord: "Okay Nabu", "Hey Jarvis", "Hey Mycroft") ✅. Speech-to-text and replies come from whatever your Home Assistant pipeline uses |
+| Voice assistant | Alexa, in Amazon's cloud | Home Assistant Assist ✅. Wake word on the device (microWakeWord: "Okay Nabu", "Hey Jarvis", "Hey Mycroft", "Alexa", and eight from the community collection — "Computer", "Jarvis", "Hey Friday", "GLaDOS", "HAL", "Terminator", "Marvin", "Home Assistant") ✅. Speech-to-text and replies come from whatever your Home Assistant pipeline uses |
 | Where your voice goes | Amazon | Your Home Assistant, over its encrypted native API ✅ |
 | Microphones | 7-mic array, Amazon's processing | All 7 averaged, with echo cancellation on the average ✅ |
 | Talking over music | Alexa ducks on wake | Ducks on wake, and also for a few seconds after a *near miss*, so the second try is heard ✅ |
 | Speaker | Yes | Yes, a Home Assistant media player ✅ |
-| Light ring | Alexa's colours | Wake, listening, thinking, replying and error effects, set from Home Assistant ✅ |
+| Light ring | Alexa's colors | Wake, listening, thinking, replying and error effects, set from Home Assistant ✅ |
 | Buttons (action, volume, mic mute) | Yes | Yes, all four ✅. Mute is the hardware mute line |
 | Timers | Yes | Yes (Home Assistant timers) |
 | 3.5 mm audio out | Yes | In the daemon (jack detection, headphone path). Not yet tested on this image |

@@ -3,7 +3,7 @@
 import os, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(__file__))
-from analyze import CENTRE, FRAME, MICS, RATE, bandpass, db, frame_power, load, gcc_phat, delay
+from analyze import CENTER, FRAME, MICS, RATE, bandpass, db, frame_power, load, gcc_phat, delay
 from aec_probe import fit, cancel, tones
 
 d = sys.argv[1]
@@ -31,7 +31,7 @@ x = load(os.path.join(d, "wake_music_seg0.s24")); ref = x[7]; mics = x[:MICS]; p
 talk = windows(x.shape[1], ps)
 gaps = ~windows(x.shape[1], ps, -0.5, 3.5); gaps[:2*RATE] = False
 avg = mics.mean(0)
-for label, sig in [("centre", mics[CENTRE]), ("average of 7", avg)]:
+for label, sig in [("center", mics[CENTER]), ("average of 7", avg)]:
     h = fit(ref[gaps], sig[gaps]) if False else None
     # fit on the gaps only (no talker), apply everywhere
     idx = np.where(gaps)[0]; idx = idx[(idx > 800) & (idx < len(sig) - 100)]
@@ -54,13 +54,13 @@ x = load(os.path.join(d, "wake_phone_seg0.s24")); mics = bandpass(x[:MICS], 100,
 talk = windows(x.shape[1], ps, 0.3, 1.6)
 between = ~windows(x.shape[1], ps, -0.5, 3.5); between[:RATE] = False
 # direction of the phone (between prompts) and of the talker (the first-session seg0 geometry: use the talk windows)
-ph = np.array([gcc_phat(mics[CENTRE, between], mics[m, between])[0] for m in range(MICS)])
-tk = np.array([gcc_phat(mics[CENTRE, talk], mics[m, talk])[0] for m in range(MICS)])
-print("lags vs centre, phone:  " + " ".join(f"{v:+.2f}" for v in ph))
-print("lags vs centre, talker: " + " ".join(f"{v:+.2f}" for v in tk))
+ph = np.array([gcc_phat(mics[CENTER, between], mics[m, between])[0] for m in range(MICS)])
+tk = np.array([gcc_phat(mics[CENTER, talk], mics[m, talk])[0] for m in range(MICS)])
+print("lags vs center, phone:  " + " ".join(f"{v:+.2f}" for v in ph))
+print("lags vs center, talker: " + " ".join(f"{v:+.2f}" for v in tk))
 def sir(sig):
     return db((sig[talk]**2).mean() / (sig[between]**2).mean())
-cands = {"centre": mics[CENTRE], "average of 7": mics.mean(0),
+cands = {"center": mics[CENTER], "average of 7": mics.mean(0),
          "delay-and-sum to talker": np.stack([delay(mics[m], -tk[m]) for m in range(MICS)]).mean(0)}
 # MVDR per frequency: noise covariance from between-prompt audio, steering from talker lags
 N = 512; hop = 256; win = np.hanning(N)

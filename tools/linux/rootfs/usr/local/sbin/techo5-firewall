@@ -5,7 +5,7 @@
 # In:  Home Assistant's API (6053/tcp), mDNS (5353/udp), SSH (22/tcp; dropbear listens only while
 #      the SSH switch is on and a key is set), Sendspin audio (8928/tcp), the setup page (8181/tcp;
 #      the daemon binds it only while the page is open, so it refuses connections the rest of the
-#      time, the same arrangement as Sendspin's), DHCP replies, ping, IPv6 neighbour discovery, and
+#      time, the same arrangement as Sendspin's), DHCP replies, ping, IPv6 neighbor discovery, and
 #      anything answering a connection the Dot made.
 # Out: everything, as before.
 #

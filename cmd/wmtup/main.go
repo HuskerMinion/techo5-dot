@@ -49,7 +49,7 @@ var (
 )
 
 // The host interface this board uses: STP over BTIF, FM over the common path (wmt_dev.h, wmt_core.h).
-// A value the driver does not recognise is rejected with no hardware touched, so a wrong one fails
+// A value the driver does not recognize is rejected with no hardware touched, so a wrong one fails
 // safe.
 const (
 	stpBTIFFull = 0x3

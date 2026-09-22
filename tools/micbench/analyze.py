@@ -3,8 +3,8 @@
 
 Reads the .s24 files written by `echod tools mic --raw` and reports, per capture:
 levels and clipping per channel, speech SNR per microphone in three bands, what a
-24->16 bit truncation costs, inter-mic arrival lags (GCC-PHAT) against the centre mic,
-and the SNR of candidate mixes (centre, best single mic, average, delay-and-sum).
+24->16 bit truncation costs, inter-mic arrival lags (GCC-PHAT) against the center mic,
+and the SNR of candidate mixes (center, best single mic, average, delay-and-sum).
 
     python analyze.py <capture dir> [--quiet quiet.s24] [--miccal 18150,15784,...]
 """
@@ -19,7 +19,7 @@ import numpy as np
 RATE = 16000
 CHANNELS = 9
 MICS = 7
-CENTRE = 6
+CENTER = 6
 FRAME = 320  # 20 ms
 BANDS = [("<1.5k", 100, 1500), ("1.5-4.7k", 1500, 4700), (">4.7k", 4700, 8000)]
 FULL = ("100-8k", 100, 8000)
@@ -50,9 +50,9 @@ def frame_power(x):
     return (x[..., : n * FRAME].reshape(*x.shape[:-1], n, FRAME) ** 2).mean(axis=-1)
 
 
-def masks(centre):
-    """Speech and noise frames from the centre mic, band-limited to speech."""
-    p = frame_power(bandpass(centre[None], 200, 4000))[0]
+def masks(center):
+    """Speech and noise frames from the center mic, band-limited to speech."""
+    p = frame_power(bandpass(center[None], 200, 4000))[0]
     order = np.sort(p)
     noise_level = order[: max(1, len(order) // 5)].mean()
     noise = p <= order[len(order) // 5]
@@ -96,7 +96,7 @@ def delay(x, lag):
     return np.fft.irfft(np.fft.rfft(x) * np.exp(-2j * np.pi * f * lag), n=n)
 
 
-def analyse(path, quiet_floor, miccal, out):
+def analyze(path, quiet_floor, miccal, out):
     x = load(path)
     name = os.path.basename(path)[:-4]
     secs = x.shape[1] / RATE
@@ -117,7 +117,7 @@ def analyse(path, quiet_floor, miccal, out):
         w(f"| {c} | {rms:.1f} | {peak:.1f} | {clipped} | {note} |\n")
 
     mics = x[:MICS]
-    speech, noise = masks(mics[CENTRE])
+    speech, noise = masks(mics[CENTER])
     w(f"\nSpeech frames {speech.sum()} of {len(speech)} ({speech.mean() * 100:.0f}%), noise frames {noise.sum()}.\n")
     if speech.sum() < 25:
         w("Too little speech for SNR and direction analysis.\n")
@@ -128,21 +128,21 @@ def analyse(path, quiet_floor, miccal, out):
     table = np.stack([snr(mics, speech, noise, lo, hi) for _, lo, hi in [FULL] + BANDS], axis=1)
     level = db(frame_power(bandpass(mics, 200, 4000))[:, speech].mean(axis=1))
     for m in range(MICS):
-        w(f"| {m}{' (centre)' if m == CENTRE else ''} | " + " | ".join(f"{v:.1f}" for v in table[m]) + " |\n")
+        w(f"| {m}{' (center)' if m == CENTER else ''} | " + " | ".join(f"{v:.1f}" for v in table[m]) + " |\n")
 
-    w("\nSpeech level per mic relative to the centre (dB), and miccal ratio if given\n\n")
-    rel = level - level[CENTRE]
-    w("| mic | speech level vs centre | miccal vs centre |\n|---|---|---|\n")
+    w("\nSpeech level per mic relative to the center (dB), and miccal ratio if given\n\n")
+    rel = level - level[CENTER]
+    w("| mic | speech level vs center | miccal vs center |\n|---|---|---|\n")
     for m in range(MICS):
-        cal = f"{20 * np.log10(miccal[m] / miccal[CENTRE]):+.1f}" if miccal else "-"
+        cal = f"{20 * np.log10(miccal[m] / miccal[CENTER]):+.1f}" if miccal else "-"
         w(f"| {m} | {rel[m]:+.1f} | {cal} |\n")
 
-    # Direction: lags of each perimeter mic against the centre, over speech only.
+    # Direction: lags of each perimeter mic against the center, over speech only.
     seg = speech_only(bandpass(mics, 100, 8000), speech)
     lags = []
-    w("\nArrival lag against the centre mic, speech only (samples; negative = hears it first; +-1.68 is the ring's limit)\n\n| mic | lag | peak/mean |\n|---|---|---|\n")
+    w("\nArrival lag against the center mic, speech only (samples; negative = hears it first; +-1.68 is the ring's limit)\n\n| mic | lag | peak/mean |\n|---|---|---|\n")
     for m in range(MICS):
-        lag, q = gcc_phat(seg[CENTRE], seg[m])
+        lag, q = gcc_phat(seg[CENTER], seg[m])
         lags.append(lag)
         w(f"| {m} | {lag:+.2f} | {q:.0f} |\n")
     lags = np.array(lags)
@@ -156,7 +156,7 @@ def analyse(path, quiet_floor, miccal, out):
     gains = 10 ** (-rel / 20)
     das_cal = (aligned * gains[:, None]).mean(axis=0)
     candidates = [
-        ("centre mic", full_band[CENTRE]),
+        ("center mic", full_band[CENTER]),
         (f"best single mic ({best})", full_band[best]),
         ("average of 7", avg),
         ("delay-and-sum, measured lags", das),
@@ -180,14 +180,14 @@ def loopback(path, out):
         return
     w("\nLoopback alignment (music-only first 10 s)\n\n")
     n = min(10 * RATE, x.shape[1])
-    r, mic = ref[:n], x[CENTRE, :n]
+    r, mic = ref[:n], x[CENTER, :n]
     R, M = np.fft.rfft(r), np.fft.rfft(mic)
     cc = np.fft.irfft(M * np.conj(R), n=n)
     window = np.concatenate([cc[-200:], cc[:201]])
     k = int(np.argmax(np.abs(window))) - 200
     sign = np.sign(window[k + 200])
-    w(f"Centre mic lags the loopback by {k} samples ({k / RATE * 1000:.2f} ms), polarity {'inverted' if sign < 0 else 'normal'}.\n")
-    w(f"Loopback RMS {db((r**2).mean()):.1f} dBFS, echo at the centre mic {db((mic**2).mean()):.1f} dBFS.\n")
+    w(f"Center mic lags the loopback by {k} samples ({k / RATE * 1000:.2f} ms), polarity {'inverted' if sign < 0 else 'normal'}.\n")
+    w(f"Loopback RMS {db((r**2).mean()):.1f} dBFS, echo at the center mic {db((mic**2).mean()):.1f} dBFS.\n")
 
 
 def main():
@@ -216,7 +216,7 @@ def main():
     for path in sorted(glob.glob(os.path.join(args.dir, "*.s24"))):
         if os.path.basename(path) == "quiet.s24":
             continue
-        analyse(path, None, miccal, out)
+        analyze(path, None, miccal, out)
         if "music" in os.path.basename(path):
             loopback(path, out)
 

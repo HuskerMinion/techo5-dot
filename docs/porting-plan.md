@@ -195,7 +195,9 @@ As built, differing from the original plan:
   Never call `EXT_CHIP_DETECT`, which panics this kernel.
 - **Default boot:** each boot, the initramfs asks for `boot-recovery` again in MISC and counts
   tries in MISC block 14. boot.sh resets the count once echod has stayed up. After five unhealthy
-  boots the unit clears the request and falls back to Fire OS. Verified by a power cut.
+  boots the unit boots no slot at all and stays in the rescue initramfs, on the network with SSH and
+  the USB console; `techo5-retry` clears the count and `/sbin/to-android` boots Fire OS, but only
+  when asked. Verified by a power cut.
 - **Trial slots and updates (2026-09-16):** `slotctl` (the Show's, with the Dot's store at
   `/store/techo5`) keeps `slots/<x>.state` as good, trial n, or bad. `boot.sh` mounts the store
   again inside the slot, since the initramfs mount does not survive `switch_root`.
@@ -221,8 +223,8 @@ As built, differing from the original plan:
   **SSH** switch in Home Assistant is on, and a new install starts with it off.
   - Keys live in `/data/misc/echolocal/ssh` and host keys in `/data/techo5-linux/dropbear`, so both
     outlast slots and updates.
-  - Keys normally come from Home Assistant (`ssh_keys`). The installer also adds the PC's
-    `~/.ssh/id_ed25519.pub`.
+  - Keys normally come from Home Assistant (`ssh_keys`). The installer can add one of the PC's as
+    well, but only when asked: `install-dot.py --ssh-key ~/.ssh/id_ed25519.pub`.
   - A unit set up before this moved its key and host key over once, with the switch left on.
   - The rescue initramfs starts its own server with the same keys, without waiting for the switch.
 - **Wi-Fi without Fire OS:**
@@ -251,7 +253,7 @@ As built, differing from the original plan:
 
 [microphones.md](microphones.md) B0–B4: an offline bench and wake-word scoring first, then
 full-resolution capture, then WebRTC AEC on the loopback, then a spatial stage only if it beats the
-centre mic where the centre mic fails.
+center mic where the center mic fails.
 
 ## M3c — Security (2026-09-16)
 
@@ -273,7 +275,7 @@ the bench unit):
   firewall). `techo5-retry` tries the slots again, and `/sbin/to-android` boots Fire OS on request.
   Simulated with the try count at 5: rescue, then retry, then a healthy slot.
 - **Firewall** (`techo5-firewall`, legacy iptables; this kernel has no nftables): inbound DROP on
-  IPv4 and IPv6 except 6053, 5353/udp, 22, 8928, DHCP, ping and IPv6 neighbour discovery. Checked
+  IPv4 and IPv6 except 6053, 5353/udp, 22, 8928, DHCP, ping and IPv6 neighbor discovery. Checked
   from the PC: only 22, 6053 and 8928 answer, and a test listener on 9000 is unreachable.
 - **Bluetooth:**
   - bluetoothd runs without the input, hog, network and sap plugins.
@@ -305,7 +307,7 @@ Done on the bench unit 2026-09-16 (see `docs/hardware.md`, Bluetooth kernel):
 - The daemon reads the phone's stream and plays it as a media track (`feature/media/bluetooth.go`),
   resampling 44.1 kHz to the speaker's 48 kHz. The phone tested sent AAC at 44.1 kHz; bluealsa used
   about 2% CPU and the wake word kept 50 frames per second.
-- Behaviour:
+- Behavior:
   - the wake word ducks or pauses the phone's music;
   - the phone's volume slider controls the level;
   - pausing the phone releases the speaker after 5 s;
@@ -322,7 +324,7 @@ ESTABLISHED rule.
 - Holding the action button for 5 s toggles pairing mode, with a rising (on) or falling (off)
   three-note chime; the ring pulses blue while pairing mode is on, however it was turned on. With no
   second assistant set up, the 0.7 s hold on the way does nothing; with one, the turn it starts is
-  cancelled at 5 s. Home Assistant sees the hold as a `long_hold` button event.
+  canceled at 5 s. Home Assistant sees the hold as a `long_hold` button event.
 - A phone pairing, or the Dot connecting a speaker it picked, plays a two-note chime and holds the
   ring solid blue for 1.5 s.
 - Saying "pair Bluetooth" works through a Home Assistant sentence automation

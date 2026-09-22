@@ -17,7 +17,7 @@
 # A newly installed slot is on trial for two boots. The initramfs takes one try per boot; boot.sh
 # commits the slot once the daemon has been up for 90 s. A slot that runs out of tries is marked bad
 # and the other slot, if good, boots instead. Around all of it the initramfs counts unhealthy boots
-# in MISC and falls back to Fire OS at five, so a bad slot is left for the good one first.
+# in MISC and stays in rescue at five, so a bad slot is left for the good one first.
 
 STORE=${STORE:-/store/techo5}
 TRIES=2

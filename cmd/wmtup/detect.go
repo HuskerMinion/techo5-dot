@@ -68,7 +68,7 @@ func detect(dev string) error {
 		return fmt.Errorf("GET_SOC_CHIP_ID: %w", err)
 	}
 	// Anything outside the MediaTek ids the loader itself accepts is a wrong board, not a chip to
-	// initialise.
+	// initialize.
 	if id < 0x6000 || id > 0x9000 {
 		return fmt.Errorf("unexpected SoC chip id %#x", id)
 	}

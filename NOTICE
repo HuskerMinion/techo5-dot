@@ -52,9 +52,22 @@ bluez-alsa, https://github.com/arkq/bluez-alsa
   the release root filesystem includes bluealsa 4.3.1 built from source with it.
 
 Linux kernel, https://git.kernel.org (GPL-2.0)
-  tools/linux/kernel-patches are upstream Bluetooth fixes backported to 3.18.19, each naming its
-  upstream commit. The kernel itself is built from Amazon's GPL source release for the Echo Dot
-  (2nd Generation) by tools/linux/build-kernel.sh; boot images are built per unit and not
+  Every release ships a kernel: techo5-dot-kernel-bt.zImage-dtb, Linux 3.18.19 for 32-bit ARM. It is
+  GPL-2.0, and this is where its source is.
+    - Base: Amazon's GPL source release for the Echo Dot (2nd Generation),
+      Echo_Dot_src-6.5.7.1-20251024, kernel/mediatek/mt8163/3.18_hl inside platform.tar. Amazon
+      publish their source releases at
+      https://www.amazon.com/gp/help/customer/display.html?nodeId=G202096090 (docs/hardware.md).
+    - Bluetooth: Amazon's tarball carries only the files their build compiles, so net/bluetooth,
+      drivers/bluetooth and include/net/bluetooth are taken from upstream linux-3.18.19, and only
+      where Amazon's tree has no file of its own.
+    - Changes: the 48 patches in tools/linux/kernel-patches, applied in order, each naming its
+      upstream commit, the stable backport it came from, its CVE and any 3.18 adaptation.
+    - Configuration: built from the running kernel's own config, recorded as
+      docs/dumps/biscuit-fireos6-echolocal-boot-3.18.19.config.
+    - The script that does all of it is tools/linux/build-kernel.sh, and docs/building.md is how to
+      run it. A rebuild reproduces the shipped image.
+  Boot images, which wrap that kernel with a unit's own ramdisk, are built per unit and not
   distributed.
 
 Alpine Linux, https://alpinelinux.org

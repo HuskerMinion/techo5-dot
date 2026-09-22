@@ -173,7 +173,7 @@ def main():
                     help="Alpine package to unpack into the rootfs (its files only; no install scripts)")
     ap.add_argument("--copy", action="append", default=[], metavar="SRC=DEST", help="extra file, mode 644")
     ap.add_argument("--script", action="append", default=[], metavar="SRC=DEST",
-                    help="extra text file, mode 755, CRLF normalised (shell scripts from a Windows checkout)")
+                    help="extra text file, mode 755, CRLF normalized (shell scripts from a Windows checkout)")
     ap.add_argument("--cmdline-append", default=None)
     ap.add_argument("--cmdline-drop", action="append", default=[],
                     metavar="PREFIX", help="drop command line words starting with this "

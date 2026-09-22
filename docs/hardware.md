@@ -1,9 +1,11 @@
 # Echo Dot 2nd gen (2016) — `biscuit`
 
-Nothing in this file has been confirmed on a unit by this project yet. It collects what the daemon's
-`dot` build (from EchoLocal), EchoMuse's emOS, the amonet/kaeru/TWRP sources, postmarketOS's archived
-port and a boot image unpacked offline already say. Each fact names its source. Treat everything as
-*unverified here* until the first `hwdump` on a real Dot.
+Most of this file is collected from other people's work: what the daemon's `dot` build (from
+EchoLocal), EchoMuse's emOS, the amonet/kaeru/TWRP sources, postmarketOS's archived port and a boot
+image unpacked offline already say. Each fact names its source, and anything sourced that way is
+*unverified here*. The exception is [First unit (the bench unit)](#first-unit-the-bench-unit-read-2026-09-15)
+near the end, which is read off a real Dot on 2026-09-15; entries marked *unconfirmed* stay that way
+until a `hwdump` covers them.
 
 Sources, short names used below:
 
@@ -129,7 +131,7 @@ Not backported, and why:
   `fastboot flash recovery twrp.img`. **Fire OS 5 no longer boots afterwards.**
 - EchoMuse: do **not** try to go back from v2.0.0 by flashing Fire OS 5 or an older amonet; that
   hand-rewrites bootloaders and is how units hard-brick.
-- EchoLocal's `bootimg` recognises both layouts by size: boot slots of 16 MB (unlocked before
+- EchoLocal's `bootimg` recognizes both layouts by size: boot slots of 16 MB (unlocked before
   the Fire OS 6 OTA) or 110 MB (after it).
 
 kaeru (the LK payload in `expdb`), from its source:
@@ -165,11 +167,11 @@ Capture, card 0 device 24 (`pcmC0D24c`): the only format accepted is **16 kHz, S
 | ch | EchoMuse (tone injection at each hole, 2026-05) | EchoLocal (`beam.go`) |
 |---|---|---|
 | 0–5 | perimeter mics MK1–MK6 at 330°, 30°, 90°, 150°, 210°, 270° (clock face) | ring, ch 0 at 108°, 60° apart |
-| 6 | centre mic MK7 | centre mic |
+| 6 | center mic MK7 | center mic |
 | 7, 8 | playback loopback L, R | loopback L, R |
 
 The two angle columns use different zero references; they agree on the 60° spacing and the
-centre mic. The ring radius is **36 mm** (PCB measurement), so it's 72 mm across.
+center mic. The ring radius is **36 mm** (PCB measurement), so it's 72 mm across.
 
 ADC probe order sets the channel order: `0x18` → ch 0/1, `0x19` → 2/3, `0x1a` → 4/5, `0x1b` → 6/7.
 That is eight ADC inputs for nine channels; how the FPGA/driver fills the ninth is open.

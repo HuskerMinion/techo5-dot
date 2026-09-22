@@ -26,6 +26,36 @@ LOG=/data/techo5-linux
 # To stderr only: under boot.sh that is the kernel log already, and at a console it is the terminal.
 say() { echo "techo5-net: $*" >&2; }
 
+# android_network <file>: one network Fire OS saved, as two lines on stdout - the name, then the key,
+# both still in the syntax wpa_supplicant reads them in, and the key line empty for an open network.
+# Nothing is printed when the file holds no network this unit can join.
+#
+# A block at a time, because a network's name and its key have to come out of the same block. Reading
+# the first ssid= in the file together with the first psk= in the file pairs the name of one network
+# with the key of another the moment an open network is saved ahead of the secured one: the unit then
+# cannot associate, spends its boot attempts on a network that was never real, and lands in rescue.
+#
+# The first secured network, and only failing that an open one: an open network in the list is as
+# likely to be a coffee shop the unit will never see again as the one it lives on, and the unit can
+# only be started on one of them.
+android_network() {
+	[ -r "$1" ] || return 0
+	awk '
+	function v(s, k) { sub(/^[ \t]*/, "", s); sub("^" k "=", "", s); sub(/[ \t]*$/, "", s); return s }
+	/^[ \t]*network=/ { inb = 1; ssid = ""; psk = ""; km = "" ; next }
+	inb && /^[ \t]*}/ {
+		if (ssid != "" && psk != "") { print ssid; print psk; done = 1; exit }
+		if (ssid != "" && km ~ /NONE/ && open == "") open = ssid
+		inb = 0
+		next
+	}
+	inb && /^[ \t]*ssid=/     { ssid = v($0, "ssid") }
+	inb && /^[ \t]*psk=/      { psk  = v($0, "psk") }
+	inb && /^[ \t]*key_mgmt=/ { km   = v($0, "key_mgmt") }
+	END { if (!done && open != "") { print open; print "" } }
+	' "$1" 2>/dev/null
+}
+
 # associate starts the supplicant against $CONF and waits for it to get somewhere.
 associate() {
 	mkdir -p /run/wpa
@@ -123,16 +153,23 @@ if [ -s $OWN ]; then
 	ssid=$(sed -n 's/^ssid=//p' $OWN | head -1)
 	psk=$(sed -n 's/^psk=//p' $OWN | head -1)
 	from="set on the unit"
+	[ -n "$psk" ] || { say "no key in $OWN (wifi-set sets one)"; exit 1; }
 else
 	# Android's file carries fields its fork understands and ours does not (max_oper_chwidth), so the
-	# network block is rebuilt from the two lines that matter.
-	ssid=$(sed -n 's/^[ \t]*ssid=\(.*\)$/\1/p' $ANDROID 2>/dev/null | head -1)
-	psk=$(sed -n 's/^[ \t]*psk=\(.*\)$/\1/p' $ANDROID 2>/dev/null | head -1)
+	# network block is rebuilt from the lines that matter - taken from one block, see android_network.
+	nw=$(android_network $ANDROID)
+	ssid=$(printf '%s\n' "$nw" | sed -n 1p)
+	psk=$(printf '%s\n' "$nw" | sed -n 2p)
 	from="saved by Fire OS"
 fi
-[ -n "$ssid" ] && [ -n "$psk" ] || { say "no network configured (wifi-set sets one)"; exit 1; }
+[ -n "$ssid" ] || { say "no network configured (wifi-set sets one)"; exit 1; }
 
+# An empty key is an open network, and says so: psk= with nothing after it is not a network at all.
 ( umask 077
-  printf 'ctrl_interface=/run/wpa\nupdate_config=0\nnetwork={\n\tssid=%s\n\tpsk=%s\n}\n' "$ssid" "$psk" > $CONF )
+  if [ -n "$psk" ]; then
+	printf 'ctrl_interface=/run/wpa\nupdate_config=0\nnetwork={\n\tssid=%s\n\tpsk=%s\n}\n' "$ssid" "$psk" > $CONF
+  else
+	printf 'ctrl_interface=/run/wpa\nupdate_config=0\nnetwork={\n\tssid=%s\n\tkey_mgmt=NONE\n}\n' "$ssid" > $CONF
+  fi )
 associate || exit 1
 lease

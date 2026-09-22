@@ -11,8 +11,8 @@ APKS_ASSET = 'techo5-dot-rescue-apks.tar'
 
 
 class DotRelease:
-    """The release's files, downloaded into workdir and checked: the signed manifest covers the root
-    filesystem, SHA256SUMS the Bluetooth kernel and the rescue packages."""
+    """The release's files, downloaded into workdir and checked against the release's signed manifest,
+    which covers the root filesystem, the Bluetooth kernel and the rescue packages alike."""
 
     def __init__(self, workdir, tag='latest'):
         rel = Release(REPO, tag, workdir)

@@ -124,9 +124,10 @@ pwsh ./tools/release-dot.ps1 -Version v0.6.0 -Notes "..." -DryRun
 ```
 
 A PowerShell script for the maintainer's Windows machine: it builds the daemon from the TECHO5
-checkout, `btbridge`, `wmtup` and the root filesystem, signs the manifest with `TECHO5_SIGN_KEY`, and
-publishes the kernel, the rescue packages and `SHA256SUMS` with it, which is what the installer
-downloads.
+checkout, `btbridge`, `wmtup` and the root filesystem, and publishes the kernel and the rescue
+packages with it. The manifest names all of them, with their sha256 and size, and is signed with
+`TECHO5_SIGN_KEY`: that signature is the installer's only check on what it downloads. `SHA256SUMS` is
+published too, for checking a file by hand; nothing signs it, so no installer reads it.
 
 ## Where things default
 

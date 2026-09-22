@@ -10,7 +10,9 @@
   Built from the TECHO5 worktree on its dot/mic-average branch with -tags dot:
     echod-arm-dot                     the daemon (also what a Fire OS Dot would take as a binary update)
     techo5-dot-rootfs-<version>.tar.gz  the whole root filesystem for a slot (tools/linux/build-dot-rootfs.py)
-    manifest.json                     versions, URLs, sizes and sha256 of both (cmd/mkmanifest)
+    techo5-dot-kernel-bt.zImage-dtb   the Echo Dot 2's kernel rebuilt with Bluetooth (GPL-2.0)
+    techo5-dot-rescue-apks.tar        the packages the rescue initramfs is built from
+    manifest.json                     versions, URLs, sizes and sha256 of all of those (cmd/mkmanifest)
     manifest.json.sig                 the release key's ed25519 signature over manifest.json
 
   The release is tagged dot-vX.Y.Z; the version inside it is vX.Y.Z. Those are different strings and
@@ -132,13 +134,16 @@ $from = "https://github.com/$repo/releases/download/$tag"
 & $Go run ./cmd/mkmanifest -version $Version -title "TECHO5 Dot $Version" -notes $Notes `
     -release-url "https://github.com/$repo/releases/tag/$tag" -from $from `
     -arm-dot (Join-Path $out 'echod-arm-dot') -rootfs-arm-dot $rootfs `
+    -asset (Join-Path $out 'techo5-dot-kernel-bt.zImage-dtb') -asset (Join-Path $out 'techo5-dot-rescue-apks.tar') `
     -out (Join-Path $out 'manifest.json') -sign-key $SignKey
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'mkmanifest failed' }
 Pop-Location
 Get-Content (Join-Path $out 'manifest.json')
 
 $names = 'echod-arm-dot', "techo5-dot-rootfs-$Version.tar.gz", 'manifest.json', 'manifest.json.sig', 'techo5-dot-kernel-bt.zImage-dtb', 'techo5-dot-rescue-apks.tar'
-# SHA256SUMS: what the installer checks the kernel and the rescue packages against.
+# SHA256SUMS: for checking a download by hand. The installer checks the kernel and the rescue packages
+# against the signed manifest instead, which names them both: nothing signs this file, so it is no
+# check against whoever served the files it describes.
 $sums = $names | ForEach-Object { "$((Get-FileHash -Algorithm SHA256 (Join-Path $out $_)).Hash.ToLower())  $_" }
 [IO.File]::WriteAllText((Join-Path $out 'SHA256SUMS'), ($sums -join "`n") + "`n")
 $assets = ($names + 'SHA256SUMS') | ForEach-Object { Join-Path $out $_ }

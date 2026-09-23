@@ -154,7 +154,9 @@ if ($DryRun) {
 Write-Host "== release $tag on $repo"
 $Notes += "`n`nThe Bluetooth kernel (techo5-dot-kernel-bt.zImage-dtb, Linux 3.18.19, GPL-2.0) is built by tools/linux/build-kernel.sh from Amazon's GPL source for the Echo Dot 2nd gen (Echo_Dot_src-6.5.7.1) with the configuration and backports in tools/linux."
 $ghArgs = @('release', 'create', $tag) + $assets + @('--repo', $repo, '--title', "TECHO5 Dot $Version", '--notes', $Notes)
-if ($Prerelease) { $ghArgs += '--prerelease' }
+# A version with a suffix (-rc.1, -beta) is a prerelease whether or not -Prerelease was given: GitHub
+# otherwise makes it /releases/latest, which is what the installers and every unit's updater follow.
+if ($Prerelease -or $Version -match '-') { $ghArgs += '--prerelease' }
 & gh @ghArgs
 if ($LASTEXITCODE -ne 0) { throw 'gh release create failed' }
 Write-Host "published: https://github.com/$repo/releases/tag/$tag"

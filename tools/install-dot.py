@@ -116,6 +116,13 @@ echo "slot a: $(cat $S/slots/a/etc/techo5-release), $(ls $S/slots/a/bin | wc -l)
 '''
 
 
+def is_techo5_image(path):
+    """A boot image TECHO5 built: every one carries techo5.* words in its header's command line."""
+    with open(path, 'rb') as f:
+        head = f.read(576)
+    return head.startswith(b'ANDROID!') and b'techo5' in head[64:576]
+
+
 def api_port_open(address):
     try:
         with socket.create_connection((address, 6053), timeout=2):
@@ -142,6 +149,14 @@ def main():
     ap.add_argument('--adb', default='adb')
     a = ap.parse_args()
     need(a.adb, 'install the Android platform tools (adb)')
+    ssh_key = None
+    if a.ssh_key:
+        # Read and checked before anything touches the unit: a wrong file would otherwise surface only
+        # at the end of the install.
+        with open(os.path.expanduser(a.ssh_key)) as f:
+            ssh_key = f.read().strip()
+        if not ssh_key.startswith(('ssh-', 'ecdsa-', 'sk-')) or len(ssh_key.split()) < 2:
+            fail('%s does not look like an SSH public key' % a.ssh_key)
     a.serial = pick_unit(a.serial, a.adb, ('device', 'recovery'), 'Echo Dot', consoles=(CONSOLE_DOT,))
     if a.name is not None:
         a.name = ask_name(a.name, '')
@@ -246,6 +261,12 @@ def main():
     recovery = os.path.join(unit, 'recovery.img')
     if not head_is_android(recovery):
         fail('recovery backup is not an Android boot image')
+    if is_techo5_image(recovery):
+        # The recovery partition already held TECHO5 Linux when this backup was first taken. It is not a
+        # way back to TWRP, and as the donor for the new image it would hand over a header already edited
+        # for Linux (and perhaps the Bluetooth kernel) instead of the unit's own.
+        fail("%s is a TECHO5 Linux boot image, not the unit's TWRP. Put this unit's TWRP image there "
+             "(or boot TWRP, flash it to recovery and move this file aside), then run this again." % recovery)
 
     # ---------------------------------------------------------------------------------------- 3
     step("the release, and this unit's boot image")
@@ -347,17 +368,13 @@ def main():
     if 'slot a: ' not in result:
         fail('installing the slot failed: %s' % result)
     note(result)
-    # The way back to TWRP without a PC: the unit's own TWRP (its recovery backup) and the script that undoes it.
-    with open(recovery, 'rb') as f:
-        head = f.read(1024)
-    if head.startswith(b'ANDROID!') and b'techo5' not in head:
-        adb.push(recovery, '/cache/techo5/twrp.img')
-        if adb.sh('md5sum /cache/techo5/twrp.img').split(' ')[0] != md5(recovery):
-            fail('the TWRP copy on the unit does not match %s' % recovery)
-        adb.push(os.path.join(repo_root(), 'tools', 'linux', 'back-to-linux.sh'), '/cache/techo5/back-to-linux.sh')
-        note('TWRP copy kept on the unit (to-twrp puts it back; /cache/techo5/back-to-linux.sh returns)')
-    else:
-        note('no TWRP backup for %s to keep on the unit (to-twrp will say so)' % a.serial)
+    # The way back to TWRP without a PC: the unit's own TWRP (its recovery backup, checked in step 2 not to
+    # be a Linux image) and the script that undoes it.
+    adb.push(recovery, '/cache/techo5/twrp.img')
+    if adb.sh('md5sum /cache/techo5/twrp.img').split(' ')[0] != md5(recovery):
+        fail('the TWRP copy on the unit does not match %s' % recovery)
+    adb.push(os.path.join(repo_root(), 'tools', 'linux', 'back-to-linux.sh'), '/cache/techo5/back-to-linux.sh')
+    note('TWRP copy kept on the unit (to-twrp puts it back; /cache/techo5/back-to-linux.sh returns)')
 
     # SSH keys and Wi-Fi go to userdata, where they outlast slots and updates.
     tmp = os.path.join(a.work, 'provision-' + a.serial)
@@ -372,12 +389,10 @@ def main():
         adb.sh('chmod %s %s' % (mode, remote))
 
     adb.sh('mkdir -p /data/misc/echolocal/ssh; chmod 700 /data/misc/echolocal/ssh')
-    if a.ssh_key:
-        with open(os.path.expanduser(a.ssh_key)) as f:
-            key = f.read().strip()
+    if ssh_key:
         have = adb.sh('cat /data/misc/echolocal/ssh/authorized_keys /data/techo5-linux/ssh/authorized_keys 2>/dev/null')
-        if key.split(' ')[1] not in have:
-            push_text('\n'.join(x for x in (have, key) if x) + '\n', '/data/misc/echolocal/ssh/authorized_keys')
+        if ssh_key.split()[1] not in have:
+            push_text('\n'.join(x for x in (have, ssh_key) if x) + '\n', '/data/misc/echolocal/ssh/authorized_keys')
         note('SSH key %s set; turn on the SSH switch in Home Assistant to use it' % os.path.basename(a.ssh_key))
     if wifi_conf:
         adb.sh('mkdir -p /data/techo5-linux')

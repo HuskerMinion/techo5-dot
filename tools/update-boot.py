@@ -24,6 +24,7 @@ back the last image that booted healthy.
 """
 import argparse
 import os
+import re
 import subprocess
 import sys
 import time
@@ -71,6 +72,15 @@ def main():
         r = subprocess.run(ssh + [command], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         return r.returncode, r.stdout.decode('utf-8', 'replace').strip()
 
+    # A boot is told apart from the one before it by the kernel's boot id, so the healthy mark the old boot
+    # left in MISC is never mistaken for the new one's. Read before anything is written: an empty id would
+    # be "in" every later reply, and the wait below could never see the new boot as healthy.
+    rc, out = remote('cat /proc/sys/kernel/random/boot_id')
+    m = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', out)
+    if rc != 0 or not m:
+        fail("could not read the running boot's id over SSH from %s (%s); nothing was flashed" % (a.address, out or 'no output'))
+    boot_id = m.group(0)
+
     step('flashing %s' % a.address)
     with open(image, 'rb') as f:
         if subprocess.run(ssh + ['cat > /store/techo5/linux-next.img'], stdin=f).returncode != 0:
@@ -87,9 +97,6 @@ def main():
     if 'flashed ' + want not in out:
         fail('flashing failed')
 
-    # A boot is told apart from the one before it by the kernel's boot id, so the healthy mark the old boot
-    # left in MISC is never mistaken for the new one's.
-    _, boot_id = remote('cat /proc/sys/kernel/random/boot_id')
     remote('sync; (sleep 2; reboot) >/dev/null 2>&1 &')
     note('rebooting into the new image; waiting for a healthy boot')
     time.sleep(40)

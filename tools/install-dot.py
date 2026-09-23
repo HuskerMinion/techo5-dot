@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Take an unlocked Echo Dot 2 (biscuit) from Fire OS or TWRP to the TECHO5 Linux image, in one run.
 
+    python3 tools/install-dot.py
     python3 tools/install-dot.py --serial <serial> --dry-run
     python3 tools/install-dot.py --serial <serial> --name Kitchen
+
+Run with nothing, it finds the unit (asking which, when there are several) and asks for a name when
+the unit has none. Every question has a switch, for running it from a script.
 
 Windows, Linux and macOS alike; needs Python 3 and adb. Nothing is built: the signed release (root
 filesystem, Bluetooth kernel, rescue packages) is downloaded and checked, and this unit's boot image is
@@ -30,9 +34,10 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from techo5lib import (CONSOLE_DOT, Adb, Console, ask, ask_wifi, default_dir, download_checked, fail,  # noqa: E402
-                       head_is_android, md5, need, new_api_key, note, repo_root, run_main, step,
-                       valid_api_key, write_private)
+from techo5lib import (CONSOLE_DOT, Adb, Console, ask, ask_name, ask_wifi, check_serial_access,  # noqa: E402
+                       console_hint, default_dir, download_checked, fail, head_is_android, interactive, md5,
+                       need, new_api_key, note, pick_unit, repo_root, run_main, step, valid_api_key,
+                       write_private)
 from dotimage import DotRelease, build_boot_image  # noqa: E402
 
 PARTS = ['preloader', 'kb', 'dkb', 'lk_a', 'lk_b', 'tee1', 'tee2', 'expdb', 'misc', 'persist', 'boot_a', 'boot_b', 'recovery']
@@ -121,7 +126,7 @@ def api_port_open(address):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--serial', required=True, help="the unit's adb serial (adb devices)")
+    ap.add_argument('--serial', help="the unit's adb serial (adb devices); found, or asked for, when missing")
     ap.add_argument('--name', help='the name Home Assistant shows, for a unit with no identity yet (asked for when missing)')
     ap.add_argument('--key-file', help='where a new Home Assistant key is kept (default backups/<serial>/home-assistant.key)')
     ap.add_argument('--release', default='latest', help="a release tag (dot-vX.Y.Z), or latest")
@@ -137,13 +142,17 @@ def main():
     ap.add_argument('--adb', default='adb')
     a = ap.parse_args()
     need(a.adb, 'install the Android platform tools (adb)')
+    a.serial = pick_unit(a.serial, a.adb, ('device', 'recovery'), 'Echo Dot', consoles=(CONSOLE_DOT,))
+    if a.name is not None:
+        a.name = ask_name(a.name, '')
     adb = Adb(a.serial, a.adb)
 
     # ---------------------------------------------------------------------------------------- 1
     step('device %s' % a.serial)
     state = adb.state()
     if state not in ('device', 'recovery'):
-        fail("adb does not see %s (state: '%s'). Boot it into Fire OS (root adb) or TWRP with USB connected." % (a.serial, state))
+        fail("adb does not see %s (state: '%s'). Boot it into Fire OS (root adb) or TWRP with USB connected.%s"
+             % (a.serial, state, console_hint((CONSOLE_DOT,))))
     twrp = state == 'recovery'
     if 'biscuit' not in adb.sh('getprop ro.product.device; getprop ro.build.product'):
         fail('%s is not an Echo Dot 2nd gen (biscuit)' % a.serial)
@@ -183,6 +192,8 @@ def main():
         ssid = a.wifi_ssid
         if not ssid:
             note('%s has no saved Wi-Fi network' % a.serial)
+            if not interactive():
+                fail('%s has no saved Wi-Fi network: pass --wifi-ssid (the passphrase is still asked for)' % a.serial)
             ssid = ask('Wi-Fi network name')
         wifi_conf = ask_wifi(ssid)
         note("will join '%s'" % ssid)
@@ -267,9 +278,7 @@ def main():
             shown = (have_name, key)
     else:
         note('%s has no Home Assistant identity yet' % a.serial)
-        name = a.name or ask('Name for this Dot in Home Assistant (for example: Kitchen)')
-        if len(name) > 31:
-            fail("'%s' is longer than the 31 characters the ESPHome API allows" % name)
+        name = ask_name(a.name, 'Echo Dot')
         key_file = a.key_file or os.path.join(unit, 'home-assistant.key')
         if os.path.exists(key_file):
             with open(key_file) as f:
@@ -311,6 +320,7 @@ def main():
     if a.dry_run:
         print('\nDry run: checks, backups and builds done; nothing written to %s.\n  boot image:      %s\n  root filesystem: %s' % (a.serial, image, rootfs))
         return
+    check_serial_access(must=False)
 
     # ---------------------------------------------------------------------------------------- 5
     step('boot image into the recovery partition')
@@ -398,10 +408,20 @@ def main():
     query = ("echo slot=$(cat /run/techo5/slot 2>/dev/null); echo release=$(cat /etc/techo5-release 2>/dev/null); "
              "echo ip=$(ifconfig wlan0 2>/dev/null | sed -n 's/.*inet addr:\\([0-9.]*\\).*/\\1/p'); echo echod=$(pidof echod); "
              "echo tries=$(dd if=/dev/mmcblk0p8 bs=512 skip=14 count=1 2>/dev/null | tr -d '\\000')")
-    healthy, said = False, ''
-    deadline = time.time() + 8 * 60
+    healthy, said, told = False, '', ''
+    start = time.time()
+    deadline, ticked = start + 8 * 60, start
     while time.time() < deadline:
         out = console.run(query, 8)
+        if not out and time.time() - start >= 30:
+            # Nothing from the console yet: say so now and then, and why, so the wait never reads as a hang.
+            if time.time() - ticked >= 30:
+                note('still waiting for the console (%d s of %d)' % (time.time() - start, 8 * 60))
+                ticked = time.time()
+            h = console.waiting_hint()
+            if h and h != told:
+                note(h)
+                told = h
         if out:
             kv = dict(re.findall(r'^(\w+)=(.*)$', out, re.M))
             now = 'slot %s, %s, address %s, echod %s' % (kv.get('slot'), kv.get('release'), kv.get('ip') or 'none yet',

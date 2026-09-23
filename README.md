@@ -142,9 +142,13 @@ Assistant.
 ```
 git clone https://github.com/HuskerMinion/techo5-dot
 cd techo5-dot
-python3 tools/install-dot.py --serial <adb serial> --dry-run   # checks, backups, download, boot image; writes nothing
-python3 tools/install-dot.py --serial <adb serial> --name "Kitchen"
+python3 tools/install-dot.py --dry-run   # checks, backups, download, boot image; writes nothing
+python3 tools/install-dot.py
 ```
+
+It finds the Dot on its own (asking which, if several are plugged in) and asks what to call it in Home
+Assistant when it has no name yet. From a script, pass `--serial <adb serial> --name "Kitchen"` and it
+asks nothing.
 
 The installer:
 1. Backs up every boot-critical partition to `backups/<serial>/` and checks each copy against the

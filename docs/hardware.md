@@ -113,7 +113,7 @@ Not backported, and why:
   **CVE-2020-24490** (BleedingTooth): the vulnerable code (LE Secure Connections public keys,
   `sk_filter` in L2CAP receive, extended advertising reports) does not exist in 3.18.
 - `hci_vhci.c` fixes (open/close races) need access to `/dev/vhci`, which only btbridge (root) has.
-- Local-only socket/ioctl fixes, controller-misbehaviour hardening (AMP events, zeroed events,
+- Local-only socket/ioctl fixes, controller-misbehavior hardening (AMP events, zeroed events,
   `HCI_EV_NUM_COMP_PKTS` underflow) and interoperability changes (`1d8e801422d6`,
   `c569242cd492`, connection-parameter checks) were left out.
 

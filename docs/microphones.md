@@ -227,7 +227,7 @@ The results were identical at 0.90 and 0.80.
    - **Gone under Linux (2026-09-16).** The same captures on TECHO5 Linux (7-mic average, 4–6 s each,
      `echod tools mic` with the daemon held) show no tone at 3176 Hz or 6355 Hz in any case:
      - dark
-     - dim red, bright white, grey and cyan, each at full and quarter drive current
+     - dim red, bright white, gray and cyan, each at full and quarter drive current
      - the ring rewritten many times a second as a pulse, the way the daemon animates it
 
      The loudest bin in 3.0–3.35 kHz wanders (3043–3344 Hz) at 3–15 dB over the median bin, which

@@ -124,7 +124,7 @@ partition), built by `tools/linux/build-image.sh` from `tools/linux/init` and `m
 
 ### It goes in the recovery partition, not a boot slot
 
-**The bootloader adds `skip_initramfs` to the kernel command line, and this kernel honours it.**
+**The bootloader adds `skip_initramfs` to the kernel command line, and this kernel honors it.**
 None of the three stock images carries it in its own header — the running system shows it in
 `/proc/cmdline`, along with `root=/dev/dm-0` and the `dm=` verity table, so LK composes those for a
 normal boot of this A/B, system-as-root device. The string is present in the kernel image, so an

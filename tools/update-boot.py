@@ -14,6 +14,13 @@ release.
 The previous image stays in the store as linux-prev.img, and linux.img (what back-to-linux.sh and to-twrp
 use) is only replaced once the new image has booted healthy. Needs SSH to the unit: turn on its SSH switch
 in Home Assistant, with a key set. Windows, Linux and macOS alike; needs Python 3 and ssh.
+
+If the new image does not come up: when its kernel boots but the system does not, the unit stays in the
+new image's rescue environment after five tries (USB console, SSH). When the kernel itself does not boot
+there is no rescue, because the rescue environment is in the same image. The way back is then the unit's
+own TWRP: hold Volume-Down while powering on for fastboot, `fastboot flash recovery
+backups/<serial>/recovery.img`, let it boot TWRP, and `adb shell sh /cache/techo5/back-to-linux.sh` puts
+back the last image that booted healthy.
 """
 import argparse
 import os
@@ -98,7 +105,15 @@ def main():
             break
         time.sleep(10)
     if not healthy:
-        fail('the unit did not report a healthy boot; after five tries it stays in rescue (USB console, SSH)')
+        fail('the unit did not report a healthy boot.\n'
+             '   If the new kernel boots, the unit stays in its rescue environment after five tries: reach it on\n'
+             '   the USB console or over SSH.\n'
+             '   If the new kernel does not boot at all (no console, no SSH), there is no rescue to reach, since it\n'
+             '   is in the same image. Go back through TWRP: hold Volume-Down while powering on for fastboot, then\n'
+             '     fastboot flash recovery %s\n'
+             '   let it boot TWRP, and run: adb shell sh /cache/techo5/back-to-linux.sh\n'
+             '   That puts back the last Linux image that booted healthy (linux.img in the store was not replaced).'
+             % recovery)
     _, out = remote('mv -f /store/techo5/linux-next.img /store/techo5/linux.img; sync; uname -r')
     note('kernel %s' % out)
     print("Done: %s booted the new image healthy; it is now the unit's linux.img." % a.serial)

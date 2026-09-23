@@ -3,7 +3,7 @@
 #
 # Takes the kernel and header from the unit's own recovery image and replaces the ramdisk with an
 # Alpine armv7 initramfs running tools/linux/init. The recovery partition, not a boot slot: the
-# bootloader adds skip_initramfs when it boots a boot slot, and this kernel honours it, so a boot
+# bootloader adds skip_initramfs when it boots a boot slot, and this kernel honors it, so a boot
 # slot would ignore the ramdisk and boot Android's system instead. Recovery's ramdisk is booted as
 # it is, which is how TWRP runs there.
 #

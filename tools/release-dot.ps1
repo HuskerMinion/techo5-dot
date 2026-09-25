@@ -159,9 +159,29 @@ $ghArgs = @('release', 'create', $tag) + $assets + @('--repo', $repo, '--title',
 if ($Prerelease -or $Version -match '-') { $ghArgs += '--prerelease' }
 & gh @ghArgs
 if ($LASTEXITCODE -ne 0) { throw 'gh release create failed' }
-# The dev channel follows every release, stable ones too, so it never offers something older than a
-# unit already runs: Install then refuses it and the card never clears (techo5 issue #42). Its
+# The dev channel moves forward with every release, stable ones too, so it never offers something
+# older than a unit already runs: Install then refuses it and the card never clears (techo5 issue #42).
+# It never moves back: a stable release after a newer prerelease leaves dev on the prerelease. Its
 # manifest names this release's own files, so only the manifest and its signature move.
-& gh release upload dev (Join-Path $out 'manifest.json') (Join-Path $out 'manifest.json.sig') --repo $repo --clobber
-if ($LASTEXITCODE -ne 0) { throw "published, but the dev channel was not updated: upload manifest.json and manifest.json.sig to the dev release by hand" }
+function Get-VersionRank([string]$v) {
+    if ($v -notmatch '^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.]+))?') { return $null }
+    [pscustomobject]@{ Core = [version]"$($Matches[1]).$($Matches[2]).$($Matches[3])"; Pre = $Matches[4] }
+}
+function Test-VersionNewer([string]$a, [string]$b) {
+    $x = Get-VersionRank $a; $y = Get-VersionRank $b
+    if (-not $x -or -not $y) { return $true }
+    if ($x.Core -ne $y.Core) { return $x.Core -gt $y.Core }
+    if (-not $x.Pre) { return [bool]$y.Pre }
+    if (-not $y.Pre) { return $false }
+    return [string]::CompareOrdinal($x.Pre, $y.Pre) -gt 0
+}
+$devVersion = $null
+try { $devVersion = ((& gh release download dev --repo $repo -p manifest.json -O - 2>$null) -join "`n" | ConvertFrom-Json).version } catch { }
+if (-not $devVersion -or (Test-VersionNewer $Version $devVersion)) {
+    & gh release upload dev (Join-Path $out 'manifest.json') (Join-Path $out 'manifest.json.sig') --repo $repo --clobber
+    if ($LASTEXITCODE -ne 0) { throw "published, but the dev channel was not updated: upload manifest.json and manifest.json.sig to the dev release by hand" }
+    Write-Host "dev channel: $Version (was $devVersion)"
+} else {
+    Write-Host "dev channel left on $devVersion, which is newer than $Version"
+}
 Write-Host "published: https://github.com/$repo/releases/tag/$tag"

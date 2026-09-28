@@ -6,9 +6,12 @@ APK=$HOME/apk/apk.static
 SRC=${TECHO5_AEC_SRC:-/mnt/e/projects/techo5/tools/aec/techo5-aec.cpp}
 OUT=${1:-$HOME/techo5-aec}
 TARBALL=$HOME/alpine-minirootfs-3.24.1-x86_64.tar.gz
+# Alpine's published sha256 for that file: the root it unpacks is where the compiler runs.
+TARBALL_SHA256=41f73e3cf5fa919b8aa5ca6b30dc48f0da2720776d7423e2a7748211456fe081
 
 if [ -z "${TECHO5_IN_NS:-}" ]; then
 	[ -f "$TARBALL" ] || wget -q -O "$TARBALL" https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/x86_64/alpine-minirootfs-3.24.1-x86_64.tar.gz
+	echo "$TARBALL_SHA256  $TARBALL" | sha256sum -c --quiet - || { echo "$TARBALL is not the file that was pinned; delete it and run again" >&2; exit 1; }
 	exec unshare -Ur --map-auto env TECHO5_IN_NS=1 bash "$0" "$OUT"
 fi
 

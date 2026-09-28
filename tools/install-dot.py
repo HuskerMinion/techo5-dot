@@ -34,6 +34,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from techo5lib import wifi_conf as techo5_wifi_conf  # noqa: E402
 from techo5lib import (CONSOLE_DOT, Adb, Console, ask, ask_name, ask_wifi, check_serial_access,  # noqa: E402
                        console_hint, default_dir, download_checked, fail, head_is_android, interactive, md5,
                        need, new_api_key, note, pick_unit, repo_root, run_main, step, valid_api_key,
@@ -142,7 +143,8 @@ def main():
     ap.add_argument('--rootfs', help="a root filesystem you built (tools/linux/build-dot-rootfs.py) instead of the release's")
     ap.add_argument('--wake-words', default='okay_nabu,hey_jarvis,hey_mycroft,alexa,' + ','.join(EXTRA_MODELS), help='models for a unit that has none')
     ap.add_argument('--ssh-key', help='an SSH public key allowed to log in as root once SSH is switched on')
-    ap.add_argument('--wifi-ssid', help="a Wi-Fi network to join instead of the one Fire OS saved (asks for the passphrase)")
+    ap.add_argument('--wifi', '--wifi-ssid', dest='wifi_ssid', help="a Wi-Fi network to join instead of the one Fire OS saved (asks for the passphrase)")
+    ap.add_argument('--wifi-passphrase-file', help='a file holding the --wifi passphrase, for running from a script')
     ap.add_argument('--dry-run', action='store_true', help='checks, backups, download and boot image; write nothing')
     ap.add_argument('--backups', default=default_dir('TECHO5_BACKUPS', 'backups'))
     ap.add_argument('--work', default=default_dir('TECHO5_WORK', 'build'))
@@ -208,9 +210,13 @@ def main():
         if not ssid:
             note('%s has no saved Wi-Fi network' % a.serial)
             if not interactive():
-                fail('%s has no saved Wi-Fi network: pass --wifi-ssid (the passphrase is still asked for)' % a.serial)
+                fail('%s has no saved Wi-Fi network: pass --wifi (the passphrase is asked for, or read from --wifi-passphrase-file)' % a.serial)
             ssid = ask('Wi-Fi network name')
-        wifi_conf = ask_wifi(ssid)
+        if a.wifi_passphrase_file:
+            with open(a.wifi_passphrase_file) as f:
+                wifi_conf = techo5_wifi_conf(ssid, f.read().strip())
+        else:
+            wifi_conf = ask_wifi(ssid)
         note("will join '%s'" % ssid)
     elif own_wifi:
         note('Wi-Fi network set on the unit before (wifi-set); keeping it')

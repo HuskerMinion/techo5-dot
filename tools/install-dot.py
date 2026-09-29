@@ -214,7 +214,8 @@ def main():
             ssid = ask('Wi-Fi network name')
         if a.wifi_passphrase_file:
             with open(a.wifi_passphrase_file) as f:
-                wifi_conf = techo5_wifi_conf(ssid, f.read().strip())
+                # Only the line's end goes: a passphrase may begin or end with spaces.
+                wifi_conf = techo5_wifi_conf(ssid, f.read().rstrip('\r\n'))
         else:
             wifi_conf = ask_wifi(ssid)
         note("will join '%s'" % ssid)

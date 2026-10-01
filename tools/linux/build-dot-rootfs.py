@@ -6,7 +6,8 @@
 Nothing of any one unit goes in: no firmware (each unit adopts its own into the store), no keys, no Wi-Fi,
 no Home Assistant identity, so it can be published. The boot image is not in it: the installer builds that
 per unit. Inputs (docs/building.md): the Alpine base, busybox.static, apks-dot/ and apks-bt-dot/ in
-TECHO5_INPUTS (default inputs/), and bin/wmtup, bin/btbridge and build/bluealsa/bluealsa.
+TECHO5_INPUTS (default inputs/), and bin/wmtup, bin/btbridge and build/bluealsa/bluealsa; bin/techo5-librespot
+when it is there.
 Windows, Linux and macOS alike; needs Python 3.
 """
 import argparse
@@ -26,6 +27,8 @@ def main():
     ap.add_argument('--release', required=True, help='the version this root filesystem is, e.g. v0.6.0')
     ap.add_argument('--wmtup', default=j(REPO, 'bin', 'wmtup'))
     ap.add_argument('--btbridge', default=j(REPO, 'bin', 'btbridge'))
+    ap.add_argument('--librespot', default=j(REPO, 'bin', 'techo5-librespot'),
+                    help="Spotify Connect's receiver (techo5's tools/linux/build-librespot.sh); left out when missing")
     ap.add_argument('--bluealsa', default=os.environ.get('TECHO5_BLUEALSA') or j(REPO, 'build', 'bluealsa', 'bluealsa'))
     ap.add_argument('--inputs', default=os.environ.get('TECHO5_INPUTS') or j(REPO, 'inputs'))
     ap.add_argument('--out', default=j(REPO, 'bin', 'techo5-dot-rootfs.tar.gz'))

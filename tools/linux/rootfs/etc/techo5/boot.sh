@@ -229,6 +229,15 @@ gw=$($BB route -n 2>/dev/null | $BB awk '$1 == "0.0.0.0" { print $2; exit }')
 	$BB hwclock -w 2>/dev/null
 	echo "techo5-dot boot: clock $($BB date)" > /dev/kmsg ) &
 
+# --- The services' own users, which their packages' install scripts would have made. Before the system
+# bus starts, whoever starts it (techo5-bt, or the daemon for AirPlay and Spotify Connect): a bus policy
+# naming a user that does not exist yet is dropped as the bus loads it.
+$BB grep -q '^messagebus:' /etc/group || echo 'messagebus:x:101:messagebus' >> /etc/group
+$BB grep -q '^messagebus:' /etc/passwd || echo 'messagebus:x:100:101:messagebus:/run/dbus:/sbin/nologin' >> /etc/passwd
+$BB grep -q '^bluealsa:' /etc/passwd || echo 'bluealsa:x:120:18:bluealsa:/var/lib/bluealsa:/sbin/nologin' >> /etc/passwd
+$BB grep -q '^avahi:' /etc/group || echo 'avahi:x:86:' >> /etc/group
+$BB grep -q '^avahi:' /etc/passwd || echo 'avahi:x:86:86:avahi:/var/lib/avahi:/sbin/nologin' >> /etc/passwd
+
 # --- Bluetooth, in the background: the daemon does not wait for it (usr/local/sbin/techo5-bt).
 /usr/local/sbin/techo5-bt > /dev/null 2>&1 &
 

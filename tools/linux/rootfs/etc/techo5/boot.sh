@@ -237,8 +237,16 @@ $BB grep -q '^messagebus:' /etc/passwd || echo 'messagebus:x:100:101:messagebus:
 $BB grep -q '^bluealsa:' /etc/passwd || echo 'bluealsa:x:120:18:bluealsa:/var/lib/bluealsa:/sbin/nologin' >> /etc/passwd
 $BB grep -q '^avahi:' /etc/group || echo 'avahi:x:86:' >> /etc/group
 $BB grep -q '^avahi:' /etc/passwd || echo 'avahi:x:86:86:avahi:/var/lib/avahi:/sbin/nologin' >> /etc/passwd
-# avahi drops root for its own user, and the kernel gives a network socket only to the inet group.
-$BB grep -q '^inet:' /etc/group || echo 'inet:x:3003:avahi' >> /etc/group
+# avahi and the receivers (AirPlay, Spotify Connect; feature/streaming): these Android kernels give a
+# network socket only to a member of the inet group (3003). avahi drops root for its own user; the
+# receivers run as their own, streaming, which owns nothing else. (build-dot-rootfs.py leaves out avahi's SSH
+# service files.)
+$BB grep -q '^streaming:' /etc/group || echo 'streaming:x:88:' >> /etc/group
+$BB grep -q '^streaming:' /etc/passwd || echo 'streaming:x:88:88:streaming:/var/empty:/sbin/nologin' >> /etc/passwd
+$BB grep -q '^inet:' /etc/group || echo 'inet:x:3003:' >> /etc/group
+for u in avahi streaming; do
+	$BB grep -Eq "^inet:.*[:,]$u(,|\$)" /etc/group || $BB sed -i -E "/^inet:/{s/:\$/:$u/;t;s/\$/,$u/}" /etc/group
+done
 
 # --- Bluetooth, in the background: the daemon does not wait for it (usr/local/sbin/techo5-bt).
 /usr/local/sbin/techo5-bt > /dev/null 2>&1 &

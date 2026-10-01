@@ -62,9 +62,16 @@ grep -q '^messagebus:' /etc/passwd || echo 'messagebus:x:100:101:messagebus:/run
 # dropped when the bus loads it, and bluealsa then cannot own its name.
 grep -q '^bluealsa:' /etc/passwd || echo 'bluealsa:x:120:18:bluealsa:/var/lib/bluealsa:/sbin/nologin' >> /etc/passwd
 dbus-uuidgen --ensure 2>/dev/null
+# The daemon starts the bus too, for AirPlay and Spotify Connect (feature/streaming): whichever holds
+# /run/techo5-dbus-starting starts it, and the other waits for it.
 if ! pidof dbus-daemon > /dev/null; then
-	dbus-daemon --system --nofork --nopidfile >> $LOG/dbus.log 2>&1 &
-	sleep 1
+	if mkdir /run/techo5-dbus-starting 2>/dev/null; then
+		pidof dbus-daemon > /dev/null || dbus-daemon --system --nofork --nopidfile >> $LOG/dbus.log 2>&1 &
+		sleep 1
+		rmdir /run/techo5-dbus-starting
+	else
+		n=0; while [ $n -lt 5 ] && [ ! -S /run/dbus/system_bus_socket ]; do sleep 1; n=$((n + 1)); done
+	fi
 fi
 # Only what audio needs: no HID or HID over GATT (a paired device could otherwise present itself as a
 # keyboard), no PAN networking, no SIM access.

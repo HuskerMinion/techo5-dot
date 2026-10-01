@@ -6,7 +6,8 @@
 #      the SSH switch is on and a key is set), Sendspin audio (8928/tcp), the setup page (8181/tcp;
 #      the daemon binds it only while the page is open, so it refuses connections the rest of the
 #      time, the same arrangement as Sendspin's), DHCP replies, ping, IPv6 neighbor discovery, and
-#      anything answering a connection the Dot made.
+#      anything answering a connection the Dot made. On Wi-Fi only: AirPlay (5000/tcp, 6001-6010/udp)
+#      and Spotify Connect (4070/tcp), which nothing listens on unless their switches are on.
 # Out: everything, as before.
 #
 # The kernel has iptables but not nftables, so the legacy tools are the ones that work.
@@ -27,6 +28,10 @@ for T in iptables-legacy ip6tables-legacy; do
 	$T -A INPUT -p tcp --dport 22 -j ACCEPT
 	$T -A INPUT -p tcp --dport 8928 -j ACCEPT
 	$T -A INPUT -p tcp --dport 8181 -j ACCEPT
+	# feature/streaming pins these ports (airplay.go, spotify.go).
+	$T -A INPUT -i wlan0 -p tcp --dport 5000 -j ACCEPT
+	$T -A INPUT -i wlan0 -p udp --dport 6001:6010 -j ACCEPT
+	$T -A INPUT -i wlan0 -p tcp --dport 4070 -j ACCEPT
 done
 iptables-legacy -A INPUT -p udp --sport 67 --dport 68 -j ACCEPT
 iptables-legacy -A INPUT -p icmp -j ACCEPT
@@ -36,4 +41,4 @@ ip6tables-legacy -A INPUT -p udp --sport 547 --dport 546 -j ACCEPT
 ok=1
 iptables-legacy -P INPUT DROP || ok=
 ip6tables-legacy -P INPUT DROP || ok=
-[ -n "$ok" ] && echo "techo5-firewall: inbound closed except 6053, 5353, 22, 8928, 8181" >&2
+[ -n "$ok" ] && echo "techo5-firewall: inbound closed except 6053, 5353, 22, 8928, 8181, and on Wi-Fi 5000, 6001-6010, 4070" >&2

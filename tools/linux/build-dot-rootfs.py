@@ -28,7 +28,8 @@ def main():
     ap.add_argument('--wmtup', default=j(REPO, 'bin', 'wmtup'))
     ap.add_argument('--btbridge', default=j(REPO, 'bin', 'btbridge'))
     ap.add_argument('--librespot', default=j(REPO, 'bin', 'techo5-librespot'),
-                    help="Spotify Connect's receiver (techo5's tools/linux/build-librespot.sh); left out when missing")
+                    help="Spotify Connect's receiver: techo5's tools/linux/build-librespot.sh writes it as "
+                         "bin/techo5-librespot-arm there; left out when missing")
     ap.add_argument('--bluealsa', default=os.environ.get('TECHO5_BLUEALSA') or j(REPO, 'build', 'bluealsa', 'bluealsa'))
     ap.add_argument('--inputs', default=os.environ.get('TECHO5_INPUTS') or j(REPO, 'inputs'))
     ap.add_argument('--out', default=j(REPO, 'bin', 'techo5-dot-rootfs.tar.gz'))
@@ -58,6 +59,10 @@ def main():
            # avahi announces only what the AirPlay and Spotify Connect receivers register, not SSH.
            '--drop', 'etc/avahi/services/ssh.service', '--drop', 'etc/avahi/services/sftp-ssh.service',
            '--release', 'techo5-dot %s (%s)' % (a.release, commit), '-o', a.out]
+    if os.path.exists(a.librespot):
+        cmd += ['--add', a.librespot + '=/usr/local/bin/techo5-librespot']
+    else:
+        print('no %s: the image will not offer Spotify Connect' % a.librespot)
     for m in models:
         cmd += ['--data', '%s=/usr/share/techo5/models/%s' % (m, os.path.basename(m))]
     if subprocess.run(cmd).returncode != 0:

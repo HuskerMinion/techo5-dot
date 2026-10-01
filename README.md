@@ -39,7 +39,7 @@ setting its clock.
 | 🎙️ **All seven microphones** | Averaged, with echo cancellation, and a wake word heard on the device. |
 | 🔊 **A Bluetooth speaker again** | Pair a phone, or send the Dot's audio to a speaker; a Home Assistant Bluetooth proxy on top. |
 | 📞 **A speakerphone again** | Calls through your own SIP provider, placed by voice or from Home Assistant, answered with the action button; a help call that alerts your phones and dials people in turn. |
-| 🔐 **Locked down** | A firewall that lets in only Home Assistant, mDNS, SSH, Sendspin and the setup page; SSH is keys-only and starts off, and the setup page answers only while it is open. |
+| 🔐 **Locked down** | A firewall that lets in only Home Assistant, mDNS, SSH, Sendspin, the setup page, and on Wi-Fi AirPlay and Spotify Connect while they are on; SSH is keys-only and starts off, and the setup page answers only while it is open. |
 | 🔄 **Signed updates with rollback** | ed25519-signed releases install into a spare slot and roll back on their own if they don't come up healthy. |
 
 **Built on [EchoLocal](https://github.com/ygelfand/echolocal)** by Yuri Gelfand (MIT), which first
@@ -87,17 +87,18 @@ Echo Show 5. Both run the same daemon source, built per device.
 | Light ring | Alexa's colors | Wake, listening, thinking, replying and error effects, set from Home Assistant ✅ |
 | Buttons (action, volume, mic mute) | Yes | Yes, all four ✅. Mute is the hardware mute line |
 | Timers | Yes | Yes (Home Assistant timers) |
-| 3.5 mm audio out | Yes | In the daemon (jack detection, headphone path). Not yet tested on this image |
+| 3.5 mm audio out | Yes | In the daemon (jack detection, headphone path), with an **Audio output** choice on the setup page and in Home Assistant. Not yet tested on this image |
 | Bluetooth: phone to Dot (Dot as a speaker) | Yes | Yes ✅. Hold the action button for 5 seconds (the ring pulses blue), or turn on **Bluetooth pairing** in Home Assistant, or say "pair Bluetooth" with [this automation](docs/bluetooth-pairing-automation.yaml). Then pick the Dot on your phone; a chime says it worked. Phone volume works, the wake word still works over the music, and whichever started last plays: phone or Home Assistant media |
 | Bluetooth: Dot to a speaker or headphones | Yes | Yes ✅. If no phone pairs within 20 s, pairing mode connects the strongest speaker it hears, since there's no screen to choose on |
 | Home Assistant Bluetooth proxy | No | Yes ✅, alongside Bluetooth audio |
 | Multi-room music | Alexa groups | Sendspin (Music Assistant) client on port 8928. Built in, not yet tested on this image |
+| AirPlay and Spotify Connect | Spotify Connect | Both, new and **not yet tested**: off until turned on, on the setup page (Sound & Voice) or in Home Assistant. The Dot shows up under its own name in the Apple and Spotify apps (Spotify Premium) |
 | Calling | Alexa calling and Drop In | Yes ✅, through your own SIP provider (TLS and SRTP): "call Alex" by voice, a help call that alerts phones and dials people in turn, calls between your own devices. The action button answers and hangs up, and the ring pulses green. Off until Home Assistant signs the Dot in. See [TECHO5's phone.md](https://github.com/HuskerMinion/techo5/blob/main/docs/phone.md) |
 | Skills, shopping | Yes | **No.** Those are Alexa cloud services |
 | Routines and smart home control | Alexa | Whatever Home Assistant does ✅ |
 | Updates | Amazon, automatic | Signed releases from this repo, offered in Home Assistant, A/B slots with automatic rollback ✅ |
 | Remote access | None | SSH, keys only, behind a Home Assistant switch that starts off ✅ |
-| Network exposure | Amazon's | Firewall: inbound only the Home Assistant API, mDNS, SSH, Sendspin and the setup page ✅ |
+| Network exposure | Amazon's | Firewall: inbound only the Home Assistant API, mDNS, SSH, Sendspin and the setup page, and on Wi-Fi AirPlay and Spotify Connect (nothing listens there unless they are on) ✅ |
 | Changing Wi-Fi | Alexa app | `wifi-set` on the Dot, or `tools/set-wifi.py` from a computer over USB ✅ |
 | If it won't boot | Factory reset | Rescue mode (USB console, SSH, firewall) after five bad boots. Fire OS and TWRP are still on the device, one command away ✅ |
 

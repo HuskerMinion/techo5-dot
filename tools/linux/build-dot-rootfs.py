@@ -55,6 +55,8 @@ def main():
            '--add', busybox + '=/bin/busybox.static', '--add', a.wmtup + '=/usr/local/bin/wmtup',
            '--add', a.daemon + '=/usr/local/bin/echod', '--add', a.btbridge + '=/usr/local/bin/btbridge',
            '--add', a.bluealsa + '=/usr/bin/bluealsa', '--overlay', j(HERE, 'rootfs'),
+           # avahi announces only what the AirPlay and Spotify Connect receivers register, not SSH.
+           '--drop', 'etc/avahi/services/ssh.service', '--drop', 'etc/avahi/services/sftp-ssh.service',
            '--release', 'techo5-dot %s (%s)' % (a.release, commit), '-o', a.out]
     for m in models:
         cmd += ['--data', '%s=/usr/share/techo5/models/%s' % (m, os.path.basename(m))]

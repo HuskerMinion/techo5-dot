@@ -237,6 +237,8 @@ $BB grep -q '^messagebus:' /etc/passwd || echo 'messagebus:x:100:101:messagebus:
 $BB grep -q '^bluealsa:' /etc/passwd || echo 'bluealsa:x:120:18:bluealsa:/var/lib/bluealsa:/sbin/nologin' >> /etc/passwd
 $BB grep -q '^avahi:' /etc/group || echo 'avahi:x:86:' >> /etc/group
 $BB grep -q '^avahi:' /etc/passwd || echo 'avahi:x:86:86:avahi:/var/lib/avahi:/sbin/nologin' >> /etc/passwd
+# avahi drops root for its own user, and the kernel gives a network socket only to the inet group.
+$BB grep -q '^inet:' /etc/group || echo 'inet:x:3003:avahi' >> /etc/group
 
 # --- Bluetooth, in the background: the daemon does not wait for it (usr/local/sbin/techo5-bt).
 /usr/local/sbin/techo5-bt > /dev/null 2>&1 &

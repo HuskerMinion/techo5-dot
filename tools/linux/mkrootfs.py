@@ -126,6 +126,8 @@ def main():
     ap.add_argument("--add", action="append", default=[], metavar="SRC=DEST", help="an executable")
     ap.add_argument("--data", action="append", default=[], metavar="SRC=DEST", help="a data file (0644)")
     ap.add_argument("--overlay", help="directory copied in as it stands")
+    ap.add_argument("--drop", action="append", default=[], metavar="PATH",
+                    help="a file a package brings that the image leaves out (repeatable)")
     ap.add_argument("--release", default="", help="what to write in /etc/techo5-release")
     ap.add_argument("-o", "--output", required=True)
     a = ap.parse_args()
@@ -153,6 +155,10 @@ def main():
 
     if a.overlay:
         r.add_dir(a.overlay)
+
+    for path in a.drop:
+        if r.entries.pop(path.strip("/"), None) is None:
+            sys.exit(f"--drop {path}: no such file in the image")
 
     # Directories the boot script expects to exist, since it mounts into them.
     for d in ("proc", "sys", "dev", "dev/pts", "run", "tmp", "data", "android", "store", "mnt"):

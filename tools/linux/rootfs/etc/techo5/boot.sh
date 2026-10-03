@@ -220,13 +220,20 @@ if [ -d /data/techo5-linux ]; then
 	fi
 fi
 
-# The clock starts in 1970 and the daemon's TLS and logs both care. pool.ntp.org by name, now that DHCP
-# has written a resolver, with the gateway as a second source for networks that serve time locally.
-# Bounded, and in the background, so an unreachable server never holds the boot. Then the RTC, so the
-# next boot starts closer.
+# The clock starts in 1970 and the daemon's TLS and logs both care. Several servers by name, now that DHCP
+# has written a resolver, with the gateway as one more for networks that serve time locally: busybox ntpd
+# takes one address for each name, so pool.ntp.org alone is one pool member, and one that never answers
+# left the clock unset (techo5#77). Bounded, and in the background, so an unreachable server never holds
+# the boot; tried again each minute for half an hour if none answers. Then the RTC, in UTC, which is how
+# the kernel reads it at boot, so the next boot starts closer.
 gw=$($BB route -n 2>/dev/null | $BB awk '$1 == "0.0.0.0" { print $2; exit }')
-( $BB timeout -s KILL 40 $BB ntpd -n -q -p pool.ntp.org ${gw:+-p "$gw"} > /tmp/ntpd.log 2>&1 &&
-	$BB hwclock -w 2>/dev/null
+( n=0
+	until $BB timeout -s KILL 40 $BB ntpd -n -q -p time.cloudflare.com -p time.google.com -p 0.pool.ntp.org -p 1.pool.ntp.org ${gw:+-p "$gw"} > /tmp/ntpd.log 2>&1; do
+		n=$((n + 1))
+		[ $n -ge 30 ] && { echo "techo5-dot boot: clock not set, no time server answered" > /dev/kmsg; exit 1; }
+		$BB sleep 60
+	done
+	$BB hwclock -w -u 2>/dev/null
 	echo "techo5-dot boot: clock $($BB date)" > /dev/kmsg ) &
 
 # --- The services' own users, which their packages' install scripts would have made. Before the system

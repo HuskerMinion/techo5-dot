@@ -41,6 +41,11 @@ from techo5lib import (CONSOLE_DOT, Adb, Console, ask, ask_name, ask_wifi, check
                        write_private)
 from dotimage import DotRelease, build_boot_image  # noqa: E402
 
+# CABLE is what a backup that came over USB short or wrong usually means: the device reads the same
+# every time, and the copy breaks off part way, with the Dot dropping off USB (techo5#86).
+CABLE = ('This is usually the USB cable or port: try another cable, plugged straight into the computer '
+         '(no hub or dock), and run the installer again.')
+
 PARTS = ['preloader', 'kb', 'dkb', 'lk_a', 'lk_b', 'tee1', 'tee2', 'expdb', 'misc', 'persist', 'boot_a', 'boot_b', 'recovery']
 
 # Wake words beyond esphome's built-in set, from the community collection at
@@ -258,11 +263,11 @@ def main():
         tmp = dest + '.partial'
         # cat through exec-out, byte for byte; kept only once its md5 matches the device.
         if adb.exec_out_to_file('cat ' + src, tmp) != 0:
-            fail('reading %s failed' % p)
+            fail('reading %s failed. %s' % (p, CABLE))
         got = md5(tmp)
         if got != dev:
             os.remove(tmp)
-            fail('%s copy does not match the device (%s vs %s)' % (p, got, dev))
+            fail('%s copy does not match the device (%s vs %s). %s' % (p, got, dev, CABLE))
         os.replace(tmp, dest)
         note('%s %d bytes, md5 ok%s' % (p, os.path.getsize(dest), '' if dest == out else ' (changed since %s.img; saved as %s)' % (p, os.path.basename(dest))))
     recovery = os.path.join(unit, 'recovery.img')

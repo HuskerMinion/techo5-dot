@@ -48,7 +48,9 @@ bdaddr=$(cat $STATE/bdaddr 2>/dev/null)
 ( while true; do
 	# -max-feature-page 1: this controller claims a second extended features page and refuses to read
 	# it, which the 3.18 kernel takes as a failed init (cmd/btbridge/h4.go).
-	btbridge -bdaddr "$bdaddr" -max-feature-page 1 >> $LOG/btbridge.log 2>&1
+	# -accept-as-peripheral: asked for a role switch when it accepts a phone's connection, it leaves
+	# the link unable to authenticate, and no phone could connect to play to the Dot.
+	btbridge -bdaddr "$bdaddr" -max-feature-page 1 -accept-as-peripheral >> $LOG/btbridge.log 2>&1
 	sleep 2
 done ) &
 n=0

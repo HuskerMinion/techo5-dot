@@ -52,6 +52,8 @@ bdaddr=$(cat $STATE/bdaddr 2>/dev/null)
 	# the link unable to authenticate, and no phone could connect to play to the Dot.
 	btbridge -bdaddr "$bdaddr" -max-feature-page 1 -accept-as-peripheral >> $LOG/btbridge.log 2>&1
 	sleep 2
+	# A new hci0 comes up with the default class: say loudspeaker again once it is up (below).
+	(sleep 15; timeout 5 btmgmt class 4 20 > /dev/null 2>&1) &
 done ) &
 n=0
 while [ $n -lt 15 ] && [ ! -d /sys/class/bluetooth/hci0 ]; do sleep 1; n=$((n + 1)); done
@@ -96,6 +98,10 @@ done
 timeout 5 btmgmt power off > /dev/null 2>&1
 sleep 1
 timeout 5 btmgmt power on > /dev/null 2>&1
+# A loudspeaker (major 4, audio/video; minor 5, loudspeaker) to a phone looking for one to play to,
+# rather than a miscellaneous device. btmgmt takes the minor as the class byte, shifted left two
+# bits: 5 is 20.
+timeout 5 btmgmt class 4 20 > /dev/null 2>&1
 
 # bluez-alsa registers its A2DP endpoints with bluetoothd, so it comes after it, and it is kept
 # running: started too early in the first boots it left without a word.

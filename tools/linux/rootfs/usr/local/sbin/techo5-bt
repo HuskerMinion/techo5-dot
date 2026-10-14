@@ -44,6 +44,31 @@ if [ ! -s $STATE/bdaddr ]; then
 fi
 bdaddr=$(cat $STATE/bdaddr 2>/dev/null)
 
+# again: a bridge that restarted brings up a new hci0 with bluetoothd's saved settings. The class goes
+# back to bluetoothd's default, so it is set again, and tried until it takes. And it is made
+# unfindable: a pairing window open when the bridge went down was ended meanwhile by the daemon's
+# timer, and the "not findable" that ended it reached no controller. Both are written twice, 5 s
+# apart, since bluetoothd puts its own back as the adapter registers. Only the newest call carries
+# on: a bridge failing over and over restarts every 2 s, and the hci0 that matters is the last one.
+# The same as TECHO5's t5_bt_again (tools/linux/techo5-lib.sh).
+again() {
+	g=$(( $(cat /run/techo5-bt-again 2>/dev/null || echo 0) + 1 ))
+	echo $g > /run/techo5-bt-again
+	sleep 5
+	n=0
+	while [ $n -lt 12 ]; do
+		[ "$(cat /run/techo5-bt-again 2>/dev/null)" = "$g" ] || return 0
+		timeout 5 btmgmt class 4 20 2>/dev/null | grep -q succeeded && break
+		sleep 5
+		n=$((n + 1))
+	done
+	timeout 5 btmgmt discov off > /dev/null 2>&1
+	sleep 5
+	[ "$(cat /run/techo5-bt-again 2>/dev/null)" = "$g" ] || return 0
+	timeout 5 btmgmt class 4 20 > /dev/null 2>&1
+	timeout 5 btmgmt discov off > /dev/null 2>&1
+}
+
 # The bridge, restarted if it exits (a chip reset ends it).
 ( while true; do
 	# -max-feature-page 1: this controller claims a second extended features page and refuses to read
@@ -52,8 +77,8 @@ bdaddr=$(cat $STATE/bdaddr 2>/dev/null)
 	# the link unable to authenticate, and no phone could connect to play to the Dot.
 	btbridge -bdaddr "$bdaddr" -max-feature-page 1 -accept-as-peripheral >> $LOG/btbridge.log 2>&1
 	sleep 2
-	# A new hci0 comes up with the default class: say loudspeaker again once it is up (below).
-	(sleep 15; timeout 5 btmgmt class 4 20 > /dev/null 2>&1) &
+	# A new hci0 comes up with bluetoothd's saved settings: put it right (again, above).
+	again &
 done ) &
 n=0
 while [ $n -lt 15 ] && [ ! -d /sys/class/bluetooth/hci0 ]; do sleep 1; n=$((n + 1)); done

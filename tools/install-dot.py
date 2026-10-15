@@ -309,6 +309,16 @@ def main():
             if not os.path.exists(key_file):
                 write_private(key_file, key)
             shown = (have_name, key)
+            if '�' in have_name:
+                # Written by an installer before dot-v1.0.15 on Windows, in the Windows code page rather
+                # than UTF-8: Home Assistant could not add the device. Written again, as UTF-8.
+                raw = adb.run('shell', 'cat /data/misc/echolocal/name').stdout.strip()
+                try:
+                    raw.decode('utf-8')
+                except UnicodeDecodeError:
+                    name, psk = raw.decode('cp1252', 'replace'), key
+                    shown = (name, key)
+                    note("the name was not saved as UTF-8; it is written again as '%s'" % name)
     else:
         note('%s has no Home Assistant identity yet' % a.serial)
         name = ask_name(a.name, 'Echo Dot')
@@ -394,7 +404,7 @@ def main():
 
     def push_text(text, remote, mode='600'):
         local = os.path.join(tmp, os.path.basename(remote))
-        with open(local, 'w', newline='\n') as f:
+        with open(local, 'w', encoding='utf-8', newline='\n') as f:
             f.write(text)
         adb.push(local, remote)
         os.remove(local)

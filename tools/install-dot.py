@@ -25,8 +25,10 @@ or in Fire OS with adb as root. Step by step from a stock Dot:
 https://github.com/HuskerMinion/techo5/blob/main/docs/getting-started.md
 """
 import argparse
+import codecs
 import glob
 import json
+import locale
 import os
 import re
 import socket
@@ -45,6 +47,42 @@ from dotimage import DotRelease, build_boot_image  # noqa: E402
 # every time, and the copy breaks off part way, with the Dot dropping off USB (techo5#86).
 CABLE = ('This is usually the USB cable or port: try another cable, plugged straight into the computer '
          '(no hub or dock), and run the installer again.')
+
+# The bytes Windows-1252 leaves undefined. Decoded as Latin-1 (U+0081 and so on), as the daemon's
+# readableName reads them, so the installer and the device agree on the name.
+CP1252_UNDEFINED = (0x81, 0x8D, 0x8F, 0x90, 0x9D)
+
+
+def windows_code_page():
+    """The code page an installer on this computer wrote a name in before names were UTF-8: the ANSI
+    code page on Windows, Windows-1252 anywhere else, or where that cannot be told."""
+    if os.name != 'nt':
+        return 'cp1252'
+    try:
+        import ctypes
+        enc = 'cp%d' % ctypes.windll.kernel32.GetACP()
+    except (ImportError, AttributeError, OSError):
+        enc = locale.getpreferredencoding(False)
+    try:
+        enc = codecs.lookup(enc).name
+    except (LookupError, TypeError):
+        return 'cp1252'
+    # UTF-8 as the code page cannot be what wrote bytes that are not UTF-8.
+    return 'cp1252' if enc in ('utf-8', 'cp65001') else enc
+
+
+def readable_name(raw, enc=None):
+    """The name file's bytes as text: UTF-8 as it is, anything else in the code page that most likely
+    wrote it (windows_code_page). Windows-1252's undefined bytes come out as Latin-1, as on the device."""
+    try:
+        return raw.decode('utf-8')
+    except UnicodeDecodeError:
+        pass
+    enc = enc or windows_code_page()
+    if codecs.lookup(enc).name == 'cp1252':
+        return ''.join(chr(b) if b in CP1252_UNDEFINED else bytes([b]).decode('cp1252') for b in raw)
+    return raw.decode(enc, 'replace')
+
 
 PARTS = ['preloader', 'kb', 'dkb', 'lk_a', 'lk_b', 'tee1', 'tee2', 'expdb', 'misc', 'persist', 'boot_a', 'boot_b', 'recovery']
 
@@ -302,6 +340,17 @@ def main():
     name, psk, key_file = None, None, None
     shown = None  # the name and key printed at the end, for adding the Dot to Home Assistant
     if have_name and have_key:
+        # Written by an installer before dot-v1.0.15 on Windows, in the Windows code page rather than
+        # UTF-8: Home Assistant could not add the device. Read in that code page, and written again as
+        # UTF-8 below, once the key is known to be good.
+        rewrite = None
+        if '�' in have_name:
+            raw = adb.run('shell', 'cat /data/misc/echolocal/name').stdout.strip()
+            try:
+                raw.decode('utf-8')
+            except UnicodeDecodeError:
+                rewrite = readable_name(raw)
+                have_name = rewrite
         note("keeping '%s' and its key: Home Assistant sees the same device" % have_name)
         key = adb.sh('cat /data/misc/echolocal/psk')
         if valid_api_key(key):
@@ -309,16 +358,9 @@ def main():
             if not os.path.exists(key_file):
                 write_private(key_file, key)
             shown = (have_name, key)
-            if '�' in have_name:
-                # Written by an installer before dot-v1.0.15 on Windows, in the Windows code page rather
-                # than UTF-8: Home Assistant could not add the device. Written again, as UTF-8.
-                raw = adb.run('shell', 'cat /data/misc/echolocal/name').stdout.strip()
-                try:
-                    raw.decode('utf-8')
-                except UnicodeDecodeError:
-                    name, psk = raw.decode('cp1252', 'replace'), key
-                    shown = (name, key)
-                    note("the name was not saved as UTF-8; it is written again as '%s'" % name)
+            if rewrite is not None:
+                name, psk = rewrite, key
+                note("the name was not saved as UTF-8; it is written again as '%s'" % name)
     else:
         note('%s has no Home Assistant identity yet' % a.serial)
         name = ask_name(a.name, 'Echo Dot')

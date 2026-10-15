@@ -256,8 +256,9 @@ def main():
                 fail('%s has no saved Wi-Fi network: pass --wifi (the passphrase is asked for, or read from --wifi-passphrase-file)' % a.serial)
             ssid = ask('Wi-Fi network name')
         if a.wifi_passphrase_file:
-            with open(a.wifi_passphrase_file) as f:
-                # Only the line's end goes: a passphrase may begin or end with spaces.
+            # UTF-8, whatever this computer's code page, with a BOM (Notepad's) dropped. Only the line's
+            # end goes: a passphrase may begin or end with spaces.
+            with open(a.wifi_passphrase_file, encoding='utf-8-sig') as f:
                 wifi_conf = techo5_wifi_conf(ssid, f.read().rstrip('\r\n'))
         else:
             wifi_conf = ask_wifi(ssid)

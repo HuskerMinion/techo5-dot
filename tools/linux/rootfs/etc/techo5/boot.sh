@@ -83,12 +83,6 @@ if [ -d /usr/share/techo5/models ] && [ -d /data/misc/echolocal ]; then
 	done
 	[ $n -gt 0 ] && say "wake word models: $n files added from the image"
 fi
-# The clock's zone: /etc/localtime and /etc/timezone link into the state directory, where the daemon
-# writes the zone Home Assistant reports. A unit that has none yet starts on UTC.
-if [ -d /data/misc/echolocal ] && { [ ! -e /data/misc/echolocal/timezone ] || [ ! -e /data/misc/echolocal/localtime ]; }; then
-	$BB ln -sfn /usr/share/zoneinfo/UTC /data/misc/echolocal/localtime
-	echo UTC > /data/misc/echolocal/timezone
-fi
 
 # --- Inbound closed except what the Dot serves, before any network exists (usr/local/sbin/techo5-firewall).
 /usr/local/sbin/techo5-firewall 2>&1 | while read -r l; do say "$l"; done

@@ -9,7 +9,8 @@ Home Assistant updates carry the root filesystem only; the boot image is built p
 recovery backup (kept by the installer) and is never published. This is how a new kernel or rescue
 environment reaches a unit without going back through Fire OS or TWRP: for example, Bluetooth for a Dot
 installed without the Bluetooth kernel. By default the kernel and rescue packages come from the signed
-release.
+release. An Echo 2nd gen (radar) keeps the kernel from its recovery backup unless --kernel is given: the
+release's kernel is the Echo Dot's.
 
 The previous image stays in the store as linux-prev.img, and linux.img (what back-to-linux.sh and to-twrp
 use) is only replaced once the new image has booted healthy. Needs SSH to the unit: turn on its SSH switch
@@ -33,6 +34,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from techo5lib import default_dir, fail, md5, need, note, run_main, step  # noqa: E402
 from dotimage import DotRelease, build_boot_image  # noqa: E402
 
+# Amazon's device type id of the Echo 2nd gen (radar), in /proc/idme/device_type_id.
+RADAR_TYPE_ID = 'A7WXQPH584YP'
+
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -54,6 +58,25 @@ def main():
     os.makedirs(a.work, exist_ok=True)
     image = os.path.join(unit, 'techo5-dot-linux-next.img')
 
+    target = 'root@' + a.address
+    ssh = [a.ssh, '-o', 'ConnectTimeout=10', target]
+
+    def remote(command):
+        r = subprocess.run(ssh + [command], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        return r.returncode, r.stdout.decode('utf-8', 'replace').strip()
+
+    # The release's kernel carries biscuit's device trees, and the Echo 2nd gen (radar) runs this image
+    # too: a radar would come up on biscuit's device tree, if at all, and a kernel that does not boot leaves
+    # no rescue to reach. So a radar keeps the kernel from its recovery backup unless one is given.
+    rc, out = remote("echo type=$(tr -d '\\000' 2>/dev/null < /proc/idme/device_type_id)")
+    m = re.search(r'^type=(\S*)$', out, re.M)
+    if rc != 0 or not m:
+        fail('could not read the board over SSH from %s (%s); nothing was flashed' % (a.address, out or 'no output'))
+    board = 'radar' if m.group(1) == RADAR_TYPE_ID else 'biscuit'
+    if board == 'radar' and not a.kernel:
+        a.no_bluetooth_kernel = True
+        note('an Echo 2nd gen (radar): keeping the kernel from its recovery backup')
+
     step('boot image')
     rel = DotRelease(a.work, a.release)
     note('TECHO5 Dot %s: Bluetooth kernel and rescue packages checked' % rel.version)
@@ -64,13 +87,6 @@ def main():
     build_boot_image(recovery, image, rel.alpine, rel.busybox, rel.wmtup, rel.apks, kernel)
     want = md5(image)
     size = os.path.getsize(image)
-
-    target = 'root@' + a.address
-    ssh = [a.ssh, '-o', 'ConnectTimeout=10', target]
-
-    def remote(command):
-        r = subprocess.run(ssh + [command], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        return r.returncode, r.stdout.decode('utf-8', 'replace').strip()
 
     # A boot is told apart from the one before it by the kernel's boot id, so the healthy mark the old boot
     # left in MISC is never mistaken for the new one's. Read before anything is written: an empty id would

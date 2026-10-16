@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Take an unlocked Echo Dot 2 (biscuit) from Fire OS or TWRP to the TECHO5 Linux image, in one run.
+"""Take an unlocked Echo Dot 2 (biscuit) or Echo 2nd gen (radar) from Fire OS or TWRP to the TECHO5 Linux
+image, in one run.
 
     python3 tools/install-dot.py
     python3 tools/install-dot.py --serial <serial> --dry-run
@@ -12,7 +13,7 @@ Windows, Linux and macOS alike; needs Python 3 and adb. Nothing is built: the si
 filesystem, Bluetooth kernel, rescue packages) is downloaded and checked, and this unit's boot image is
 built from it and the unit's own recovery backup. What it does, stopping at the first thing not right:
 
-  1. checks the device: biscuit, Fire OS 6, adb as root, a saved Wi-Fi network (or asks for one)
+  1. checks the device: biscuit or radar, Fire OS 6, adb as root, a saved Wi-Fi network (or asks for one)
   2. backs up every partition that boots the unit into backups/<serial>/, each checked by md5
   3. gets the release and builds this unit's boot image
   4. keeps the unit's Home Assistant identity if it has one (EchoLocal's name and key), or makes one
@@ -181,7 +182,8 @@ def main():
     ap.add_argument('--name', help='the name Home Assistant shows, for a unit with no identity yet (asked for when missing)')
     ap.add_argument('--key-file', help='where a new Home Assistant key is kept (default backups/<serial>/home-assistant.key)')
     ap.add_argument('--release', default='latest', help="a release tag (dot-vX.Y.Z), or latest")
-    ap.add_argument('--kernel', help="a kernel you built (tools/linux/build-kernel.sh) instead of the release's")
+    ap.add_argument('--kernel', help="a kernel you built (tools/linux/build-kernel.sh) instead of the release's; "
+                    "an Echo 2nd gen (radar) keeps its own kernel without one (build-kernel.sh --board radar)")
     ap.add_argument('--no-bluetooth-kernel', action='store_true', help="keep the unit's own kernel, which has no Bluetooth")
     ap.add_argument('--rootfs', help="a root filesystem you built (tools/linux/build-dot-rootfs.py) instead of the release's")
     ap.add_argument('--wake-words', default='okay_nabu,hey_jarvis,hey_mycroft,alexa,' + ','.join(EXTRA_MODELS), help='models for a unit that has none')
@@ -216,13 +218,15 @@ def main():
     twrp = state == 'recovery'
     product = adb.sh('getprop ro.product.device; getprop ro.build.product')
     # The Echo 2nd gen (radar) is a biscuit with a bigger speaker: the same SoC, partitions and boot chain.
-    # Until a kernel is built for it, it runs its own (no Bluetooth): the release's kernel carries
-    # biscuit's device tree.
+    # It runs its own kernel (no Bluetooth) unless --kernel gives one built for it: the release's kernel
+    # carries biscuit's device trees.
     board = 'radar' if 'radar' in product else 'biscuit' if 'biscuit' in product else None
     if not board:
         fail('%s is not an Echo Dot 2nd gen (biscuit) or an Echo 2nd gen (radar)' % a.serial)
     if board == 'radar' and not a.kernel:
         a.no_bluetooth_kernel = True
+        note("an Echo 2nd gen (radar): keeping its own kernel, no Bluetooth (--kernel takes one from "
+             "tools/linux/build-kernel.sh --board radar)")
     ident = adb.sh('id')
     if not ident.startswith('uid=0'):
         fail("adb is not root on %s (%s). EchoLocal's install or boot-root.zip gives root adb; or boot TWRP." % (a.serial, ident))

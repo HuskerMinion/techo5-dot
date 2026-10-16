@@ -160,6 +160,13 @@ def main():
         if r.entries.pop(path.strip("/"), None) is None:
             sys.exit(f"--drop {path}: no such file in the image")
 
+    # Clock. The zone is the unit's, not the image's: the daemon writes the one Home Assistant reports
+    # to its state directory on userdata (TECHO5's feature/timezone), and the time package reads it
+    # through these links. Without them the daemon ran on UTC, and quiet hours and alarms with it.
+    # boot.sh makes the targets UTC on a unit that has none yet.
+    r.symlink("etc/localtime", "/data/misc/echolocal/localtime")
+    r.symlink("etc/timezone", "/data/misc/echolocal/timezone")
+
     # Directories the boot script expects to exist, since it mounts into them.
     for d in ("proc", "sys", "dev", "dev/pts", "run", "tmp", "data", "android", "store", "mnt"):
         r.dir(d)

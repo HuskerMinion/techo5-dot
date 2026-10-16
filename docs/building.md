@@ -72,8 +72,8 @@ Bluetooth files and the toolchain itself; the header explains each. On Linux, or
 bash tools/linux/build-kernel.sh          # -> build/kernel/zImage-dtb
 ```
 
-`--board radar` builds the Echo 2nd gen's instead, into `build/kernel-radar/` (work in progress, not
-booted yet: [hardware-radar.md](hardware-radar.md)).
+`--board radar` builds the Echo 2nd gen's instead, into `build/kernel-radar/`
+([hardware-radar.md](hardware-radar.md)). A release carries both.
 
 ## 5. bluez-alsa (Linux)
 

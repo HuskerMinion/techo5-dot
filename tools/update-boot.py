@@ -9,8 +9,8 @@ Home Assistant updates carry the root filesystem only; the boot image is built p
 recovery backup (kept by the installer) and is never published. This is how a new kernel or rescue
 environment reaches a unit without going back through Fire OS or TWRP: for example, Bluetooth for a Dot
 installed without the Bluetooth kernel. By default the kernel and rescue packages come from the signed
-release. An Echo 2nd gen (radar) keeps the kernel from its recovery backup unless --kernel is given: the
-release's kernel is the Echo Dot's.
+release, the one built for the unit's board. An Echo 2nd gen (radar) keeps the kernel from its recovery
+backup when the release has none for it (dot-v1.0.18 and earlier), unless --kernel is given.
 
 The previous image stays in the store as linux-prev.img, and linux.img (what back-to-linux.sh and to-twrp
 use) is only replaced once the new image has booted healthy. Needs SSH to the unit: turn on its SSH switch
@@ -42,7 +42,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--serial', required=True)
     ap.add_argument('--address', required=True, help="the unit's address on your network")
-    ap.add_argument('--kernel', help="a kernel you built instead of the release's")
+    ap.add_argument('--kernel', help="a kernel you built for this board instead of the release's")
     ap.add_argument('--no-bluetooth-kernel', action='store_true', help="keep the kernel from the unit's recovery backup")
     ap.add_argument('--release', default='latest', help="a release tag (dot-vX.Y.Z), or latest")
     ap.add_argument('--backups', default=default_dir('TECHO5_BACKUPS', 'backups'))
@@ -65,22 +65,22 @@ def main():
         r = subprocess.run(ssh + [command], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         return r.returncode, r.stdout.decode('utf-8', 'replace').strip()
 
-    # The release's kernel carries biscuit's device trees, and the Echo 2nd gen (radar) runs this image
-    # too: a radar would come up on biscuit's device tree, if at all, and a kernel that does not boot leaves
-    # no rescue to reach. So a radar keeps the kernel from its recovery backup unless one is given.
+    # Each board has its own kernel, with its own device trees: a radar on biscuit's kernel would come up
+    # on biscuit's device tree, if at all, and a kernel that does not boot leaves no rescue to reach. So
+    # the board is read before anything is built, and a board the release has no kernel for keeps the
+    # one from its recovery backup.
     rc, out = remote("echo type=$(tr -d '\\000' 2>/dev/null < /proc/idme/device_type_id)")
     m = re.search(r'^type=(\S*)$', out, re.M)
     if rc != 0 or not m:
         fail('could not read the board over SSH from %s (%s); nothing was flashed' % (a.address, out or 'no output'))
     board = 'radar' if m.group(1) == RADAR_TYPE_ID else 'biscuit'
-    if board == 'radar' and not a.kernel:
-        a.no_bluetooth_kernel = True
-        note('an Echo 2nd gen (radar): keeping the kernel from its recovery backup')
 
     step('boot image')
     rel = DotRelease(a.work, a.release)
     note('TECHO5 Dot %s: Bluetooth kernel and rescue packages checked' % rel.version)
-    kernel = None if a.no_bluetooth_kernel else (os.path.abspath(a.kernel) if a.kernel else rel.kernel)
+    kernel = None if a.no_bluetooth_kernel else (os.path.abspath(a.kernel) if a.kernel else rel.kernel_for(board))
+    if kernel is None and not a.no_bluetooth_kernel:
+        note('release %s has no Bluetooth kernel for %s' % (rel.version, board))
     if kernel and not os.path.exists(kernel):
         fail('no kernel at %s' % kernel)
     note('kernel: %s' % ('%s (Bluetooth)' % os.path.basename(kernel) if kernel else 'from the recovery backup (no Bluetooth)'))

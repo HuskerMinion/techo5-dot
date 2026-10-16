@@ -160,8 +160,8 @@ The installer:
    checksums it carries. `--release dot-v0.6.0` picks a version instead of the newest — releases here
    are tagged `dot-vX.Y.Z`, so the tag is what goes in, not the bare version; `--rootfs` and `--kernel`
    take your own builds ([docs/building.md](docs/building.md)).
-3. Builds this unit's boot image from **its own** recovery backup, with the Bluetooth kernel
-   (`--no-bluetooth-kernel` keeps the unit's own, without Bluetooth). No Amazon binary is ever
+3. Builds this unit's boot image from **its own** recovery backup, with the Bluetooth kernel for its
+   board (`--no-bluetooth-kernel` keeps the unit's own, without Bluetooth). No Amazon binary is ever
    downloaded or published.
 4. Writes the image to recovery, and the root filesystem into slot a.
 5. Keeps an existing Home Assistant name and key, or asks for a name and makes a key.

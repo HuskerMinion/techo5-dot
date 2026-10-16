@@ -182,8 +182,8 @@ def main():
     ap.add_argument('--name', help='the name Home Assistant shows, for a unit with no identity yet (asked for when missing)')
     ap.add_argument('--key-file', help='where a new Home Assistant key is kept (default backups/<serial>/home-assistant.key)')
     ap.add_argument('--release', default='latest', help="a release tag (dot-vX.Y.Z), or latest")
-    ap.add_argument('--kernel', help="a kernel you built (tools/linux/build-kernel.sh) instead of the release's; "
-                    "an Echo 2nd gen (radar) keeps its own kernel without one (build-kernel.sh --board radar)")
+    ap.add_argument('--kernel', help="a kernel you built for this board (tools/linux/build-kernel.sh, --board radar for "
+                    "an Echo 2nd gen) instead of the release's")
     ap.add_argument('--no-bluetooth-kernel', action='store_true', help="keep the unit's own kernel, which has no Bluetooth")
     ap.add_argument('--rootfs', help="a root filesystem you built (tools/linux/build-dot-rootfs.py) instead of the release's")
     ap.add_argument('--wake-words', default='okay_nabu,hey_jarvis,hey_mycroft,alexa,' + ','.join(EXTRA_MODELS), help='models for a unit that has none')
@@ -217,16 +217,11 @@ def main():
              % (a.serial, state, console_hint((CONSOLE_DOT,))))
     twrp = state == 'recovery'
     product = adb.sh('getprop ro.product.device; getprop ro.build.product')
-    # The Echo 2nd gen (radar) is a biscuit with a bigger speaker: the same SoC, partitions and boot chain.
-    # It runs its own kernel (no Bluetooth) unless --kernel gives one built for it: the release's kernel
-    # carries biscuit's device trees.
+    # The Echo 2nd gen (radar) is a biscuit with a bigger speaker: the same SoC, partitions and boot chain,
+    # but its own device trees, so its own Bluetooth kernel (dotimage.KERNEL_ASSETS).
     board = 'radar' if 'radar' in product else 'biscuit' if 'biscuit' in product else None
     if not board:
         fail('%s is not an Echo Dot 2nd gen (biscuit) or an Echo 2nd gen (radar)' % a.serial)
-    if board == 'radar' and not a.kernel:
-        a.no_bluetooth_kernel = True
-        note("an Echo 2nd gen (radar): keeping its own kernel, no Bluetooth (--kernel takes one from "
-             "tools/linux/build-kernel.sh --board radar)")
     ident = adb.sh('id')
     if not ident.startswith('uid=0'):
         fail("adb is not root on %s (%s). EchoLocal's install or boot-root.zip gives root adb; or boot TWRP." % (a.serial, ident))
@@ -339,7 +334,10 @@ def main():
     rel = DotRelease(a.work, a.release)
     note('TECHO5 Dot %s: root filesystem, Bluetooth kernel and rescue packages checked' % rel.version)
     rootfs = os.path.abspath(a.rootfs) if a.rootfs else rel.rootfs
-    kernel = None if a.no_bluetooth_kernel else (os.path.abspath(a.kernel) if a.kernel else rel.kernel)
+    kernel = None if a.no_bluetooth_kernel else (os.path.abspath(a.kernel) if a.kernel else rel.kernel_for(board))
+    if kernel is None and not a.no_bluetooth_kernel:
+        note('release %s has no Bluetooth kernel for %s (--kernel takes one from tools/linux/build-kernel.sh '
+             '--board %s)' % (rel.version, board, board))
     for f in (rootfs, kernel):
         if f and not os.path.exists(f):
             fail('no file at %s' % f)

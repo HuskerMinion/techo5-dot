@@ -11,6 +11,7 @@
     echod-arm-dot                     the daemon (also what a Fire OS Dot would take as a binary update)
     techo5-dot-rootfs-<version>.tar.gz  the whole root filesystem for a slot (tools/linux/build-dot-rootfs.py)
     techo5-dot-kernel-bt.zImage-dtb   the Echo Dot 2's kernel rebuilt with Bluetooth (GPL-2.0)
+    techo5-dot-kernel-bt-radar.zImage-dtb  the Echo 2nd gen's (radar), the same way (GPL-2.0)
     techo5-dot-rescue-apks.tar        the packages the rescue initramfs is built from
     manifest.json                     versions, URLs, sizes and sha256 of all of those (cmd/mkmanifest)
     manifest.json.sig                 the release key's ed25519 signature over manifest.json
@@ -34,6 +35,8 @@ param(
     [string]$SignKey = $env:TECHO5_SIGN_KEY,
     # The Dot's Bluetooth kernel (tools/linux/build-kernel.sh -o build/kernel), published with the release.
     [string]$Kernel = $(if ($env:TECHO5_DOT_KERNEL) { $env:TECHO5_DOT_KERNEL } else { Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'build') 'kernel') 'zImage-dtb' }),
+    # The Echo 2nd gen's (radar) Bluetooth kernel (tools/linux/build-kernel.sh --board radar).
+    [string]$KernelRadar = $(if ($env:TECHO5_DOT_KERNEL_RADAR) { $env:TECHO5_DOT_KERNEL_RADAR } else { Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'build') 'kernel-radar') 'zImage-dtb' }),
     # bluez-alsa with its crash fix (tools/linux/build-bluealsa.sh -o build/bluealsa).
     [string]$Bluealsa = $(if ($env:TECHO5_BLUEALSA) { $env:TECHO5_BLUEALSA } else { Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'build') 'bluealsa') 'bluealsa' }),
     # The build inputs (docs/building.md): $env:TECHO5_INPUTS, else inputs/ in this repository.
@@ -64,6 +67,7 @@ $out = Join-Path (Join-Path (Join-Path $root 'bin') 'release') $Version
 New-Item -ItemType Directory -Force $out | Out-Null
 if (-not $SignKey -or -not (Test-Path $SignKey)) { throw "no release signing key: set TECHO5_SIGN_KEY or pass -SignKey" }
 if (-not (Test-Path $Kernel)) { throw "no Bluetooth kernel at ${Kernel}: build it (tools/linux/build-kernel.sh -o build/kernel) or pass -Kernel" }
+if (-not (Test-Path $KernelRadar)) { throw "no radar Bluetooth kernel at ${KernelRadar}: build it (tools/linux/build-kernel.sh --board radar) or pass -KernelRadar" }
 if (-not (Test-Path (Join-Path $Techo5 'echod'))) { throw "no TECHO5 checkout at ${Techo5}: set TECHO5 or pass -Techo5" }
 
 $branch = (git -C $Techo5 branch --show-current).Trim()
@@ -121,6 +125,7 @@ if ($release -notmatch "techo5-dot $([regex]::Escape($Version)) ") { throw "the 
 
 Write-Host "== Bluetooth kernel, rescue packages and checksums"
 Copy-Item -Force $Kernel (Join-Path $out 'techo5-dot-kernel-bt.zImage-dtb')
+Copy-Item -Force $KernelRadar (Join-Path $out 'techo5-dot-kernel-bt-radar.zImage-dtb')
 $apks = Get-ChildItem (Join-Path (Join-Path $Inputs 'apks-dot') '*.apk')
 if (-not $apks) { throw "no rescue packages in $(Join-Path $Inputs 'apks-dot')" }
 Push-Location (Join-Path $Inputs 'apks-dot')
@@ -134,15 +139,16 @@ $from = "https://github.com/$repo/releases/download/$tag"
 & $Go run ./cmd/mkmanifest -version $Version -title "TECHO5 Dot $Version" -notes $Notes `
     -release-url "https://github.com/$repo/releases/tag/$tag" -from $from `
     -arm-dot (Join-Path $out 'echod-arm-dot') -rootfs-arm-dot $rootfs `
-    -asset (Join-Path $out 'techo5-dot-kernel-bt.zImage-dtb') -asset (Join-Path $out 'techo5-dot-rescue-apks.tar') `
+    -asset (Join-Path $out 'techo5-dot-kernel-bt.zImage-dtb') -asset (Join-Path $out 'techo5-dot-kernel-bt-radar.zImage-dtb') `
+    -asset (Join-Path $out 'techo5-dot-rescue-apks.tar') `
     -out (Join-Path $out 'manifest.json') -sign-key $SignKey
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'mkmanifest failed' }
 Pop-Location
 Get-Content (Join-Path $out 'manifest.json')
 
-$names = 'echod-arm-dot', "techo5-dot-rootfs-$Version.tar.gz", 'manifest.json', 'manifest.json.sig', 'techo5-dot-kernel-bt.zImage-dtb', 'techo5-dot-rescue-apks.tar'
-# SHA256SUMS: for checking a download by hand. The installer checks the kernel and the rescue packages
-# against the signed manifest instead, which names them both: nothing signs this file, so it is no
+$names = 'echod-arm-dot', "techo5-dot-rootfs-$Version.tar.gz", 'manifest.json', 'manifest.json.sig', 'techo5-dot-kernel-bt.zImage-dtb', 'techo5-dot-kernel-bt-radar.zImage-dtb', 'techo5-dot-rescue-apks.tar'
+# SHA256SUMS: for checking a download by hand. The installer checks the kernels and the rescue packages
+# against the signed manifest instead, which names them all: nothing signs this file, so it is no
 # check against whoever served the files it describes.
 $sums = $names | ForEach-Object { "$((Get-FileHash -Algorithm SHA256 (Join-Path $out $_)).Hash.ToLower())  $_" }
 [IO.File]::WriteAllText((Join-Path $out 'SHA256SUMS'), ($sums -join "`n") + "`n")
@@ -152,7 +158,7 @@ if ($DryRun) {
     return
 }
 Write-Host "== release $tag on $repo"
-$Notes += "`n`nThe Bluetooth kernel (techo5-dot-kernel-bt.zImage-dtb, Linux 3.18.19, GPL-2.0) is built by tools/linux/build-kernel.sh from Amazon's GPL source for the Echo Dot 2nd gen (Echo_Dot_src-6.5.7.1) with the configuration and backports in tools/linux."
+$Notes += "`n`nThe Bluetooth kernel (techo5-dot-kernel-bt.zImage-dtb, Linux 3.18.19, GPL-2.0) is built by tools/linux/build-kernel.sh from Amazon's GPL source for the Echo Dot 2nd gen (Echo_Dot_src-6.5.7.1) with the configuration and backports in tools/linux. The Echo 2nd gen's (techo5-dot-kernel-bt-radar.zImage-dtb) is built the same way, by build-kernel.sh --board radar, from Amazon's GPL source for the Echo 2nd gen (Echo_v2_src-6.5.7.1)."
 $ghArgs = @('release', 'create', $tag) + $assets + @('--repo', $repo, '--title', "TECHO5 Dot $Version", '--notes', $Notes)
 # A version with a suffix (-rc.1, -beta) is a prerelease whether or not -Prerelease was given: GitHub
 # otherwise makes it /releases/latest, which is what the installers and every unit's updater follow.

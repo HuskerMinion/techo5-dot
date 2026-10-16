@@ -6,7 +6,14 @@ import sys
 from techo5lib import Release, alpine, fail, repo_root, tar_extract_all, tar_read
 
 REPO = 'HuskerMinion/techo5-dot'
-KERNEL_ASSET = 'techo5-dot-kernel-bt.zImage-dtb'
+# Each board's Bluetooth kernel in a release. dot-v1.0.18 and earlier carry biscuit's only, and a
+# kernel carrying another board's device trees must never go onto a unit: a board whose kernel the
+# release lacks runs its own.
+KERNEL_ASSETS = {
+    'biscuit': 'techo5-dot-kernel-bt.zImage-dtb',
+    'radar': 'techo5-dot-kernel-bt-radar.zImage-dtb',
+}
+KERNEL_ASSET = KERNEL_ASSETS['biscuit']
 APKS_ASSET = 'techo5-dot-rescue-apks.tar'
 
 
@@ -16,6 +23,7 @@ class DotRelease:
 
     def __init__(self, workdir, tag='latest'):
         rel = Release(REPO, tag, workdir)
+        self.rel = rel
         self.version = rel.version
         self.rootfs = rel.rootfs('arm-dot')
         self.kernel = rel.asset(KERNEL_ASSET)
@@ -31,6 +39,16 @@ class DotRelease:
             with open(out, 'wb') as f:
                 f.write(data)
         self.alpine = alpine(workdir)
+
+    def kernel_for(self, board):
+        """The release's Bluetooth kernel for board, downloaded and checked against the signed manifest like
+        the rest, or None when the release has none for it (then the unit keeps its own)."""
+        if board == 'biscuit':
+            return self.kernel
+        name = KERNEL_ASSETS.get(board)
+        if not name or not self.rel.signed(name):
+            return None
+        return self.rel.asset(name)
 
 
 def build_boot_image(recovery, out, alpine_tgz, busybox, wmtup, apks, kernel=None):

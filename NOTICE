@@ -53,18 +53,22 @@ bluez-alsa, https://github.com/arkq/bluez-alsa
 
 Linux kernel, https://git.kernel.org (GPL-2.0)
   Every release ships a kernel: techo5-dot-kernel-bt.zImage-dtb, Linux 3.18.19 for 32-bit ARM. It is
-  GPL-2.0, and this is where its source is.
+  GPL-2.0, and this is where its source is. Releases after dot-v1.0.18 also ship the Echo 2nd gen's,
+  techo5-dot-kernel-bt-radar.zImage-dtb, built the same way; where it differs is noted below.
     - Base: Amazon's GPL source release for the Echo Dot (2nd Generation),
       Echo_Dot_src-6.5.7.1-20251024, kernel/mediatek/mt8163/3.18_hl inside platform.tar. Amazon
       publish their source releases at
       https://www.amazon.com/gp/help/customer/display.html?nodeId=G202096090 (docs/hardware.md).
+      The Echo 2nd gen's: Amazon's GPL source release for the Echo (2nd Generation),
+      Echo_v2_src-6.5.7.1-20251024, the same path inside its platform.tar.
     - Bluetooth: Amazon's tarball carries only the files their build compiles, so net/bluetooth,
       drivers/bluetooth and include/net/bluetooth are taken from upstream linux-3.18.19, and only
       where Amazon's tree has no file of its own.
     - Changes: the 48 patches in tools/linux/kernel-patches, applied in order, each naming its
       upstream commit, the stable backport it came from, its CVE and any 3.18 adaptation.
     - Configuration: built from the running kernel's own config, recorded as
-      docs/dumps/biscuit-fireos6-echolocal-boot-3.18.19.config.
+      docs/dumps/biscuit-fireos6-echolocal-boot-3.18.19.config (the Echo 2nd gen's:
+      docs/dumps/radar-fireos6-boot-3.18.19.config).
     - The script that does all of it is tools/linux/build-kernel.sh, and docs/building.md is how to
       run it. A rebuild reproduces the shipped image.
   Boot images, which wrap that kernel with a unit's own ramdisk, are built per unit and not
@@ -75,4 +79,4 @@ Alpine Linux, https://alpinelinux.org
   bluealsa; each package keeps its own license, and its source is published by Alpine.
 
 docs/dumps/*.config are kernel configurations generated from Amazon's GPL 3.18.19 kernel for
-biscuit, as embedded in the published boot images.
+biscuit and radar, as embedded in the published boot images.

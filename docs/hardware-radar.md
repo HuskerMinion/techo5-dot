@@ -71,7 +71,10 @@ it.
 `tools/linux/build-kernel.sh --board radar` builds Amazon's Echo_v2_src-6.5.7.1 with that config, the
 same `kernel-bt.fragment` and the same Bluetooth backports as biscuit's kernel (all 48 apply to radar's
 tree unchanged). The appended device trees come out byte for byte the same as the stock kernel's and
-TWRP's. That kernel has not been booted yet.
+TWRP's. That kernel boots on a unit with Bluetooth (`/dev/stpbt`, a phone paired and played
+through it), Wi-Fi, the speaker and the headphone jack all working. Releases after dot-v1.0.18 carry it
+as `techo5-dot-kernel-bt-radar.zImage-dtb`, and the installer and `update-boot.py` take it for a radar;
+with an older release a radar keeps its own kernel.
 
 ## Unlock and USB
 

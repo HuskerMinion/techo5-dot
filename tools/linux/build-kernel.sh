@@ -3,13 +3,18 @@
 # btbridge can turn the vendor driver's /dev/stpbt into hci0 through /dev/vhci and BlueZ and
 # bluez-alsa run as on TECHO5. Run inside WSL/Linux; no root needed.
 #
-#   tools/linux/build-kernel.sh [--stock] [-o DIR]
+#   tools/linux/build-kernel.sh [--board biscuit|radar] [--stock] [-o DIR]
 #
 # Source: Amazon's GPL release for Echo Dot (2nd Generation), Echo_Dot_src-6.5.7.1-20251024
 # (kernel/mediatek/mt8163/3.18_hl in platform.tar). Built from the running kernel's own config
 # (docs/dumps/biscuit-fireos6-echolocal-boot-3.18.19.config) it reproduces the unit's recovery
 # kernel (Fire OS 6574.1, 3.18.19-gecb8cb46060-dirty): the same strings apart from the version
 # banner, and the two appended device trees byte for byte.
+#
+# --board radar builds the Echo (2nd Generation) instead, from Amazon's Echo_v2_src-6.5.7.1-20251024:
+# the same 3.18_hl tree apart from the board files, with the config of the unit's stock Fire OS 6
+# kernel (docs/dumps/radar-fireos6-boot-3.18.19.config) and three device trees appended (radar,
+# radar_evt, radar_min_evt). The fragment and the patches below are the same for both boards.
 #
 # Amazon's tarball only carries the files their build compiles, so net/bluetooth,
 # drivers/bluetooth and include/net/bluetooth are missing. They come from upstream
@@ -38,42 +43,60 @@
 # build_kernel_config.sh names and the running kernel's banner reports. Cloned if missing.
 #
 # Environment:
-#   WORK    scratch on a case-sensitive Linux filesystem (default ~/biscuit-build; the kernel
+#   WORK    scratch on a case-sensitive Linux filesystem (default ~/<board>-build; the kernel
 #           tree has names differing only in case, so not /mnt/<drive>)
 #   DL      downloads (default WORK/dl)
-#   OUTDIR  results (default build/kernel in this repository, where the installer looks; or -o)
+#   AMZ_TARBALL  a copy of Amazon's source tarball already on disk, used instead of downloading it
+#           (its sha256 is checked all the same)
+#   OUTDIR  results (default build/kernel, or build/kernel-radar, in this repository; or -o)
 #   TOOLCHAIN  arm-eabi-4.8 checkout (default ~/toolchain/arm-eabi-4.8)
 #   REF     a recovery or boot image from the unit to compare the appended device trees against
 #           (optional)
 #
 # --stock builds without the fragment (control build: should match the unit's kernel).
-# Output: OUTDIR/zImage-dtb[-stock], the zImage with biscuit_evt.dtb and biscuit_min_evt.dtb
-# appended, the same layout as the kernel in the recovery image. Use it with
+# Output: OUTDIR/zImage-dtb[-stock], the zImage with the board's device trees appended (biscuit:
+# biscuit_evt.dtb and biscuit_min_evt.dtb), the same layout as the kernel in the recovery image.
+# Use it with
 #   python tools/linux/mkimage.py --kernel-image <unit>/recovery.img --kernel OUTDIR/zImage-dtb ...
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
-WORK=${WORK:-$HOME/biscuit-build}
-DL=${DL:-$WORK/dl}
-OUTDIR=${OUTDIR:-$REPO/build/kernel}
-TOOLCHAIN=${TOOLCHAIN:-$HOME/toolchain/arm-eabi-4.8}
-REF=${REF:-}
+BOARD=biscuit
 STOCK=
+OUT_ARG=
 while [ $# -gt 0 ]; do
 	case "$1" in
+	--board) BOARD=$2; shift 2;;
 	--stock) STOCK=1; shift;;
-	-o) OUTDIR=$2; shift 2;;
+	-o) OUT_ARG=$2; shift 2;;
 	*) echo "unknown argument: $1" >&2; exit 1;;
 	esac
 done
 
-AMZ_URL=https://fireos-audio-src.s3.amazonaws.com/dMUQiRDxI3hFuRDaF0WTumrp71/Echo_Dot_src-6.5.7.1-20251024.tar.bz2
-AMZ_SHA=2f6b7eed8c09cecf7633f01909c6a4085bef691c29ed0d106c75e7b48c7b4721
+case "$BOARD" in
+biscuit)
+	AMZ_URL=https://fireos-audio-src.s3.amazonaws.com/dMUQiRDxI3hFuRDaF0WTumrp71/Echo_Dot_src-6.5.7.1-20251024.tar.bz2
+	AMZ_SHA=2f6b7eed8c09cecf7633f01909c6a4085bef691c29ed0d106c75e7b48c7b4721
+	CONFIG=$REPO/docs/dumps/biscuit-fireos6-echolocal-boot-3.18.19.config
+	OUTDIR=${OUTDIR:-$REPO/build/kernel};;
+radar)
+	# The same bucket as the Dot's; its md5 matches the bucket's ETag for this file.
+	AMZ_URL=https://fireos-audio-src.s3.amazonaws.com/3km3g2gmVyHMH5gZKDtVFsKgnF/Echo_v2_src-6.5.7.1-20251024.tar.bz2
+	AMZ_SHA=af9603cfc7ea70b7442996e57d4c7824ed12bde5bcd3037550f5b0f208fa8945
+	CONFIG=$REPO/docs/dumps/radar-fireos6-boot-3.18.19.config
+	OUTDIR=${OUTDIR:-$REPO/build/kernel-radar};;
+*) echo "unknown board: $BOARD (biscuit or radar)" >&2; exit 1;;
+esac
+[ -z "$OUT_ARG" ] || OUTDIR=$OUT_ARG
+WORK=${WORK:-$HOME/$BOARD-build}
+DL=${DL:-$WORK/dl}
+AMZ_TARBALL=${AMZ_TARBALL:-}
+TOOLCHAIN=${TOOLCHAIN:-$HOME/toolchain/arm-eabi-4.8}
+REF=${REF:-}
 LNX_URL=https://cdn.kernel.org/pub/linux/kernel/v3.x/linux-3.18.19.tar.xz
 LNX_SHA=3d80d3b8d98c3141d9e26f6c25d73575d688f1c1651b8076f0f2bfd76325b7c9
 TC_REPO=https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-eabi-4.8
-CONFIG=$REPO/docs/dumps/biscuit-fireos6-echolocal-boot-3.18.19.config
 FRAGMENT=$HERE/kernel-bt.fragment
 
 fetch() { # url sha256
@@ -86,7 +109,13 @@ fetch() { # url sha256
 }
 
 mkdir -p "$DL" "$OUTDIR" "$WORK"
-fetch "$AMZ_URL" "$AMZ_SHA"
+if [ -n "$AMZ_TARBALL" ]; then
+	echo "$AMZ_SHA  $AMZ_TARBALL" | sha256sum -c --quiet - || { echo "checksum mismatch: $AMZ_TARBALL" >&2; exit 1; }
+	AMZ_FILE=$AMZ_TARBALL
+else
+	fetch "$AMZ_URL" "$AMZ_SHA"
+	AMZ_FILE=$DL/${AMZ_URL##*/}
+fi
 fetch "$LNX_URL" "$LNX_SHA"
 if [ ! -x "$TOOLCHAIN/bin/arm-eabi-gcc" ]; then
 	git clone --depth 1 -b lollipop-release "$TC_REPO" "$TOOLCHAIN"
@@ -96,7 +125,7 @@ fi
 SRC=$WORK/src
 rm -rf "$WORK/amz" "$WORK/linux-3.18.19" "$SRC"
 mkdir -p "$WORK/amz"
-tar -xjf "$DL/${AMZ_URL##*/}" -C "$WORK/amz" platform.tar prebuilt
+tar -xjf "$AMZ_FILE" -C "$WORK/amz" platform.tar prebuilt
 tar -xf "$WORK/amz/platform.tar" -C "$WORK/amz" kernel/mediatek/mt8163/3.18_hl device/amazon/common/verity
 mv "$WORK/amz/kernel/mediatek/mt8163/3.18_hl" "$SRC"
 rm "$WORK/amz/platform.tar"
@@ -153,7 +182,7 @@ if [ -z "$STOCK" ]; then
 	done < "$FRAGMENT"
 	[ $bad = 0 ] || exit 1
 fi
-echo "config changes against the running kernel:"
+echo "$BOARD config changes against the running kernel:"
 diff <(tr -d '\r' < "$CONFIG" | grep -v '^#' | grep . | sort) <(grep -v '^#' "$KOUT/.config" | grep . | sort) || true
 
 make "${MAKEARGS[@]}" -j"$(nproc)" zImage-dtb
@@ -169,11 +198,22 @@ sha256sum "$OUTDIR/$name"
 if [ -n "$REF" ]; then
 	python3 - "$REF" "$OUTDIR/$name" <<'EOF'
 import struct, sys
-def dtbs(b):  # device trees appended after the zImage, whose end offset is stored at 0x2c
-    i = struct.unpack("<I", b[0x2c:0x30])[0]; out = []
+def walk(b, i):
+    out = []
     while b[i:i+4] == b"\xd0\x0d\xfe\xed":
         n = struct.unpack(">I", b[i+4:i+8])[0]; out.append(b[i:i+n]); i += n
-    return out
+    return out, i
+def dtbs(b):  # device trees appended after the zImage, whose end offset is stored at 0x2c
+    i = struct.unpack("<I", b[0x2c:0x30])[0]
+    if i >= len(b):
+        # No end offset in the header (the radar's stock Fire OS kernel): the first magic from which
+        # device trees run exactly to the end.
+        i = b.find(b"\xd0\x0d\xfe\xed")
+        while i >= 0 and walk(b, i)[1] != len(b):
+            i = b.find(b"\xd0\x0d\xfe\xed", i + 1)
+        if i < 0:
+            return []
+    return walk(b, i)[0]
 img = open(sys.argv[1], "rb").read()
 ks, ps = struct.unpack("<I", img[8:12])[0], struct.unpack("<I", img[36:40])[0]
 ref, new = dtbs(img[ps:ps+ks]), dtbs(open(sys.argv[2], "rb").read())

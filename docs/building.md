@@ -72,6 +72,9 @@ Bluetooth files and the toolchain itself; the header explains each. On Linux, or
 bash tools/linux/build-kernel.sh          # -> build/kernel/zImage-dtb
 ```
 
+`--board radar` builds the Echo 2nd gen's instead, into `build/kernel-radar/` (work in progress, not
+booted yet: [hardware-radar.md](hardware-radar.md)).
+
 ## 5. bluez-alsa (Linux)
 
 Alpine's `bluealsa` crashes at start-up on the Dot. [tools/linux/build-bluealsa.sh](../tools/linux/build-bluealsa.sh)

@@ -38,7 +38,7 @@ $BB mount -t tmpfs tmpfs /run 2>/dev/null
 $BB mount -t tmpfs tmpfs /tmp 2>/dev/null
 # Logs that matter go to userdata (/data/techo5-linux); what services write to /var/log and /var/tmp
 # lives in RAM rather than wearing the slot's flash.
-$BB mount -t tmpfs tmpfs /var/log 2>/dev/null
+$BB mount -t tmpfs -o mode=0755 tmpfs /var/log 2>/dev/null
 $BB mount -t tmpfs tmpfs /var/tmp 2>/dev/null
 [ -s /etc/hostname ] && $BB hostname -F /etc/hostname
 # After /run is mounted, not before: a directory made first is hidden by the tmpfs, and then the
@@ -270,7 +270,7 @@ gw=$($BB route -n 2>/dev/null | $BB awk '$1 == "0.0.0.0" { print $2; exit }')
 		$BB hwclock -w -u 2>/dev/null
 		echo "techo5-dot boot: clock $($BB date)" > /dev/kmsg
 	fi
-	exec $BB ntpd -n -p time.cloudflare.com -p time.google.com -p 0.pool.ntp.org -p 1.pool.ntp.org ${gw:+-p "$gw"} > /dev/null 2>&1 ) &
+	exec $BB ntpd -n -S /etc/techo5/ntp-event.sh -p time.cloudflare.com -p time.google.com -p 0.pool.ntp.org -p 1.pool.ntp.org ${gw:+-p "$gw"} > /dev/null 2>&1 ) &
 
 # --- The services' own users, which their packages' install scripts would have made. Before the system
 # bus starts, whoever starts it (techo5-bt, or the daemon for AirPlay and Spotify Connect): a bus policy

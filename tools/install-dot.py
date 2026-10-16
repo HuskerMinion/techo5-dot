@@ -214,8 +214,15 @@ def main():
         fail("adb does not see %s (state: '%s'). Boot it into Fire OS (root adb) or TWRP with USB connected.%s"
              % (a.serial, state, console_hint((CONSOLE_DOT,))))
     twrp = state == 'recovery'
-    if 'biscuit' not in adb.sh('getprop ro.product.device; getprop ro.build.product'):
-        fail('%s is not an Echo Dot 2nd gen (biscuit)' % a.serial)
+    product = adb.sh('getprop ro.product.device; getprop ro.build.product')
+    # The Echo 2nd gen (radar) is a biscuit with a bigger speaker: the same SoC, partitions and boot chain.
+    # Until a kernel is built for it, it runs its own (no Bluetooth): the release's kernel carries
+    # biscuit's device tree.
+    board = 'radar' if 'radar' in product else 'biscuit' if 'biscuit' in product else None
+    if not board:
+        fail('%s is not an Echo Dot 2nd gen (biscuit) or an Echo 2nd gen (radar)' % a.serial)
+    if board == 'radar' and not a.kernel:
+        a.no_bluetooth_kernel = True
     ident = adb.sh('id')
     if not ident.startswith('uid=0'):
         fail("adb is not root on %s (%s). EchoLocal's install or boot-root.zip gives root adb; or boot TWRP." % (a.serial, ident))
@@ -236,12 +243,15 @@ def main():
             fail('TWRP could not mount userdata and cache on %s (%s)' % (a.serial, mounts))
         fireos = adb.sh("mkdir -p /tmp/t5sys; mount -t ext4 -o ro %s/system%s /tmp/t5sys 2>/dev/null; "
                         "sed -n 's/^ro.build.version.name=//p' /tmp/t5sys/system/build.prop 2>/dev/null; umount /tmp/t5sys 2>/dev/null" % (bn, slot))
+        if not fireos:
+            # This TWRP (amonet's radar build) already has the slot's system mounted, at /system_root.
+            fireos = adb.sh("sed -n 's/^ro.build.version.name=//p' /system_root/system/build.prop 2>/dev/null")
     else:
         stage = '/data/local/tmp/techo5'
         fireos = adb.sh('getprop ro.build.version.name')
     if 'Fire OS 6' not in fireos:
         fail("%s has '%s' in slot %s; this installer is for Fire OS 6 (32-bit kernel)" % (a.serial, fireos, slot))
-    note('biscuit, %s, slot %s, %s' % (fireos, slot, 'in TWRP' if twrp else 'root adb in Fire OS'))
+    note('%s, %s, slot %s, %s' % (board, fireos, slot, 'in TWRP' if twrp else 'root adb in Fire OS'))
 
     # Wi-Fi: the network Fire OS saved, one set on the unit before (wifi-set), or one given here. Only the
     # derived key goes to the unit (techo5lib.wifi_conf).

@@ -63,6 +63,12 @@ echo 7 4 1 7 > /proc/sys/kernel/printk
 say() { echo "techo5-dot boot: $*"; }
 say "slot $($BB cat /run/techo5/slot 2>/dev/null) release $($BB cat /etc/techo5-release 2>/dev/null)"
 
+# The same image runs on the Echo 2nd gen (radar), a biscuit with a bigger speaker. Amazon's device type
+# id tells them apart; the idme driver ends it with a NUL. Anything else is taken for a biscuit.
+BOARD=biscuit
+[ "$($BB tr -d '\000\n' 2>/dev/null < /proc/idme/device_type_id)" = A7WXQPH584YP ] && BOARD=radar
+say "board $BOARD"
+
 # The bootloader message is the initramfs's to manage, and it has already asked for the next boot to
 # be Linux too (tools/linux/init). This script used to clear it, which silently undid that: a power
 # cut then came back in Android.
@@ -126,7 +132,7 @@ if [ -d $g ]; then
 	echo 18d1 > $g/idVendor 2>/dev/null
 	echo 4ee7 > $g/idProduct 2>/dev/null
 	echo "TECHO5" > $g/iManufacturer 2>/dev/null
-	echo "Echo Dot 2 Linux" > $g/iProduct 2>/dev/null
+	if [ $BOARD = radar ]; then echo "Echo 2 Linux"; else echo "Echo Dot 2 Linux"; fi > $g/iProduct 2>/dev/null
 	# The unit's own serial, so the PC tells Dots apart: the installer finds this unit's COM port by it.
 	sn=$($BB sed -n 's/.*androidboot.serialno=\([^ ]*\).*/\1/p' /proc/cmdline)
 	[ -n "$sn" ] && echo "$sn" > $g/iSerial 2>/dev/null
@@ -160,6 +166,31 @@ adopt_audio() {
 	$BB sync
 }
 
+# --- The codec paths Fire OS sets for each output, /system/etc/audio_device.xml. The Echo 2nd gen's
+# speaker EQ (the biquad coefficients of its ext_speaker_output path) is in it, and without them its
+# speaker is silent; echod reads them from the store. Amazon's too, so adopted the same way, once. It is
+# checked by its own presence, not MBCL.cfg's: a unit that adopted the coefficients above before this
+# existed has those and not this. A biscuit takes its copy as well; nothing there needs it.
+adopt_audio_device() {
+	[ -d $S ] || return 0
+	{ [ -e $S/audio_device.xml ] || [ -e $S/audio_device.xml.missing ]; } && return 0
+	if $BB mount -t ext4 -o ro,noatime $SYSTEM /android 2>/dev/null; then
+		if $BB cp /android/system/etc/audio_device.xml $S/audio_device.xml.new 2>/dev/null; then
+			$BB mv $S/audio_device.xml.new $S/audio_device.xml
+			say "audio_device.xml adopted from the system partition"
+		else
+			# Not looked for again on every boot: the system partition is not mounted for nothing.
+			$BB rm -f $S/audio_device.xml.new
+			: > $S/audio_device.xml.missing
+			say "no audio_device.xml on the system partition"
+		fi
+		$BB umount /android
+		$BB sync
+	else
+		say "no system partition to adopt audio_device.xml from"
+	fi
+}
+
 # --- Wi-Fi firmware. The unit's own, adopted once into the store and shared by both slots, so a slot
 # that arrives by update needs nothing from Android. It is Amazon's, so it is never in a published
 # rootfs — every unit takes it from itself: from a slot that adopted it before the store kept it, or
@@ -182,6 +213,7 @@ if [ ! -e $FW/WIFI_RAM_CODE_8163 ]; then
 	fi
 	$BB sync
 fi
+adopt_audio_device
 if [ -e $FW/WIFI_RAM_CODE_8163 ]; then
 	[ -L /etc/firmware ] || $BB rm -rf /etc/firmware
 	$BB ln -sfn $FW /etc/firmware

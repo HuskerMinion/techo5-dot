@@ -71,6 +71,13 @@ say "userdata $([ -d /data/techo5-linux ] && echo mounted || echo unavailable)"
 # EchoLocal's install left the state directory writable by everyone.
 $BB chmod 700 /data/techo5-linux 2>/dev/null
 [ -d /data/misc/echolocal ] && $BB chmod 700 /data/misc/echolocal
+# The clock's zone is the unit's, not the image's: /etc/localtime and /etc/timezone link (mkrootfs.py)
+# to the files echod writes there from Home Assistant or the setup page (feature/timezone). A unit
+# that has none yet starts on UTC.
+if [ -d /data/misc/echolocal ] && { [ ! -e /data/misc/echolocal/timezone ] || [ ! -e /data/misc/echolocal/localtime ]; }; then
+	$BB ln -sfn /usr/share/zoneinfo/UTC /data/misc/echolocal/localtime
+	echo UTC > /data/misc/echolocal/timezone
+fi
 # The wake word models the image carries, any this unit does not have yet: the installer copied
 # a set once, and a model added to the image since reaches the unit at its next update, so every
 # unit offers the same words. Nothing on the unit is replaced or removed.

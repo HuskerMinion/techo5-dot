@@ -7,7 +7,9 @@
 #      the daemon binds it only while the page is open, so it refuses connections the rest of the
 #      time, the same arrangement as Sendspin's), DHCP replies, ping, IPv6 neighbor discovery, and
 #      anything answering a connection the Dot made. On Wi-Fi only: AirPlay (5000/tcp, 6001-6010/udp)
-#      and Spotify Connect (4070/tcp), which nothing listens on unless their switches are on.
+#      and Spotify Connect (4070/tcp), which nothing listens on unless their switches are on. DLNA's SSDP
+#      searches (1900/udp, IPv4), so a music app looking for a player finds the Dot when it asks,
+#      rather than only after the Dot's next announcement.
 # Out: everything, as before.
 #
 # The kernel has iptables but not nftables, so the legacy tools are the ones that work.
@@ -35,10 +37,11 @@ for T in iptables-legacy ip6tables-legacy; do
 done
 iptables-legacy -A INPUT -p udp --sport 67 --dport 68 -j ACCEPT
 iptables-legacy -A INPUT -p icmp -j ACCEPT
+iptables-legacy -A INPUT -p udp --dport 1900 -j ACCEPT
 ip6tables-legacy -A INPUT -p ipv6-icmp -j ACCEPT
 ip6tables-legacy -A INPUT -p udp --sport 547 --dport 546 -j ACCEPT
 
 ok=1
 iptables-legacy -P INPUT DROP || ok=
 ip6tables-legacy -P INPUT DROP || ok=
-[ -n "$ok" ] && echo "techo5-firewall: inbound closed except 6053, 5353, 22, 8928, 8181, and on Wi-Fi 5000, 6001-6010, 4070" >&2
+[ -n "$ok" ] && echo "techo5-firewall: inbound closed except 6053, 5353, 22, 8928, 8181, 1900/udp, and on Wi-Fi 5000, 6001-6010, 4070" >&2

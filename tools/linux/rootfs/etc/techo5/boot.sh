@@ -24,6 +24,9 @@ exec > /dev/kmsg 2>&1
 $BB mount -o remount,rw / 2>/dev/null
 
 $BB mount -t proc proc /proc 2>/dev/null
+# Another user's processes, and their command lines, are root's to see: the services that drop root
+# (avahi, the AirPlay and Spotify Connect receivers) see only their own. As on TECHO5's images.
+$BB mount -o remount,hidepid=2 /proc 2>/dev/null
 $BB mount -t sysfs sysfs /sys 2>/dev/null
 $BB mount -t tmpfs -o mode=0755 tmpfs /dev 2>/dev/null
 $BB mkdir -p /dev/pts /tmp /data /android /store
@@ -33,6 +36,11 @@ $BB mount -t devpts devpts /dev/pts 2>/dev/null
 SLOT=$($BB cat /run/techo5/slot 2>/dev/null)
 $BB mount -t tmpfs tmpfs /run 2>/dev/null
 $BB mount -t tmpfs tmpfs /tmp 2>/dev/null
+# Logs that matter go to userdata (/data/techo5-linux); what services write to /var/log and /var/tmp
+# lives in RAM rather than wearing the slot's flash.
+$BB mount -t tmpfs tmpfs /var/log 2>/dev/null
+$BB mount -t tmpfs tmpfs /var/tmp 2>/dev/null
+[ -s /etc/hostname ] && $BB hostname -F /etc/hostname
 # After /run is mounted, not before: a directory made first is hidden by the tmpfs, and then the
 # marker the daemon waits for can never be written. The first slot boot waited on it for ever.
 $BB mkdir -p /run/techo5
@@ -70,13 +78,29 @@ say "userdata $([ -d /data/techo5-linux ] && echo mounted || echo unavailable)"
 # The daemon's state (the Home Assistant key and token, SSH keys) and the logs are root's alone.
 # EchoLocal's install left the state directory writable by everyone.
 $BB chmod 700 /data/techo5-linux 2>/dev/null
+# The installer makes it; made here too, so a unit without one still finds the zone files below.
+[ -d /data/techo5-linux ] && $BB mkdir -p /data/misc/echolocal
 [ -d /data/misc/echolocal ] && $BB chmod 700 /data/misc/echolocal
 # The clock's zone is the unit's, not the image's: /etc/localtime and /etc/timezone link (mkrootfs.py)
 # to the files echod writes there from Home Assistant or the setup page (feature/timezone). A unit
 # that has none yet starts on UTC.
 if [ -d /data/misc/echolocal ] && { [ ! -e /data/misc/echolocal/timezone ] || [ ! -e /data/misc/echolocal/localtime ]; }; then
 	$BB ln -sfn /usr/share/zoneinfo/UTC /data/misc/echolocal/localtime
+	# Removed first: written through, a link left there would put the write somewhere else. A zone
+	# chosen on the device that is gone is forgotten too, so Home Assistant's applies again.
+	$BB rm -f /data/misc/echolocal/timezone /data/misc/echolocal/timezone-set-here
 	echo UTC > /data/misc/echolocal/timezone
+fi
+# The kernel keeps its last words in RAM across a restart (pstore), where it has it. Mounting it
+# makes them readable, and a copy on userdata outlives the next boot; a power cut clears the RAM, so
+# this only catches a device that restarted itself.
+if [ -d /data/techo5-linux ] && { $BB mount -t pstore pstore /sys/fs/pstore 2>/dev/null || [ -d /sys/fs/pstore ]; }; then
+	for f in /sys/fs/pstore/*; do
+		[ -e "$f" ] || continue
+		$BB mkdir -p /data/techo5-linux/crash
+		$BB cp "$f" "/data/techo5-linux/crash/$($BB date +%Y%m%d-%H%M%S)-${f##*/}" 2>/dev/null &&
+			say "kernel crash record kept: ${f##*/}" && $BB rm -f "$f"
+	done
 fi
 # The wake word models the image carries, any this unit does not have yet: the installer copied
 # a set once, and a model added to the image since reaches the unit at its next update, so every
@@ -232,16 +256,21 @@ fi
 # takes one address for each name, so pool.ntp.org alone is one pool member, and one that never answers
 # left the clock unset (techo5#77). Bounded, and in the background, so an unreachable server never holds
 # the boot; tried again each minute for half an hour if none answers. Then the RTC, in UTC, which is how
-# the kernel reads it at boot, so the next boot starts closer.
+# the kernel reads it at boot, so the next boot starts closer. After that ntpd keeps running, as on
+# TECHO5's images, so a Dot that stays up for months stays on time, and one whose first half hour had
+# no time server gets its clock when one answers.
 gw=$($BB route -n 2>/dev/null | $BB awk '$1 == "0.0.0.0" { print $2; exit }')
 ( n=0
 	until $BB timeout -s KILL 40 $BB ntpd -n -q -p time.cloudflare.com -p time.google.com -p 0.pool.ntp.org -p 1.pool.ntp.org ${gw:+-p "$gw"} > /tmp/ntpd.log 2>&1; do
 		n=$((n + 1))
-		[ $n -ge 30 ] && { echo "techo5-dot boot: clock not set, no time server answered" > /dev/kmsg; exit 1; }
+		[ $n -ge 30 ] && { echo "techo5-dot boot: clock not set yet, no time server answered; ntpd keeps trying" > /dev/kmsg; break; }
 		$BB sleep 60
 	done
-	$BB hwclock -w -u 2>/dev/null
-	echo "techo5-dot boot: clock $($BB date)" > /dev/kmsg ) &
+	if [ $n -lt 30 ]; then
+		$BB hwclock -w -u 2>/dev/null
+		echo "techo5-dot boot: clock $($BB date)" > /dev/kmsg
+	fi
+	exec $BB ntpd -n -p time.cloudflare.com -p time.google.com -p 0.pool.ntp.org -p 1.pool.ntp.org ${gw:+-p "$gw"} > /dev/null 2>&1 ) &
 
 # --- The services' own users, which their packages' install scripts would have made. Before the system
 # bus starts, whoever starts it (techo5-bt, or the daemon for AirPlay and Spotify Connect): a bus policy

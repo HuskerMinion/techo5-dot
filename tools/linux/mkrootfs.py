@@ -164,6 +164,11 @@ def main():
     for d in ("proc", "sys", "dev", "dev/pts", "run", "tmp", "data", "android", "store", "mnt"):
         r.dir(d)
 
+    # The zone lives on userdata, where echod writes it (feature/timezone, layout.StateDir); without
+    # these links the time package and busybox find no /etc/localtime and the unit stays on UTC.
+    r.symlink("etc/localtime", "/data/misc/echolocal/localtime")
+    r.symlink("etc/timezone", "/data/misc/echolocal/timezone")
+
     release = a.release or time.strftime("techo5-dot %Y-%m-%d %H:%M")
     r.file("etc/techo5-release", (release + "\n").encode())
 

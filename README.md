@@ -210,8 +210,9 @@ See [NOTICE](NOTICE) for the full list.
 - The Linux kernel's Bluetooth developers: every backported fix is listed with its commit.
 - [TECHO5](https://github.com/HuskerMinion/techo5): the daemon, the Linux image tooling and the
   root filesystem slot design this project shares.
-- Amazon's GPL kernel source release for the Echo Dot (2nd generation): the kernel the Dot's
-  Bluetooth build starts from.
+- Amazon's GPL kernel source releases for the Echo Dot (2nd generation), Echo_Dot_src-6.5.7.1-20251024,
+  and the Echo (2nd generation), Echo_v2_src-6.5.7.1-20251024: the kernels the Bluetooth builds
+  start from.
 - [Alpine Linux](https://alpinelinux.org/), [BlueZ](https://www.bluez.org/) and BusyBox: the system
   underneath.
 - [microWakeWord](https://github.com/kahrendt/microWakeWord) (Kevin Ahrendt) and the

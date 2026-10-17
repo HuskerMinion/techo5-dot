@@ -2,11 +2,26 @@
 
 The Echo (2nd Generation) is a biscuit (the Echo Dot 2, [hardware.md](hardware.md)) in a bigger
 cabinet: the same SoC, partition table and boot chain, a woofer and tweeter behind an external amp, and
-no USB port on the outside. **TECHO5 Dot does not support it yet.** This page collects what the work
-toward that has found.
+no USB port on the outside. **Status: works on the one unit tested so far (see below).** This page
+collects what has been found on it.
 
-Read off the first unit on 2026-10-16 (TWRP, read only) unless a line names another source. Per-unit
-values (serials, MAC addresses, calibrations) are not recorded here.
+The tables are read off the first unit on 2026-10-16 (TWRP, read only) unless a line names another
+source. Per-unit values (serials, MAC addresses, calibrations) are not recorded here.
+
+## On TECHO5 Dot
+
+Tested on one unit, 2026-10-16, on the radar kernel below:
+
+- Speaker: plays, through the unit's own speaker EQ (`audio_device.xml`, below).
+- Headphone jack: plays, and output switches between jack and speaker on every plug and unplug. The
+  jack is mono.
+- Bluetooth: a phone pairs and plays through it.
+- Wi-Fi.
+- Microphones: 9-channel capture, the 7 mics plus the loopback.
+- Buttons: key codes 115, 114, 138 and 113, the same as the Dot's.
+- LED ring: segment 0 sits between mute and volume down, and the ring runs clockwise, the same as the
+  Dot's.
+- Light sensor: the `tsl2540` is found.
 
 ## Identity
 
@@ -27,7 +42,7 @@ values (serials, MAC addresses, calibrations) are not recorded here.
 |---|---|
 | SoC / RAM | MediaTek MT8163, 512 MB; the same `mt8163.dtsi` as biscuit (GPL source) |
 | Playback codec | TI TLV320AIC3204 (`tlv320aic32x4`), I²C 2 `0x18`, card 0 device 23 |
-| Speaker amp gate | the codec's MFP2 pin, mixer control `MFP Gpio Mute` (On = amp off). The kernel boots it muted and never toggles it, so the speaker is silent until userspace sets it Off. The control is in the shared codec driver; reported needed on radar by EchoLocal PR #64 and EchoMuse PR #687. Not yet read on the unit |
+| Speaker amp gate | the codec's MFP2 pin, mixer control `MFP Gpio Mute` (On = amp muted). The kernel boots it On and never toggles it, so the speaker is silent until userspace sets it Off. The control is in the shared codec driver; reported needed on radar by EchoLocal PR #64 and EchoMuse PR #687. Read and toggled on the unit: booted On, silent; Off, the speaker plays |
 | Ext-amp DAC mux | GPIO124, polarity inverted against biscuit (`radar.dts`, `radar_evt.dts`) |
 | Mic ADCs | 4× TLV320ADC3101 (`tlv320aic3101`), I²C 0 `0x18`–`0x1b`, card 0 device 24 |
 | LED ring | IS31FL3236, I²C 0 `0x3f`. The DT also binds 4× LP55231 (`0x32`–`0x35`) and an `lp855x-led` at `0x2c` |

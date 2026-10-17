@@ -70,7 +70,9 @@ Linux kernel, https://git.kernel.org (GPL-2.0)
       docs/dumps/biscuit-fireos6-echolocal-boot-3.18.19.config (the Echo 2nd gen's:
       docs/dumps/radar-fireos6-boot-3.18.19.config).
     - The script that does all of it is tools/linux/build-kernel.sh, and docs/building.md is how to
-      run it. A rebuild reproduces the shipped image.
+      run it. A rebuild uses the same source, configuration and patches as the shipped image. It is
+      not guaranteed to come out byte for byte the same: the build time and the build directory are
+      compiled in.
   Boot images, which wrap that kernel with a unit's own ramdisk, are built per unit and not
   distributed.
 

@@ -187,7 +187,8 @@ Tested on that unit: the speaker (with the unit's own EQ), the headphone jack (m
 Assistant, Bluetooth (a phone plays to it), Wi-Fi, all seven microphones, the buttons, the light ring
 and the light sensor. Not yet: the vendor's own sound tuning files aren't used. It plays without them.
 
-**USB is inside.** There's no USB port on the case, only D+, D- and GND pads on a board inside.
+**USB is inside.** There's no USB port on the case, only D+, D- and GND pads on the amplifier board
+inside, marked TP15 (D+), TP14 (D-) and TP13 (GND).
 1. Open the case. [LibreEcho](https://github.com/aslater3/LibreEcho)'s disassembly guide shows the
    way in.
 2. Solder short wires from a USB cable to D+, D- and GND. Leave its red (5 V) wire unconnected: the

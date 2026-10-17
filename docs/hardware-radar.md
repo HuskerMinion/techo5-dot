@@ -56,7 +56,7 @@ without them.
 | Inputs | `ACCDET` (jack), `mtk-kpd` (mute, action), `keys` (gpio-keys, volume) |
 | Thermal zones | `mtktswmt`, `mtktscpu`, `mtkts1`, `mtkts3`–`5`, `mtktspmic`, `tmp103` |
 | Wi-Fi / BT | CONSYS + MT6625L as on biscuit; the same firmware names (`WIFI_RAM_CODE_8163`, `WMT_SOC.cfg`, `ROMv2_lm_patch_1_0_hdr.bin`, `ROMv2_lm_patch_1_1_hdr.bin`) under `/system/vendor/firmware` |
-| USB | **none outside.** D+, D- and GND pads on the board inside; power is a barrel jack |
+| USB | **none outside.** D+, D- and GND pads on the amplifier board inside (TP15, TP14, TP13); power is a barrel jack |
 
 ## Audio files on the system partition
 

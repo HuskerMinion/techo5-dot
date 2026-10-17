@@ -34,7 +34,7 @@ Sources, short names used below:
 | LED ring | ISSI **IS31FL3236** at I²C 0 `0x3f`, 36 PWM channels = 12 RGB segments; sysfs `frame`, `boot_animation`. DT also lists 4× LP55231 (other board revisions?) | boot.img DT, EchoLocal `led` |
 | Light sensor | tsl2584tsv (`0x29`, IIO) or tsl2540 (`0x39`); units vary | boot.img DT |
 | Buttons | evdev codes 113 mute, 114 vol−, 115 vol+, 138 action; gpio-keys vol± on GPIO 50/37, `mtk-kpd`, ACCDET jack | EchoLocal `codes_dot.go`, DT |
-| Mute | `amz_privacy` under `/sys/devices/soc/10010000.keypad/`, MTK pin 87; Fire OS 5 leaves the lines unclaimed (sysfs GPIO) and Fire OS 6 binds them to the keypad driver | EchoLocal `privacy` |
+| Mute | `amz_privacy` under `/sys/devices/soc/10010000.keypad/`, MTK pin 87; Fire OS 5 leaves the lines unclaimed (sysfs GPIO) and Fire OS 6 binds them to the keypad driver. Don't read its `power_button_state`: the driver has no GPIO behind it, and reading it crashes the kernel (the watchdog reboots the Dot) | EchoLocal `privacy` |
 | Headphone jack | `/sys/class/switch/h2w/state` | EchoLocal `speaker` |
 | PMIC | MT6323 | boot.img DT |
 | Display | none | — |

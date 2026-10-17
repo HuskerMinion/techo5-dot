@@ -31,6 +31,7 @@ without them.
 
 | Item | Value |
 |---|---|
+| Model (on the label) | XC56PY |
 | Fire OS `ro.product.device` / `ro.product.name` | `radar_puffin` |
 | Fire OS `ro.product.model` | `AEORD` |
 | `/proc/idme/device_type_id` | `A7WXQPH584YP` (biscuit: `A3S5BH2HU6VAYF`); NUL-terminated |

@@ -179,7 +179,7 @@ On Windows, type `python` for `python3`.
 
 ### Echo 2nd gen
 
-The Echo 2nd gen (2017, `radar`) has the Dot's SoC and boot chain, so it uses the same release and the
+The Echo 2nd gen (2017, model XC56PY, `radar`) has the Dot's SoC and boot chain, so it uses the same release and the
 same installer. The installer and the daemon tell the two apart. Supported, tested on one unit so far.
 Details are in [docs/hardware-radar.md](docs/hardware-radar.md).
 

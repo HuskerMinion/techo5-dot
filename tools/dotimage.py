@@ -1,7 +1,9 @@
 """The Dot's signed release and the boot image built from it, shared by install-dot.py and update-boot.py."""
 import os
+import re
 import subprocess
 import sys
+import zlib
 
 from techo5lib import Release, alpine, fail, repo_root, tar_extract_all, tar_read
 
@@ -14,7 +16,33 @@ KERNEL_ASSETS = {
     'radar': 'techo5-dot-kernel-bt-radar.zImage-dtb',
 }
 KERNEL_ASSET = KERNEL_ASSETS['biscuit']
+# Amazon's device type ids, in /proc/idme/device_type_id: the board each kernel is chosen by.
+BOARD_TYPE_IDS = {
+    'A3S5BH2HU6VAYF': 'biscuit',
+    'A7WXQPH584YP': 'radar',
+}
 APKS_ASSET = 'techo5-dot-rescue-apks.tar'
+
+
+def kernel_board(path):
+    """The board a zImage-dtb was built for, read from the kernel config it carries (CONFIG_IKCONFIG):
+    CONFIG_ARCH_MTK_PROJECT, 'biscuit' or 'radar'. The appended device trees cannot tell them apart: both
+    boards' call themselves MT8163. None when the kernel is not gzip-compressed or carries no config."""
+    with open(path, 'rb') as f:
+        data = f.read()
+    at = data.find(b'\x1f\x8b\x08')
+    if at < 0:
+        return None
+    try:
+        image = zlib.decompressobj(31).decompress(data[at:])
+        at = image.find(b'IKCFG_ST')
+        if at < 0:
+            return None
+        config = zlib.decompressobj(31).decompress(image[at + 8:])
+    except zlib.error:
+        return None
+    m = re.search(rb'^CONFIG_ARCH_MTK_PROJECT="([a-z0-9_]+)"$', config, re.M)
+    return m.group(1).decode() if m else None
 
 
 class DotRelease:
@@ -69,3 +97,10 @@ def build_boot_image(recovery, out, alpine_tgz, busybox, wmtup, apks, kernel=Non
         mk += ['--script', j(linux, 'rootfs', 'usr', 'local', 'sbin', t) + '=/usr/local/sbin/' + t]
     if subprocess.run(mk).returncode != 0:
         fail('building the boot image failed')
+
+
+if __name__ == '__main__':
+    # release-dot.ps1 checks each kernel it publishes is the board's: python tools/dotimage.py board <file>
+    if len(sys.argv) != 3 or sys.argv[1] != 'board':
+        sys.exit('usage: dotimage.py board <zImage-dtb>')
+    print(kernel_board(sys.argv[2]) or '')

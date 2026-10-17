@@ -32,10 +32,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from techo5lib import default_dir, fail, md5, need, note, run_main, step  # noqa: E402
-from dotimage import DotRelease, build_boot_image  # noqa: E402
-
-# Amazon's device type id of the Echo 2nd gen (radar), in /proc/idme/device_type_id.
-RADAR_TYPE_ID = 'A7WXQPH584YP'
+from dotimage import BOARD_TYPE_IDS, DotRelease, build_boot_image  # noqa: E402
 
 
 def main():
@@ -68,12 +65,15 @@ def main():
     # Each board has its own kernel, with its own device trees: a radar on biscuit's kernel would come up
     # on biscuit's device tree, if at all, and a kernel that does not boot leaves no rescue to reach. So
     # the board is read before anything is built, and a board the release has no kernel for keeps the
-    # one from its recovery backup.
+    # one from its recovery backup. An id that is empty or not one of the two is refused, not guessed.
     rc, out = remote("echo type=$(tr -d '\\000' 2>/dev/null < /proc/idme/device_type_id)")
     m = re.search(r'^type=(\S*)$', out, re.M)
     if rc != 0 or not m:
         fail('could not read the board over SSH from %s (%s); nothing was flashed' % (a.address, out or 'no output'))
-    board = 'radar' if m.group(1) == RADAR_TYPE_ID else 'biscuit'
+    board = BOARD_TYPE_IDS.get(m.group(1))
+    if not board:
+        fail("%s reports device type id '%s', not an Echo Dot 2nd gen (biscuit) or an Echo 2nd gen (radar); "
+             "nothing was flashed" % (a.address, m.group(1)))
 
     step('boot image')
     rel = DotRelease(a.work, a.release)

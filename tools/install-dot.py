@@ -42,7 +42,7 @@ from techo5lib import (CONSOLE_DOT, Adb, Console, ask, ask_name, ask_wifi, check
                        console_hint, default_dir, download_checked, fail, head_is_android, interactive, md5,
                        need, new_api_key, note, pick_unit, repo_root, run_main, step, valid_api_key,
                        write_private)
-from dotimage import DotRelease, build_boot_image  # noqa: E402
+from dotimage import BOARD_TYPE_IDS, DotRelease, build_boot_image  # noqa: E402
 
 # CABLE is what a backup that came over USB short or wrong usually means: the device reads the same
 # every time, and the copy breaks off part way, with the Dot dropping off USB (techo5#86).
@@ -225,6 +225,15 @@ def main():
     ident = adb.sh('id')
     if not ident.startswith('uid=0'):
         fail("adb is not root on %s (%s). EchoLocal's install or boot-root.zip gives root adb; or boot TWRP." % (a.serial, ident))
+    # The board's device type id (idme) is what the installed system and update-boot.py go by, so when it
+    # can be read (TWRP and root adb in Fire OS both have /proc/idme) it has to agree with the build props.
+    type_id = adb.sh('cat /proc/idme/device_type_id 2>/dev/null').replace('\0', '').strip()
+    if type_id:
+        if BOARD_TYPE_IDS.get(type_id) != board:
+            fail("%s says %s in its build props but device type id '%s' in idme; nothing was written"
+                 % (a.serial, board, type_id))
+    else:
+        note('could not read the device type id (/proc/idme); going by the build props: %s' % board)
     slot = adb.sh('getprop ro.boot.slot_suffix')
     bn = '/dev/block/platform/bootdevice/by-name'
     if adb.sh('test -e %s/recovery && echo yes' % bn) != 'yes':

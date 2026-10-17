@@ -237,7 +237,8 @@ usb_console() {
 	else
 		echo "Echo Dot 2 Linux"
 	fi > $g/iProduct 2>/dev/null
-	# The unit's own serial (there is no /proc/idme on this kernel), so the PC tells Dots apart.
+	# The unit's own serial, from the bootloader's command line, so the PC tells Dots apart. (Both boards'
+	# kernels have /proc/idme, CONFIG_IDME=y: the board above is read from it.)
 	local sn=$($BB sed -n 's/.*androidboot.serialno=\([^ ]*\).*/\1/p' /proc/cmdline)
 	[ -n "$sn" ] && echo "$sn" > $g/iSerial 2>/dev/null
 

@@ -37,6 +37,9 @@ param(
     [string]$Kernel = $(if ($env:TECHO5_DOT_KERNEL) { $env:TECHO5_DOT_KERNEL } else { Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'build') 'kernel') 'zImage-dtb' }),
     # The Echo 2nd gen's (radar) Bluetooth kernel (tools/linux/build-kernel.sh --board radar).
     [string]$KernelRadar = $(if ($env:TECHO5_DOT_KERNEL_RADAR) { $env:TECHO5_DOT_KERNEL_RADAR } else { Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'build') 'kernel-radar') 'zImage-dtb' }),
+    # Optional: the sha256 each kernel must have (from its build log), so a stale or swapped file is caught.
+    [string]$KernelSha256 = '',
+    [string]$KernelRadarSha256 = '',
     # bluez-alsa with its crash fix (tools/linux/build-bluealsa.sh -o build/bluealsa).
     [string]$Bluealsa = $(if ($env:TECHO5_BLUEALSA) { $env:TECHO5_BLUEALSA } else { Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'build') 'bluealsa') 'bluealsa' }),
     # The build inputs (docs/building.md): $env:TECHO5_INPUTS, else inputs/ in this repository.
@@ -68,6 +71,22 @@ New-Item -ItemType Directory -Force $out | Out-Null
 if (-not $SignKey -or -not (Test-Path $SignKey)) { throw "no release signing key: set TECHO5_SIGN_KEY or pass -SignKey" }
 if (-not (Test-Path $Kernel)) { throw "no Bluetooth kernel at ${Kernel}: build it (tools/linux/build-kernel.sh -o build/kernel) or pass -Kernel" }
 if (-not (Test-Path $KernelRadar)) { throw "no radar Bluetooth kernel at ${KernelRadar}: build it (tools/linux/build-kernel.sh --board radar) or pass -KernelRadar" }
+# A kernel on the wrong board comes up on the other board's device trees, if at all, and leaves no rescue
+# to reach, so each kernel is proved to be its board's before anything is built: the two must differ,
+# and each must carry its own board's config (CONFIG_ARCH_MTK_PROJECT, read by tools/dotimage.py).
+$py = if ($IsLinux -or $IsMacOS) { 'python3' } else { 'python' }
+$kernelHash = (Get-FileHash -Algorithm SHA256 $Kernel).Hash.ToLower()
+$kernelRadarHash = (Get-FileHash -Algorithm SHA256 $KernelRadar).Hash.ToLower()
+if ($kernelHash -eq $kernelRadarHash) { throw "-Kernel and -KernelRadar are the same kernel ($kernelHash): each board needs its own" }
+foreach ($k in @(
+        @{ Name = '-Kernel'; Path = $Kernel; Board = 'biscuit'; Hash = $kernelHash; Want = $KernelSha256 },
+        @{ Name = '-KernelRadar'; Path = $KernelRadar; Board = 'radar'; Hash = $kernelRadarHash; Want = $KernelRadarSha256 })) {
+    if ($k.Want -and $k.Hash -ne $k.Want.ToLower()) { throw "$($k.Name) $($k.Path) has sha256 $($k.Hash), not $($k.Want)" }
+    $board = (& $py (Join-Path (Join-Path $root 'tools') 'dotimage.py') board $k.Path) -join ''
+    if ($LASTEXITCODE -ne 0) { throw "could not read the board of $($k.Name) $($k.Path)" }
+    if (-not $board) { throw "$($k.Name) $($k.Path) carries no kernel config (CONFIG_IKCONFIG) to tell its board by" }
+    if ($board -ne $k.Board) { throw "$($k.Name) $($k.Path) was built for $board, not $($k.Board)" }
+}
 if (-not (Test-Path (Join-Path $Techo5 'echod'))) { throw "no TECHO5 checkout at ${Techo5}: set TECHO5 or pass -Techo5" }
 
 $branch = (git -C $Techo5 branch --show-current).Trim()
@@ -113,7 +132,6 @@ try {
 
 Write-Host "== root filesystem"
 $rootfs = Join-Path $out "techo5-dot-rootfs-$Version.tar.gz"
-$py = if ($IsLinux -or $IsMacOS) { 'python3' } else { 'python' }
 & $py (Join-Path (Join-Path (Join-Path $root 'tools') 'linux') 'build-dot-rootfs.py') --daemon (Join-Path $out 'echod-arm-dot') --release $Version --inputs $Inputs --bluealsa $Bluealsa --out $rootfs
 if ($LASTEXITCODE -ne 0) { throw 'building the root filesystem failed' }
 # The root filesystem records which release it is, and that is what a Dot reports as running once it

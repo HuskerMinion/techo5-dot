@@ -2,8 +2,8 @@
 
 The Echo (2nd Generation) is a biscuit (the Echo Dot 2, [hardware.md](hardware.md)) in a bigger
 cabinet: the same SoC, partition table and boot chain, a woofer and tweeter behind an external amp, and
-no USB port on the outside. **Status: works on the one unit tested so far (see below).** This page
-collects what has been found on it.
+no USB port on the outside. **Status: supported, tested on one unit so far.** Install steps are in
+the [README](../README.md#echo-2nd-gen). This page collects what has been found on it.
 
 The tables are read off the first unit on 2026-10-16 (TWRP, read only) unless a line names another
 source. Per-unit values (serials, MAC addresses, calibrations) are not recorded here.
@@ -15,6 +15,7 @@ Tested on one unit, 2026-10-16, on the radar kernel below:
 - Speaker: plays, through the unit's own speaker EQ (`audio_device.xml`, below).
 - Headphone jack: plays, and output switches between jack and speaker on every plug and unplug. The
   jack is mono.
+- Voice with Home Assistant.
 - Bluetooth: a phone pairs and plays through it.
 - Wi-Fi.
 - Microphones: 9-channel capture, the 7 mics plus the loopback.
@@ -22,6 +23,9 @@ Tested on one unit, 2026-10-16, on the radar kernel below:
 - LED ring: segment 0 sits between mute and volume down, and the ring runs clockwise, the same as the
   Dot's.
 - Light sensor: the `tsl2540` is found.
+
+Not yet: the vendor's speaker tuning files (`audio-algorithms/`, below) are not used. It plays
+without them.
 
 ## Identity
 

@@ -20,14 +20,15 @@
   <a href="#what-happened-to-the-dot">What changed</a> ·
   <a href="#stock-echo-dot-2-vs-techo5-dot">Stock vs TECHO5 Dot</a> ·
   <a href="#installing">Install</a> ·
+  <a href="#echo-2nd-gen">Echo 2nd gen</a> ·
   <a href="#credits">Credits</a> ·
   <a href="https://github.com/HuskerMinion/techo5">TECHO5 for the Echo Show 5</a>
 </p>
 
 ---
 
-TECHO5 Dot replaces Fire OS on the Amazon Echo Dot 2nd generation (codename `biscuit`) with a small
-Alpine Linux image and one daemon. The Dot becomes a Home Assistant voice satellite: it hears the
+TECHO5 Dot replaces Fire OS on the Amazon Echo Dot 2nd generation (codename `biscuit`) and the Echo
+2nd generation (2017, codename `radar`) with a small Alpine Linux image and one daemon. The Dot becomes a Home Assistant voice satellite: it hears the
 wake word on the device, talks to Home Assistant over its encrypted native API, and sends nothing to
 Amazon. It still uses the internet for what you'd expect: checking this repo for signed updates and
 setting its clock.
@@ -54,7 +55,8 @@ Echo Show 5. Both run the same daemon source, built per device.
 
 > **Status: in daily use on three units.** Everything marked ✅ below was verified on a bench Dot
 > that came from Fire OS 6574.1, and the installer and updates on two more. Expect rough edges, and
-> keep your backups.
+> keep your backups. The Echo 2nd gen is supported too, tested on one unit so far; see
+> [Echo 2nd gen](#echo-2nd-gen).
 
 ## What happened to the Dot
 
@@ -128,7 +130,8 @@ now Bluetooth comes up in the background and a paired speaker reconnects when it
   sitting in TWRP or running Fire OS with root adb (for example with
   [EchoLocal](https://github.com/ygelfand/echolocal) installed). Unlocking isn't part of this project;
   [Getting started](https://github.com/HuskerMinion/techo5/blob/main/docs/getting-started.md#echo-dot-2nd-gen)
-  has every command.
+  has every command. For an Echo 2nd gen, see [Echo 2nd gen](#echo-2nd-gen): it's unlocked the same
+  way, over wires soldered inside.
 - The Dot joined to Wi-Fi once in Fire OS. If it hasn't been, the installer asks for a network.
 - A Windows, Linux or macOS computer with Python 3, adb and git
   ([setup for each](https://github.com/HuskerMinion/techo5/blob/main/docs/getting-started.md#set-up-your-computer-once)),
@@ -174,12 +177,66 @@ root filesystem only; a Dot installed before the Bluetooth kernel gets it with
 `python3 tools/update-boot.py --serial <serial> --address <address>` (SSH switched on in Home Assistant).
 On Windows, type `python` for `python3`.
 
+### Echo 2nd gen
+
+The Echo 2nd gen (2017, `radar`) has the Dot's SoC and boot chain, so it uses the same release and the
+same installer. The installer and the daemon tell the two apart. Supported, tested on one unit so far.
+Details are in [docs/hardware-radar.md](docs/hardware-radar.md).
+
+Tested on that unit: the speaker (with the unit's own EQ), the headphone jack (mono), voice with Home
+Assistant, Bluetooth (a phone plays to it), Wi-Fi, all seven microphones, the buttons, the light ring
+and the light sensor. Not yet: the vendor's own sound tuning files aren't used. It plays without them.
+
+**USB is inside.** There's no USB port on the case, only D+, D- and GND pads on the amp/tweeter board.
+1. Open the case. See LibreEcho's disassembly guide: T10 screws on the bottom plate, T10 screws on the
+   board, a ribbon cable, T8 screws on the top plate.
+2. Solder short wires from a USB cable to D+, D- and GND. Leave its red (5 V) wire unconnected: the
+   Echo runs from its own barrel-jack supply. A 3D-printed pogo-pin dock was tried and dropped out once
+   TWRP started. Soldered wires were steady.
+
+Once it's installed you rarely need USB (updates, SSH and Home Assistant all go over Wi-Fi), so the
+wires can come off afterwards. Note which pad is which first.
+
+**Unlock** with amonet-radar v1.0.0 (R0rt1z2's amonet, branch `mt8163-radar`, release zip
+`amonet-radar-v1.0.0.zip`):
+1. Hold the action button (the dot) while you plug in the power. The ring turns blue, then white:
+   that's stock fastboot.
+2. Run `fastbrick.ps1` on Windows, or `fastbrick.sh`. It prints `Exploit most likely successful!`.
+   If the script never sees the unit, check the wires and try again. With a flaky pogo dock, Windows
+   reported "Port Reset Failed" and "Device Descriptor Request Failed".
+3. If the ring then stays green for minutes, unplug the power, hold **+** (volume up) and plug it back
+   in. A white ring is amonet's TWRP.
+
+Stock fastboot and TWRP both show white, so go by the step you're on, not only the color. Volume down
+at power-on gives amonet's fastboot (a rainbow ring). It doesn't support `fastboot boot`, and
+`fastboot reboot` from it returns to Fire OS. Holding **+** at power-on always gets you back to TWRP.
+
+**Back up.** The installer backs up every boot partition itself and checks each copy by md5. A full
+copy of the eMMC from TWRP is worth having too: the whole disk is about 3.9 GB and took about 30
+minutes over the soldered wires.
+
+**Install** from TWRP:
+
+```
+python3 tools/install-dot.py --wifi "<network name>"
+```
+
+It asks for the Wi-Fi passphrase and a name for Home Assistant. `--ssh-key <file.pub>` adds your SSH
+key. From dot-v1.0.19 on, the release carries the Echo 2nd gen's own Bluetooth kernel and the installer
+takes it. With an older release the unit keeps its own kernel, without Bluetooth.
+
+On Windows, a PC that has seen other Amazon devices may bind the TECHO5 USB console (`18d1:4ee7`) to
+Google's ADB driver instead of a COM port. The install still finished, because Wi-Fi came up. To get
+the console, pick **USB Serial Device** for it in Device Manager.
+
 ## Where things are
 
 - [docs/porting-plan.md](docs/porting-plan.md): how it was built, milestone by milestone, and what
   each step proved.
 - [docs/hardware.md](docs/hardware.md): the board, partitions, kernels, and the Bluetooth kernel's
   security backports.
+- [docs/hardware-radar.md](docs/hardware-radar.md): the Echo 2nd gen: its board, audio, kernel,
+  unlock and USB.
 - [docs/microphones.md](docs/microphones.md): the array measurements, echo cancellation, and the
   LED whine that turned out to be Fire OS's.
 - `tools/`: the installer, the Wi-Fi tool, the boot image updater, and `tools/linux/` (initramfs,

@@ -188,7 +188,7 @@ Assistant, Bluetooth (a phone plays to it), Wi-Fi, all seven microphones, the bu
 and the light sensor. Not yet: the vendor's own sound tuning files aren't used. It plays without them.
 
 **USB is inside.** There's no USB port on the case, only D+, D- and GND pads on the amp/tweeter board.
-1. Open the case. See LibreEcho's disassembly guide: T10 screws on the bottom plate, T10 screws on the
+1. Open the case. See [LibreEcho](https://github.com/aslater3/LibreEcho)'s disassembly guide: T10 screws on the bottom plate, T10 screws on the
    board, a ribbon cable, T8 screws on the top plate.
 2. Solder short wires from a USB cable to D+, D- and GND. Leave its red (5 V) wire unconnected: the
    Echo runs from its own barrel-jack supply. A 3D-printed pogo-pin dock was tried and dropped out once
@@ -197,7 +197,7 @@ and the light sensor. Not yet: the vendor's own sound tuning files aren't used. 
 Once it's installed you rarely need USB (updates, SSH and Home Assistant all go over Wi-Fi), so the
 wires can come off afterwards. Note which pad is which first.
 
-**Unlock** with amonet-radar v1.0.0 (R0rt1z2's amonet, branch `mt8163-radar`, release zip
+**Unlock** with amonet-radar v1.0.0 ([R0rt1z2's amonet, branch `mt8163-radar`](https://github.com/R0rt1z2/amonet/tree/mt8163-radar), release zip
 `amonet-radar-v1.0.0.zip`):
 1. Hold the action button (the dot) while you plug in the power. The ring turns blue, then white:
    that's stock fastboot.

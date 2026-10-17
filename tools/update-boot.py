@@ -32,7 +32,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from techo5lib import default_dir, fail, md5, need, note, run_main, step  # noqa: E402
-from dotimage import BOARD_TYPE_IDS, DotRelease, build_boot_image  # noqa: E402
+from dotimage import BOARD_TYPE_IDS, DotRelease, build_boot_image, kernel_board  # noqa: E402
 
 
 def main():
@@ -81,6 +81,15 @@ def main():
     kernel = None if a.no_bluetooth_kernel else (os.path.abspath(a.kernel) if a.kernel else rel.kernel_for(board))
     if kernel is None and not a.no_bluetooth_kernel:
         note('release %s has no Bluetooth kernel for %s' % (rel.version, board))
+    if kernel:
+        # A kernel built for the other board would not boot this one, and on the Echo 2nd gen getting back
+        # means opening the case: the board is read from the kernel's own configuration first.
+        if not os.path.exists(kernel):
+            fail('no kernel at %s' % kernel)
+        kb = kernel_board(kernel)
+        if kb != board:
+            fail('%s is %s, not a kernel for this %s; nothing was flashed' % (
+                kernel, 'built for %s' % kb if kb else 'a kernel whose board cannot be read', board))
     if kernel and not os.path.exists(kernel):
         fail('no kernel at %s' % kernel)
     note('kernel: %s' % ('%s (Bluetooth)' % os.path.basename(kernel) if kernel else 'from the recovery backup (no Bluetooth)'))

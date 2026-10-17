@@ -187,18 +187,18 @@ Tested on that unit: the speaker (with the unit's own EQ), the headphone jack (m
 Assistant, Bluetooth (a phone plays to it), Wi-Fi, all seven microphones, the buttons, the light ring
 and the light sensor. Not yet: the vendor's own sound tuning files aren't used. It plays without them.
 
-**USB is inside.** There's no USB port on the case, only D+, D- and GND pads on the amp/tweeter board.
-1. Open the case. See [LibreEcho](https://github.com/aslater3/LibreEcho)'s disassembly guide: T10 screws on the bottom plate, T10 screws on the
-   board, a ribbon cable, T8 screws on the top plate.
+**USB is inside.** There's no USB port on the case, only D+, D- and GND pads on a board inside.
+1. Open the case. [LibreEcho](https://github.com/aslater3/LibreEcho)'s disassembly guide shows the
+   way in.
 2. Solder short wires from a USB cable to D+, D- and GND. Leave its red (5 V) wire unconnected: the
    Echo runs from its own barrel-jack supply. A 3D-printed pogo-pin dock was tried and dropped out once
    TWRP started. Soldered wires were steady.
 
 Once it's installed you rarely need USB (updates, SSH and Home Assistant all go over Wi-Fi), so the
-wires can come off afterwards. Note which pad is which first.
+wires can come off afterward. Note which pad is which first.
 
-**Unlock** with amonet-radar v1.0.0 ([R0rt1z2's amonet, branch `mt8163-radar`](https://github.com/R0rt1z2/amonet/tree/mt8163-radar), release zip
-`amonet-radar-v1.0.0.zip`):
+**Unlock** with amonet-radar v1.0.0 ([R0rt1z2's amonet, branch
+`mt8163-radar`](https://github.com/R0rt1z2/amonet/tree/mt8163-radar), release zip `amonet-radar-v1.0.0.zip`):
 1. Hold the action button (the dot) while you plug in the power. The ring turns blue, then white:
    that's stock fastboot.
 2. Run `fastbrick.ps1` on Windows, or `fastbrick.sh`. It prints `Exploit most likely successful!`.
@@ -209,7 +209,9 @@ wires can come off afterwards. Note which pad is which first.
 
 Stock fastboot and TWRP both show white, so go by the step you're on, not only the color. Volume down
 at power-on gives amonet's fastboot (a rainbow ring). It doesn't support `fastboot boot`, and
-`fastboot reboot` from it returns to Fire OS. Holding **+** at power-on always gets you back to TWRP.
+`fastboot reboot` from it returns to Fire OS. Until TECHO5 is installed, holding **+** at power-on gets you back to TWRP.
+Afterward TECHO5 sits in the recovery partition where TWRP was: `to-twrp` puts TWRP back (Getting
+started, "Going back to TWRP or Fire OS").
 
 **Back up.** The installer backs up every boot partition itself and checks each copy by md5. A full
 copy of the eMMC from TWRP is worth having too: the whole disk is about 3.9 GB and took about 30

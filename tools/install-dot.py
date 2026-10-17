@@ -42,7 +42,7 @@ from techo5lib import (CONSOLE_DOT, Adb, Console, ask, ask_name, ask_wifi, check
                        console_hint, default_dir, download_checked, fail, head_is_android, interactive, md5,
                        need, new_api_key, note, pick_unit, repo_root, run_main, step, valid_api_key,
                        write_private)
-from dotimage import BOARD_TYPE_IDS, DotRelease, build_boot_image  # noqa: E402
+from dotimage import BOARD_TYPE_IDS, DotRelease, build_boot_image, kernel_board  # noqa: E402
 
 # CABLE is what a backup that came over USB short or wrong usually means: the device reads the same
 # every time, and the copy breaks off part way, with the Dot dropping off USB (techo5#86).
@@ -347,6 +347,15 @@ def main():
     if kernel is None and not a.no_bluetooth_kernel:
         note('release %s has no Bluetooth kernel for %s (--kernel takes one from tools/linux/build-kernel.sh '
              '--board %s)' % (rel.version, board, board))
+    if kernel:
+        # A kernel built for the other board would not boot this one, and on the Echo 2nd gen getting back
+        # means opening the case: the board is read from the kernel's own configuration first.
+        if not os.path.exists(kernel):
+            fail('no kernel at %s' % kernel)
+        kb = kernel_board(kernel)
+        if kb != board:
+            fail('%s is %s, not a kernel for this %s; nothing was written' % (
+                kernel, 'built for %s' % kb if kb else 'a kernel whose board cannot be read', board))
     for f in (rootfs, kernel):
         if f and not os.path.exists(f):
             fail('no file at %s' % f)

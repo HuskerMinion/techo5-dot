@@ -100,7 +100,8 @@ with an older release a radar keeps its own kernel.
 - Unlocked with amonet-radar v1.0.0 (R0rt1z2, branch `mt8163-radar`) `fastbrick`, from stock Fire OS
   6. The result is the same chain as biscuit's: kaeru in `expdb`, TWRP in `recovery` (TWRP 3.7.0,
   `omni_radar`), which swaps `lk`, `tee` and `preloader` for decoys while it runs.
-- Volume-Up at power-on boots TWRP.
+- Volume-Up at power-on boots TWRP (until TECHO5 is installed; then it boots TECHO5, which sits in
+  `recovery`).
 - USB is only on the internal pads, so every adb, fastboot and USB-console step means opening the
   case. A three-pin pogo dock dropped out under TWRP (port resets, descriptor failures); wires soldered
   to the pads were steady.

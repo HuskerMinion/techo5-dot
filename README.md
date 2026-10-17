@@ -2,6 +2,10 @@
   <img src="https://raw.githubusercontent.com/HuskerMinion/techo5/main/logo/TECHO5_logo.png" alt="TECHO5" width="200">
 </p>
 
+<p align="center">
+  <img src="images/biscuit.png" alt="BISCUIT" width="120">&nbsp;&nbsp;<img src="images/radar.png" alt="RADAR" width="120">
+</p>
+
 <h1 align="center">TECHO5 Dot</h1>
 
 <h3 align="center">The 2016 Echo Dot, minus Amazon's cloud. Linux inside, Home Assistant in charge.</h3>
@@ -179,6 +183,8 @@ On Windows, type `python` for `python3`.
 
 ### Echo 2nd gen
 
+<img src="images/radar.png" alt="RADAR" width="90" align="right">
+
 The Echo 2nd gen (2017, model XC56PY, `radar`) has the Dot's SoC and boot chain, so it uses the same release and the
 same installer. The installer and the daemon tell the two apart. Supported, tested on one unit so far.
 Details are in [docs/hardware-radar.md](docs/hardware-radar.md).
@@ -253,6 +259,12 @@ the console, pick **USB Serial Device** for it in Device Manager.
 ## Credits
 
 See [NOTICE](NOTICE) for the full list.
+- The badges: BISCUIT is a homemade Southern buttermilk biscuit with sorghum syrup, photo by
+  Georgiabrown24, [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Homemade_Southern_Buttermilk_Biscuit_with_Sorghum_Syrup.jpg),
+  [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) (the cropped badge is CC BY-SA 4.0
+  too). RADAR is the 30-foot dish of NSSL's first research Doppler weather radar, NOAA Photo Library,
+  OAR/ERL/National Severe Storms Laboratory, public domain,
+  [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Nssl0026_-_Flickr_-_NOAA_Photo_Library.jpg).
 - [EchoLocal](https://github.com/ygelfand/echolocal) (MIT, Yuri Gelfand): the Echo Dot 2 daemon this
   project is built on (see above).
 - [EchoMuse / emOS](https://github.com/wilbowes/EchoMuse) (MIT, Wil Bowes): the first Linux

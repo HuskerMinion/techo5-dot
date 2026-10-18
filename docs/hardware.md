@@ -194,6 +194,12 @@ Mixer (EchoLocal `gain.go`, `paths_dot.go`):
 - Speaker path: `HPL/HPR Output Mixer L/R_DAC Switch`, `Audio_DacMux_Setting`,
   `Right Channel Only`, `HP Driver Gain Volume` (6 speaker / 11 headphone), a 7-block
   `biquad coefficients` EQ blob (the vendor's speaker tuning), `Ext_Speaker_Amp_Switch`.
+- `HP Driver Gain Volume` runs 0 to 35, -6 to +29 dB at 1 dB a step, and feeds the speaker amp: 6 is
+  0 dB. TECHO5's **Speaker gain** setting (Home Assistant's Playback configuration and the setup page)
+  raises the speaker path's 6 by 0 to +6 dB; off (0 dB) by default, and the jack's 11 is never
+  changed. +3 to +6 dB is louder; high settings can distort and make the wake word over music
+  harder. The register finding is echo-dot-assist's (Gamer92000), whose users run +6 to +7 dB clean;
+  `Ext_Amp_Gain` does nothing. The Echo 2nd gen uses the same control and the same 6.
 - Playback ring 1024 × 4. Unlike cronos, the Dot's DL1 SRAM ring **works** (no hold node needed).
 - Vendor volume curves (31 steps, dB per step) for speaker and headphone are in `paths_dot.go`.
 

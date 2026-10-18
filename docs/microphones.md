@@ -329,6 +329,15 @@ Five prompts per level, talker at 1 m, the Dot untouched; only the playback leve
 comfortable listening level — and a lower cutoff buys a level or so. Above that, the answer is
 ducking or the button, not a better filter.
 
+**Speaker gain and this ceiling (2026-10-18, not measured yet).** The opt-in Speaker gain raises
+the codec's `HP Driver Gain Volume` on the speaker path, after the loopback is taken: the loopback
+stays the digital stream, so the reference neither grows nor clips with it. What grows is the echo
+at the microphones, by the gain at every volume step, plus whatever extra distortion the speaker
+adds, which no DAC-side reference holds. So the ceiling above is reached that many dB lower on the
+dial: at +6 dB, the step that sat at −60 dBFS at the mics sits near −54, where wake over music was
+already marginal. The linear canceller is normalized to the reference, so it follows the louder
+path without retuning. The mics have room: the loud-music take peaked at −30.6 dBFS.
+
 **Conclusions so far.**
 1. Replace "center mic, and a canceled center mic during playback" with **the average of seven,
    and a canceller on that average**. Same cost, +1 to +2.5 dB quiet, +5 dB over music, most of it

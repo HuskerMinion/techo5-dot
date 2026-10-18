@@ -93,12 +93,12 @@ Echo Show 5. Both run the same daemon source, built per device.
 | Light ring | Alexa's colors | Wake, listening, thinking, replying and error effects, set from Home Assistant ✅ |
 | Buttons (action, volume, mic mute) | Yes | Yes, all four ✅. Mute is the hardware mute line |
 | Timers | Yes | Yes (Home Assistant timers) |
-| 3.5 mm audio out | Yes | In the daemon (jack detection, headphone path), with an **Audio output** choice on the setup page and in Home Assistant. Not yet tested on this image |
+| 3.5 mm audio out | Yes | In the daemon (jack detection, headphone path), with an **Audio output** choice on the setup page and in Home Assistant |
 | Bluetooth: phone to Dot (Dot as a speaker) | Yes | Yes ✅. Hold the action button for 5 seconds (the ring pulses blue), or turn on **Bluetooth pairing** in Home Assistant, or say "pair Bluetooth" with [this automation](docs/bluetooth-pairing-automation.yaml). Then pick the Dot on your phone; a chime says it worked. Phone volume works, the wake word still works over the music, and whichever started last plays: phone or Home Assistant media |
 | Bluetooth: Dot to a speaker or headphones | Yes | Yes ✅. If no phone pairs within 20 s, pairing mode connects the strongest speaker it hears, since there's no screen to choose on |
 | Home Assistant Bluetooth proxy | No | Yes ✅, alongside Bluetooth audio |
-| Multi-room music | Alexa groups | Sendspin (Music Assistant) client on port 8928. Built in, not yet tested on this image |
-| AirPlay and Spotify Connect | Spotify Connect | Both, new and **not yet tested**: off until turned on, on the setup page (Sound & Voice) or in Home Assistant. The Dot shows up under its own name in the Apple and Spotify apps (Spotify Premium) |
+| Multi-room music | Alexa groups | Sendspin (Music Assistant) client on port 8928. Built in |
+| AirPlay and Spotify Connect | Spotify Connect | Both: off until turned on, on the setup page (Sound & Voice) or in Home Assistant. The Dot shows up under its own name in the Apple and Spotify apps (Spotify Premium) |
 | Calling | Alexa calling and Drop In | Yes ✅, through your own SIP provider (TLS and SRTP): "call Alex" by voice, a help call that alerts phones and dials people in turn, calls between your own devices. The action button answers and hangs up, and the ring pulses green. Off until Home Assistant signs the Dot in. See [TECHO5's phone.md](https://github.com/HuskerMinion/techo5/blob/main/docs/phone.md) |
 | Skills, shopping | Yes | **No.** Those are Alexa cloud services |
 | Routines and smart home control | Alexa | Whatever Home Assistant does ✅ |

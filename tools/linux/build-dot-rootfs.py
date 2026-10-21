@@ -46,6 +46,10 @@ def main():
     alpine = sorted(glob.glob(j(a.inputs, 'alpine-minirootfs-*-armv7.tar.gz')))
     if not alpine:
         sys.exit('no Alpine armv7 minirootfs in %s (tools/fetch-inputs.py in TECHO5)' % a.inputs)
+    # One base only: with an old one beside a new one, the first would be taken, and apk add does not
+    # upgrade the packages a base already has.
+    if len(alpine) > 1:
+        sys.exit('more than one Alpine armv7 minirootfs in %s: keep only the one techo5lib.py names' % a.inputs)
     try:
         commit = subprocess.run(['git', '-C', REPO, 'rev-parse', '--short', 'HEAD'], stdout=subprocess.PIPE).stdout.decode().strip()
     except OSError:

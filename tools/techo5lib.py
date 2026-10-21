@@ -20,8 +20,8 @@ IS_WINDOWS = os.name == 'nt'
 IS_MACOS = sys.platform == 'darwin'
 
 # Alpine's base image, pinned: boot images' initramfs is built on it.
-ALPINE_URL = 'https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/armv7/alpine-minirootfs-3.24.1-armv7.tar.gz'
-ALPINE_SHA256 = '50942d567e6ee422c16cb46d5c282ed9d8adc9007c2a483faf4148a18c64ce32'
+ALPINE_URL = 'https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/armv7/alpine-minirootfs-3.24.2-armv7.tar.gz'
+ALPINE_SHA256 = '5552f1ef2398cee46ef2cf733f8f1258f39a77ad065dfd47282fc0df9fe1976c'
 
 # The public half of the key releases are signed with, the same one the daemon's updater trusts
 # (echod/internal/update/trust.go, releaseKey). An installer writes a root filesystem to a unit, so a
@@ -371,10 +371,22 @@ class Adb:
         r = self.run('shell', command)
         return r.stdout.decode('utf-8', 'replace').replace('\r\n', '\n').strip()
 
-    def push(self, local, remote):
-        r = self.run('push', local, remote)
-        if r.returncode != 0:
-            fail('adb push %s failed: %s' % (local, (r.stderr or r.stdout).decode('utf-8', 'replace').strip()))
+    def push(self, local, remote, tries=4, ready=None):
+        """Retried: right after TWRP starts, it resets USB (MTP) and drops a push already under way
+        with 'failed to read copy response: EOF'. ready, when given, is what else must be true again
+        before a retry: a push to /data waits for /data to be mounted, since TWRP may have restarted
+        in between, and a push before then would land in its RAM disk instead."""
+        for attempt in range(1, tries + 1):
+            r = self.run('push', local, remote)
+            if r.returncode == 0:
+                return
+            if attempt < tries:
+                note('adb push %s dropped (try %d of %d); waiting and trying again' % (os.path.basename(local), attempt, tries))
+                time.sleep(10)
+                wait_for('adb back on the unit', 60, lambda: self.state() in ('recovery', 'device'), 3)
+                if ready:
+                    wait_for('the unit ready for %s again' % remote, 60, ready, 3)
+        fail('adb push %s failed: %s' % (local, (r.stderr or r.stdout).decode('utf-8', 'replace').strip()))
 
     def pull(self, remote, local):
         r = self.run('pull', remote, local)

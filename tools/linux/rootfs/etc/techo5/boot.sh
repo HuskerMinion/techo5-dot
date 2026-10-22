@@ -292,8 +292,10 @@ fi
 # TECHO5's images, so a Dot that stays up for months stays on time, and one whose first half hour had
 # no time server gets its clock when one answers.
 gw=$($BB route -n 2>/dev/null | $BB awk '$1 == "0.0.0.0" { print $2; exit }')
+# The home's own time server, set on the setup page (echod feature/timezone), is asked first.
+own=$($BB head -n 1 /data/misc/echolocal/ntp-server 2>/dev/null | $BB tr -cd 'A-Za-z0-9.:-')
 ( n=0
-	until $BB timeout -s KILL 40 $BB ntpd -n -q -p time.cloudflare.com -p time.google.com -p 0.pool.ntp.org -p 1.pool.ntp.org ${gw:+-p "$gw"} > /tmp/ntpd.log 2>&1; do
+	until $BB timeout -s KILL 40 $BB ntpd -n -q ${own:+-p "$own"} -p time.cloudflare.com -p time.google.com -p 0.pool.ntp.org -p 1.pool.ntp.org ${gw:+-p "$gw"} > /tmp/ntpd.log 2>&1; do
 		n=$((n + 1))
 		[ $n -ge 30 ] && { echo "techo5-dot boot: clock not set yet, no time server answered; ntpd keeps trying" > /dev/kmsg; break; }
 		$BB sleep 60
@@ -302,7 +304,7 @@ gw=$($BB route -n 2>/dev/null | $BB awk '$1 == "0.0.0.0" { print $2; exit }')
 		$BB hwclock -w -u 2>/dev/null
 		echo "techo5-dot boot: clock $($BB date)" > /dev/kmsg
 	fi
-	exec $BB ntpd -n -S /etc/techo5/ntp-event.sh -p time.cloudflare.com -p time.google.com -p 0.pool.ntp.org -p 1.pool.ntp.org ${gw:+-p "$gw"} > /dev/null 2>&1 ) &
+	exec $BB ntpd -n -S /etc/techo5/ntp-event.sh ${own:+-p "$own"} -p time.cloudflare.com -p time.google.com -p 0.pool.ntp.org -p 1.pool.ntp.org ${gw:+-p "$gw"} > /dev/null 2>&1 ) &
 
 # --- The services' own users, which their packages' install scripts would have made. Before the system
 # bus starts, whoever starts it (techo5-bt, or the daemon for AirPlay and Spotify Connect): a bus policy

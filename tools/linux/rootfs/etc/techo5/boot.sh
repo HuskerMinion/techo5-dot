@@ -302,6 +302,7 @@ own=$($BB head -n 1 /data/misc/echolocal/ntp-server 2>/dev/null | $BB tr -cd 'A-
 	done
 	if [ $n -lt 30 ]; then
 		$BB hwclock -w -u 2>/dev/null
+		: > /run/techo5/ntp-set # echod: NTP has the clock, Home Assistant's time leaves it alone
 		echo "techo5-dot boot: clock $($BB date)" > /dev/kmsg
 	fi
 	exec $BB ntpd -n -S /etc/techo5/ntp-event.sh ${own:+-p "$own"} -p time.cloudflare.com -p time.google.com -p 0.pool.ntp.org -p 1.pool.ntp.org ${gw:+-p "$gw"} > /dev/null 2>&1 ) &

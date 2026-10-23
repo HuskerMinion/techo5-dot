@@ -1,0 +1,22 @@
+Echo Dot 3 (MT7668, Amazon's wlan_mt76x8_sdio): advertise one PTKSA replay counter.
+
+wpa_supplicant 2.11 advertises 16 PTKSA replay counters in its RSNE whenever the
+association uses HT/VHT or the AP carries WMM (wpa_supplicant.c, "Mark WMM
+enabled"). Amazon's driver writes its own RSNE into the association request
+with RSN Capabilities 0, so the AP sees 0x0000 there and 0x000c in EAPOL-Key
+msg 2/4, and drops the station after msg 2/4 (reason 2) as for a wrong key.
+2.10 and Fire OS's 2.6 send 0x0000 in both and join. Bench-tested 2026-10-23.
+
+--- a/src/rsn_supp/wpa_ie.c
++++ b/src/rsn_supp/wpa_ie.c
+@@ -110,10 +110,6 @@
+ {
+ 	u16 capab = 0;
+
+-	if (sm->wmm_enabled) {
+-		/* Advertise 16 PTKSA replay counters when using WMM */
+-		capab |= RSN_NUM_REPLAY_COUNTERS_16 << 2;
+-	}
+ 	if (sm->mfp)
+ 		capab |= WPA_CAPABILITY_MFPC;
+ 	if (sm->mfp == 2)

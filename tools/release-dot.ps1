@@ -12,6 +12,10 @@
     techo5-dot-rootfs-<version>.tar.gz  the whole root filesystem for a slot (tools/linux/build-dot-rootfs.py)
     techo5-dot-kernel-bt.zImage-dtb   the Echo Dot 2's kernel rebuilt with Bluetooth (GPL-2.0)
     techo5-dot-kernel-bt-radar.zImage-dtb  the Echo 2nd gen's (radar), the same way (GPL-2.0)
+    echod-arm-donut                   the Echo Dot 3rd gen's daemon (-tags dot,donut)
+    techo5-donut-rootfs-<version>.tar.gz  its root filesystem (build-dot-rootfs.py --board donut), with
+                                      the Bluetooth stack its stock kernel lacks as modules (GPL-2.0)
+    techo5-donut-bt-modules-source.tar.xz  the complete source of those modules (build-bt-modules.sh)
     techo5-dot-rescue-apks.tar        the packages the rescue initramfs is built from
     manifest.json                     versions, URLs, sizes and sha256 of all of those (cmd/mkmanifest)
     manifest.json.sig                 the release key's ed25519 signature over manifest.json
@@ -42,6 +46,12 @@ param(
     [string]$KernelRadarSha256 = '',
     # bluez-alsa with its crash fix (tools/linux/build-bluealsa.sh -o build/bluealsa).
     [string]$Bluealsa = $(if ($env:TECHO5_BLUEALSA) { $env:TECHO5_BLUEALSA } else { Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'build') 'bluealsa') 'bluealsa' }),
+    # The Echo Dot 3's wpa_supplicant (tools/linux/build-wpa-supplicant.sh -> build/wpa_supplicant).
+    [string]$WpaSupplicant = (Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'build') 'wpa_supplicant') 'wpa_supplicant'),
+    # The Echo Dot 3's Bluetooth modules and their source (tools/linux/build-bt-modules.sh --source-tarball,
+    # copied to build/bt-modules and build/techo5-donut-bt-modules-source.tar.xz).
+    [string]$BtModules = (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'build') 'bt-modules'),
+    [string]$BtModulesSource = (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'build') 'techo5-donut-bt-modules-source.tar.xz'),
     # The build inputs (docs/building.md): $env:TECHO5_INPUTS, else inputs/ in this repository.
     [string]$Inputs = $(if ($env:TECHO5_INPUTS) { $env:TECHO5_INPUTS } else { Join-Path (Join-Path $PSScriptRoot '..') 'inputs' }),
     [string]$Go = 'go',
@@ -53,6 +63,8 @@ param(
     # branch or by hand is stamped with another version, and Home Assistant would then offer the
     # update forever after it was installed.
     [string]$PrebuiltArmDot = '',
+    # The same for the Echo Dot 3's echod-arm-donut, from the same CI run.
+    [string]$PrebuiltArmDonut = '',
     # Build and sign everything into bin\release\<version>, publish nothing.
     [switch]$DryRun
 )
@@ -88,6 +100,12 @@ foreach ($k in @(
     if ($board -ne $k.Board) { throw "$($k.Name) $($k.Path) was built for $board, not $($k.Board)" }
 }
 if (-not (Test-Path (Join-Path $Techo5 'echod'))) { throw "no TECHO5 checkout at ${Techo5}: set TECHO5 or pass -Techo5" }
+if (-not (Test-Path $WpaSupplicant)) { throw "no Echo Dot 3 wpa_supplicant at ${WpaSupplicant}: build it (tools/linux/build-wpa-supplicant.sh) or pass -WpaSupplicant" }
+foreach ($m in 'cmac', 'bluetooth', 'hci_vhci') {
+    if (-not (Test-Path (Join-Path $BtModules "$m.ko"))) { throw "no $m.ko in ${BtModules}: build them (tools/linux/build-bt-modules.sh) or pass -BtModules" }
+}
+# The modules are GPL-2.0: they ship only with their complete source beside them.
+if (-not (Test-Path $BtModulesSource)) { throw "no module source at ${BtModulesSource}: build-bt-modules.sh --source-tarball writes it" }
 
 $branch = (git -C $Techo5 branch --show-current).Trim()
 if ($branch -notin 'main', 'dot/mic-average') { throw "$Techo5 is on '$branch', not main or dot/mic-average" }
@@ -110,6 +128,24 @@ if ($PrebuiltArmDot) {
     try {
         Push-Location (Join-Path $Techo5 'echod')
         & $Go build -tags dot -trimpath -ldflags $ldflags -o (Join-Path $out 'echod-arm-dot') ./cmd/echod
+        if ($LASTEXITCODE -ne 0) { throw 'daemon build failed' }
+        Pop-Location
+    } finally {
+        $env:GOOS = $null; $env:GOARCH = $null; $env:GOARM = $null; $env:CGO_ENABLED = $null
+    }
+}
+if ($PrebuiltArmDonut) {
+    Write-Host "== using prebuilt echod-arm-donut (CI, tag $tag)"
+    if (-not (Test-Path -LiteralPath $PrebuiltArmDonut -PathType Leaf)) { throw "prebuilt binary not found: $PrebuiltArmDonut" }
+    & gh attestation verify $PrebuiltArmDonut --repo HuskerMinion/techo5 --source-ref "refs/tags/$tag" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "$PrebuiltArmDonut is not attested as built by CI from tag $tag" }
+    Copy-Item $PrebuiltArmDonut (Join-Path $out 'echod-arm-donut') -Force
+} else {
+    Write-Host "== building echod-arm-donut $Version (TECHO5 $commit)"
+    $env:GOOS = 'linux'; $env:GOARCH = 'arm'; $env:GOARM = '7'; $env:CGO_ENABLED = '0'
+    try {
+        Push-Location (Join-Path $Techo5 'echod')
+        & $Go build -tags dot,donut -trimpath -ldflags $ldflags -o (Join-Path $out 'echod-arm-donut') ./cmd/echod
         if ($LASTEXITCODE -ne 0) { throw 'daemon build failed' }
         Pop-Location
     } finally {
@@ -140,6 +176,12 @@ if ($LASTEXITCODE -ne 0) { throw 'building the root filesystem failed' }
 # just built, as the Spot's release does, rather than on somebody's unit.
 $release = (& tar -xzOf $rootfs ./etc/techo5-release) -join ''
 if ($release -notmatch "techo5-dot $([regex]::Escape($Version)) ") { throw "the root filesystem says '$release', not $Version" }
+$rootfsDonut = Join-Path $out "techo5-donut-rootfs-$Version.tar.gz"
+& $py (Join-Path (Join-Path (Join-Path $root 'tools') 'linux') 'build-dot-rootfs.py') --board donut --daemon (Join-Path $out 'echod-arm-donut') --release $Version --inputs $Inputs --bluealsa $Bluealsa --wpa-supplicant $WpaSupplicant --bt-modules $BtModules --out $rootfsDonut
+if ($LASTEXITCODE -ne 0) { throw 'building the Echo Dot 3 root filesystem failed' }
+$release = (& tar -xzOf $rootfsDonut ./etc/techo5-release) -join ''
+if ($release -notmatch "techo5-donut $([regex]::Escape($Version)) ") { throw "the Echo Dot 3 root filesystem says '$release', not $Version" }
+Copy-Item -Force $BtModulesSource (Join-Path $out 'techo5-donut-bt-modules-source.tar.xz')
 
 Write-Host "== Bluetooth kernel, rescue packages and checksums"
 Copy-Item -Force $Kernel (Join-Path $out 'techo5-dot-kernel-bt.zImage-dtb')
@@ -157,6 +199,7 @@ $from = "https://github.com/$repo/releases/download/$tag"
 & $Go run ./cmd/mkmanifest -version $Version -title "TECHO5 Dot $Version" -notes $Notes `
     -release-url "https://github.com/$repo/releases/tag/$tag" -from $from `
     -arm-dot (Join-Path $out 'echod-arm-dot') -rootfs-arm-dot $rootfs `
+    -arm-donut (Join-Path $out 'echod-arm-donut') -rootfs-arm-donut $rootfsDonut `
     -asset (Join-Path $out 'techo5-dot-kernel-bt.zImage-dtb') -asset (Join-Path $out 'techo5-dot-kernel-bt-radar.zImage-dtb') `
     -asset (Join-Path $out 'techo5-dot-rescue-apks.tar') `
     -out (Join-Path $out 'manifest.json') -sign-key $SignKey
@@ -164,7 +207,8 @@ if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'mkmanifest failed' }
 Pop-Location
 Get-Content (Join-Path $out 'manifest.json')
 
-$names = 'echod-arm-dot', "techo5-dot-rootfs-$Version.tar.gz", 'manifest.json', 'manifest.json.sig', 'techo5-dot-kernel-bt.zImage-dtb', 'techo5-dot-kernel-bt-radar.zImage-dtb', 'techo5-dot-rescue-apks.tar'
+$names = 'echod-arm-dot', "techo5-dot-rootfs-$Version.tar.gz", 'manifest.json', 'manifest.json.sig', 'techo5-dot-kernel-bt.zImage-dtb', 'techo5-dot-kernel-bt-radar.zImage-dtb', 'techo5-dot-rescue-apks.tar',
+    'echod-arm-donut', "techo5-donut-rootfs-$Version.tar.gz", 'techo5-donut-bt-modules-source.tar.xz'
 # SHA256SUMS: for checking a download by hand. The installer checks the kernels and the rescue packages
 # against the signed manifest instead, which names them all: nothing signs this file, so it is no
 # check against whoever served the files it describes.
@@ -176,7 +220,7 @@ if ($DryRun) {
     return
 }
 Write-Host "== release $tag on $repo"
-$Notes += "`n`nThe Bluetooth kernel (techo5-dot-kernel-bt.zImage-dtb, Linux 3.18.19, GPL-2.0) is built by tools/linux/build-kernel.sh from Amazon's GPL source for the Echo Dot 2nd gen (Echo_Dot_src-6.5.7.1) with the configuration and backports in tools/linux. The Echo 2nd gen's (techo5-dot-kernel-bt-radar.zImage-dtb) is built the same way, by build-kernel.sh --board radar, from Amazon's GPL source for the Echo 2nd gen (Echo_v2_src-6.5.7.1)."
+$Notes += "`n`nThe Bluetooth kernel (techo5-dot-kernel-bt.zImage-dtb, Linux 3.18.19, GPL-2.0) is built by tools/linux/build-kernel.sh from Amazon's GPL source for the Echo Dot 2nd gen (Echo_Dot_src-6.5.7.1) with the configuration and backports in tools/linux. The Echo 2nd gen's (techo5-dot-kernel-bt-radar.zImage-dtb) is built the same way, by build-kernel.sh --board radar, from Amazon's GPL source for the Echo 2nd gen (Echo_v2_src-6.5.7.1). The Echo Dot 3rd gen's Bluetooth modules (bluetooth.ko, hci_vhci.ko, cmac.ko in techo5-donut-rootfs, Linux 4.4.22, GPL-2.0) are built by tools/linux/build-bt-modules.sh from Amazon's GPL source for the Echo Input (Echo_Input_src-6.5.4.7) with the Bluetooth sources it lacks from mainline 4.4.22; their complete source is techo5-donut-bt-modules-source.tar.xz."
 $ghArgs = @('release', 'create', $tag) + $assets + @('--repo', $repo, '--title', "TECHO5 Dot $Version", '--notes', $Notes)
 # A version with a suffix (-rc.1, -beta) is a prerelease whether or not -Prerelease was given: GitHub
 # otherwise makes it /releases/latest, which is what the installers and every unit's updater follow.

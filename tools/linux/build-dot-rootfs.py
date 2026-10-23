@@ -8,13 +8,19 @@ no Home Assistant identity, so it can be published. The boot image is not in it:
 per unit. Inputs (docs/building.md): the Alpine base, busybox.static, apks-dot/ and apks-bt-dot/ in
 TECHO5_INPUTS (default inputs/), and bin/wmtup, bin/btbridge and build/bluealsa/bluealsa; bin/techo5-librespot
 when it is there.
+
+--board donut builds the Echo Dot 3rd gen's instead: echod built with -tags dot,donut, the Dot 3's boot
+scripts (rootfs-donut, over the Dot 2's), our wpa_supplicant (build-wpa-supplicant.sh) in place of
+Alpine's, and the Bluetooth stack its stock kernel lacks as modules (build-bt-modules.sh); no wmtup.
 Windows, Linux and macOS alike; needs Python 3.
 """
 import argparse
 import glob
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
@@ -23,7 +29,13 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 def main():
     j = os.path.join
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--daemon', required=True, help='echod built with -tags dot')
+    ap.add_argument('--daemon', required=True, help='echod built with -tags dot (-tags dot,donut for the Dot 3)')
+    ap.add_argument('--board', choices=('dot', 'donut'), default='dot',
+                    help='dot: the Echo Dot 2nd gen (biscuit, radar); donut: the Echo Dot 3rd gen')
+    ap.add_argument('--wpa-supplicant', default=j(REPO, 'build', 'wpa_supplicant', 'wpa_supplicant'),
+                    help="with --board donut: build-wpa-supplicant.sh's")
+    ap.add_argument('--bt-modules', default=j(REPO, 'build', 'bt-modules'),
+                    help="with --board donut: build-bt-modules.sh's cmac.ko, bluetooth.ko and hci_vhci.ko")
     ap.add_argument('--release', required=True, help='the version this root filesystem is, e.g. v0.6.0')
     ap.add_argument('--wmtup', default=j(REPO, 'bin', 'wmtup'))
     ap.add_argument('--btbridge', default=j(REPO, 'bin', 'btbridge'))
@@ -35,8 +47,11 @@ def main():
     ap.add_argument('--out', default=j(REPO, 'bin', 'techo5-dot-rootfs.tar.gz'))
     a = ap.parse_args()
 
+    donut = a.board == 'donut'
     busybox = j(a.inputs, 'busybox.static')
-    for f in (a.daemon, a.wmtup, a.btbridge, a.bluealsa, busybox):
+    modules = [j(a.bt_modules, m + '.ko') for m in ('cmac', 'bluetooth', 'hci_vhci')]
+    needs = [a.daemon, a.btbridge, a.bluealsa, busybox] + ([a.wpa_supplicant] + modules if donut else [a.wmtup])
+    for f in needs:
         if not os.path.exists(f):
             sys.exit('missing %s (docs/building.md says how to fetch or build it)' % f)
     # The wake word models every unit offers: boot.sh adds any a unit is missing.
@@ -54,22 +69,39 @@ def main():
         commit = subprocess.run(['git', '-C', REPO, 'rev-parse', '--short', 'HEAD'], stdout=subprocess.PIPE).stdout.decode().strip()
     except OSError:
         commit = 'unknown'
+    overlay = j(HERE, 'rootfs')
+    tmp = None
+    if donut:
+        # One overlay: the Dot 2's, with the Dot 3's files over it.
+        tmp = tempfile.mkdtemp()
+        overlay = j(tmp, 'overlay')
+        shutil.copytree(j(HERE, 'rootfs'), overlay, symlinks=True)
+        shutil.copytree(j(HERE, 'rootfs-donut'), overlay, symlinks=True, dirs_exist_ok=True)
     cmd = [sys.executable, j(HERE, 'mkrootfs.py'), '--rootfs', alpine[0],
            '--apkdir', j(a.inputs, 'apks-dot'), '--apkdir', j(a.inputs, 'apks-bt-dot'),
            '--apkdir', j(a.inputs, 'apks-rootfs-dot'),
-           '--add', busybox + '=/bin/busybox.static', '--add', a.wmtup + '=/usr/local/bin/wmtup',
+           '--add', busybox + '=/bin/busybox.static',
            '--add', a.daemon + '=/usr/local/bin/echod', '--add', a.btbridge + '=/usr/local/bin/btbridge',
-           '--add', a.bluealsa + '=/usr/bin/bluealsa', '--overlay', j(HERE, 'rootfs'),
+           '--add', a.bluealsa + '=/usr/bin/bluealsa', '--overlay', overlay,
            # avahi announces only what the AirPlay and Spotify Connect receivers register, not SSH.
            '--drop', 'etc/avahi/services/ssh.service', '--drop', 'etc/avahi/services/sftp-ssh.service',
-           '--release', 'techo5-dot %s (%s)' % (a.release, commit), '-o', a.out]
+           '--release', '%s %s (%s)' % ('techo5-donut' if donut else 'techo5-dot', a.release, commit), '-o', a.out]
+    if donut:
+        cmd += ['--add', a.wpa_supplicant + '=/sbin/wpa_supplicant']
+        for m in modules:
+            cmd += ['--data', '%s=/usr/lib/techo5/modules/%s' % (m, os.path.basename(m))]
+    else:
+        cmd += ['--add', a.wmtup + '=/usr/local/bin/wmtup']
     if os.path.exists(a.librespot):
         cmd += ['--add', a.librespot + '=/usr/local/bin/techo5-librespot']
     else:
         print('no %s: the image will not offer Spotify Connect' % a.librespot)
     for m in models:
         cmd += ['--data', '%s=/usr/share/techo5/models/%s' % (m, os.path.basename(m))]
-    if subprocess.run(cmd).returncode != 0:
+    rc = subprocess.run(cmd).returncode
+    if tmp:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if rc != 0:
         sys.exit('building the root filesystem failed')
     print('rootfs for release %s -> %s' % (a.release, a.out))
 

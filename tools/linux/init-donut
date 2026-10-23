@@ -1,0 +1,260 @@
+#!/bin/busybox.static sh
+# TECHO5 Dot 3 (donut) initramfs init: boot a rootfs slot, or stay up as the rescue environment.
+#
+# Runs as PID 1 from the initramfs in swdl, which kaeru boots as recovery. The Dot 2's init
+# (techo5-dot tools/linux/init) with the Dot 3's board: the store is a directory on userdata
+# (/data/techo5-store, bound at /store), since cache is 32 MB here; Wi-Fi in rescue is Amazon's SDIO
+# driver from the store or the system slot; the USB console is a Linux Foundation id.
+#
+# What it learns goes to the kernel log, to breadcrumbs in MISC (one 512-byte block per stage from
+# 8 KiB) and, in rescue, to /data/techo5-linux/first-boot.log.
+#
+# The interpreter is the static busybox: PID 1 must not depend on a dynamic loader.
+
+BB=/bin/busybox.static
+
+MISC_DEV=8    # bootloader message, A/B metadata in its second block, the try count, breadcrumbs
+DATA_DEV=16   # userdata: the store, the daemon's state, the logs
+
+MISC=/dev/mmcblk0p$MISC_DEV
+DATA=/dev/mmcblk0p$DATA_DEV
+STOREDIR=/data/techo5-store
+
+exec > /dev/kmsg 2>&1
+
+$BB mount -t proc proc /proc
+$BB mount -t sysfs sysfs /sys
+$BB mount -t tmpfs -o mode=0755 tmpfs /dev
+$BB mkdir -p /dev/pts /run /tmp /data /store
+$BB mount -t devpts devpts /dev/pts
+$BB mount -t tmpfs tmpfs /run
+$BB mount -t tmpfs tmpfs /tmp
+
+$BB mknod -m 600 $MISC b 179 $MISC_DEV 2>/dev/null
+$BB mknod -m 600 $DATA b 179 $DATA_DEV 2>/dev/null
+$BB mdev -s
+echo 7 4 1 7 > /proc/sys/kernel/printk
+
+CRUMB=0
+crumb() {
+	CRUMB=$((CRUMB + 1))
+	echo "techo5-donut crumb $CRUMB: $*"
+	printf 'TECHO5-DONUT %02d %s\n' "$CRUMB" "$*" | $BB dd of=$MISC bs=512 seek=$((16 + CRUMB)) count=1 conv=notrunc,sync 2>/dev/null
+}
+
+crumb "init started: $($BB uname -r) $($BB uname -m)"
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root
+
+# --- The way to Fire OS: clear the bootloader message, so the next boot is Android's. Only when asked.
+cat > /sbin/to-android <<'EOF'
+#!/bin/busybox.static sh
+/bin/busybox.static dd if=/dev/zero of=/dev/mmcblk0p8 bs=32 count=1 conv=notrunc,sync 2>/dev/null
+/bin/busybox.static sync
+echo "bootloader message cleared; rebooting into Fire OS, which stays until recovery is asked for"
+/bin/busybox.static reboot -f
+EOF
+chmod 755 /sbin/to-android
+
+# --- Linux is the boot (as on the Dot 2): every boot asks for the next one to come here too, and
+# counts one try. The root filesystem clears the count once the daemon has been up long enough to
+# believe (etc/techo5/boot.sh). Five failed in a row and no slot is booted: the unit stays in this
+# rescue environment until someone looks; techo5-retry tries the slots again.
+TRIES_BLOCK=14
+TRIES_MAX=5
+tries=$($BB dd if=$MISC bs=512 skip=$TRIES_BLOCK count=1 2>/dev/null | $BB tr -d '\000' |
+	$BB sed -n 's/^TECHO5-TRIES \([0-9]*\).*/\1/p')
+tries=${tries:-0}
+UNHEALTHY=
+if [ "$tries" -ge $TRIES_MAX ]; then
+	UNHEALTHY=1
+	crumb "$tries boots in a row never became healthy: staying in rescue (techo5-retry tries the slots again)"
+else
+	tries=$((tries + 1))
+fi
+cat > /sbin/techo5-retry <<EOF
+#!/bin/busybox.static sh
+printf 'TECHO5-TRIES 0 retry\n' | /bin/busybox.static dd of=$MISC bs=512 seek=$TRIES_BLOCK count=1 conv=notrunc,sync 2>/dev/null
+/bin/busybox.static sync
+echo "boot count cleared; rebooting to try the slots again"
+/bin/busybox.static reboot -f
+EOF
+chmod 755 /sbin/techo5-retry
+printf 'TECHO5-TRIES %d\n' $tries | $BB dd of=$MISC bs=512 seek=$TRIES_BLOCK count=1 conv=notrunc,sync 2>/dev/null
+printf 'boot-recovery' | $BB dd of=$MISC bs=32 count=1 conv=notrunc,sync 2>/dev/null
+$BB sync
+crumb "boot try $tries of $TRIES_MAX; the next boot is Linux too"
+
+# --- Userdata, and the store on it.
+DATA_UP=
+if $BB mount -t ext4 -o noatime $DATA /data 2>/dev/null; then
+	DATA_UP=1
+	$BB mkdir -p /data/techo5-linux
+fi
+
+boot_slot() {
+	[ -n "$DATA_UP" ] || { crumb "userdata would not mount"; return 1; }
+	[ -d $STOREDIR/techo5 ] || { crumb "no store on userdata"; return 1; }
+	$BB mount --bind $STOREDIR /store || { crumb "store bind failed"; return 1; }
+
+	if [ -e /store/techo5/rescue ]; then
+		$BB rm -f /store/techo5/rescue
+		$BB sync
+		crumb "rescue marker found: staying in the initramfs this boot"
+		return 1
+	fi
+
+	local slot root
+	slot=$(/usr/local/sbin/slotctl next 2>/tmp/slotctl.err)
+	crumb "slotctl: $($BB tr '\n' ' ' < /tmp/slotctl.err) -> ${slot:-none}"
+	[ -n "$slot" ] || return 1
+	root=/store/techo5/slots/$slot
+	[ -x $root/sbin/init ] || { crumb "slot $slot has no /sbin/init"; return 1; }
+
+	$BB mkdir -p /newroot
+	$BB mount --bind $root /newroot || { crumb "bind of slot $slot failed"; return 1; }
+	$BB mkdir -p /newroot/run/techo5
+	echo "$slot" > /newroot/run/techo5/slot 2>/dev/null
+	crumb "switching into slot $slot ($($BB cat $root/etc/techo5-release 2>/dev/null))"
+	$BB sync
+
+	# The slot mounts userdata and binds the store again for itself: let go of them here.
+	$BB umount /store 2>/dev/null
+	$BB umount /data 2>/dev/null
+	for m in dev/pts dev sys proc; do
+		$BB mkdir -p /newroot/$m
+		$BB mount --move /$m /newroot/$m 2>/dev/null
+	done
+	exec $BB switch_root /newroot /sbin/init
+	crumb "switch_root failed"
+	return 1
+}
+
+[ -n "$UNHEALTHY" ] || boot_slot
+crumb "rescue mode: no slot to boot"
+
+# --- Rescue: a log on userdata, a root shell over USB, Wi-Fi and SSH with the keys on userdata.
+if [ -n "$DATA_UP" ] || $BB mount -t ext4 -o noatime $DATA /data 2>/dev/null; then
+	$BB mkdir -p /data/techo5-linux
+	LOGDIR=/data/techo5-linux
+else
+	LOGDIR=/tmp
+fi
+$BB grep -q ' /store ' /proc/mounts || $BB mount --bind $STOREDIR /store 2>/dev/null
+
+snapshot() {
+	{
+		echo "=== uptime $($BB cut -d' ' -f1 /proc/uptime)"
+		echo "--- dmesg"; $BB dmesg | $BB tail -150
+		echo "--- mounts"; cat /proc/mounts
+		echo "--- usb"; cat /sys/class/android_usb/android0/state 2>/dev/null
+	} > /tmp/snapshot 2>&1
+	$BB cp /tmp/snapshot $LOGDIR/first-boot.log 2>/dev/null
+	$BB head -c 122880 /tmp/snapshot | $BB dd of=$MISC bs=512 seek=128 conv=notrunc 2>/dev/null
+	$BB sync
+}
+
+usb_console() {
+	local g=/sys/class/android_usb/android0
+	[ -d $g ] || { crumb "no android_usb gadget in sysfs"; return 1; }
+	echo 1 > /sys/devices/platform/mt_usb/cmode 2>/dev/null
+	echo 0 > $g/enable 2>/dev/null
+	# Linux Foundation's multifunction composite gadget id, not a Google one: Windows binds 18d1:4ee7 to
+	# its Android ADB driver and the console never becomes a COM port.
+	echo 1d6b > $g/idVendor 2>/dev/null
+	echo 0104 > $g/idProduct 2>/dev/null
+	echo "TECHO5" > $g/iManufacturer 2>/dev/null
+	echo "Echo Dot 3 Linux" > $g/iProduct 2>/dev/null
+	local sn=$($BB sed -n 's/.*androidboot.serialno=\([^ ]*\).*/\1/p' /proc/cmdline)
+	[ -n "$sn" ] && echo "$sn" > $g/iSerial 2>/dev/null
+	echo 1 > $g/f_acm/instances 2>/dev/null
+	echo acm > $g/functions 2>/dev/null || { crumb "gadget will not take the acm function"; return 1; }
+	echo 02 > $g/bDeviceClass 2>/dev/null
+	echo 1 > $g/enable 2>/dev/null || { crumb "gadget will not enable"; return 1; }
+	local i=0
+	while [ $i -lt 20 ]; do
+		[ -e /dev/ttyGS0 ] && break
+		$BB mdev -s
+		$BB sleep 1
+		i=$((i + 1))
+	done
+	# ttyGS is major 246 on this kernel (/proc/devices on Fire OS).
+	[ -e /dev/ttyGS0 ] || $BB mknod -m 600 /dev/ttyGS0 c 246 0 2>/dev/null
+	[ -e /dev/ttyGS0 ] || { crumb "no /dev/ttyGS0"; return 1; }
+	crumb "usb acm up"
+}
+
+if usb_console; then
+	(
+		while true; do
+			$BB sh -l < /dev/ttyGS0 > /dev/ttyGS0 2>&1
+			$BB sleep 2
+		done
+	) &
+	crumb "root shell on /dev/ttyGS0"
+fi
+
+# Wi-Fi: the driver and firmware the slots adopted into the store, or else the system slot's.
+wifi() {
+	local fw=/store/techo5/firmware mods=/store/techo5/modules
+	if [ ! -e $mods/wlan_mt76x8_sdio.ko ]; then
+		local slot sysdev
+		slot=$($BB sed -n 's/.*androidboot.slot_suffix=_\([ab]\).*/\1/p' /proc/cmdline)
+		[ "$slot" = b ] && sysdev=14 || sysdev=13
+		$BB mknod -m 600 /dev/mmcblk0p$sysdev b 179 $sysdev 2>/dev/null
+		$BB mkdir -p /android
+		$BB mount -t ext4 -o ro,noatime /dev/mmcblk0p$sysdev /android 2>/dev/null ||
+			{ crumb "no Wi-Fi driver in the store and no system partition"; return 1; }
+		fw=/android/system/vendor/firmware
+		mods=/android/system/lib/modules
+	fi
+	echo /sbin/mdev > /proc/sys/kernel/hotplug
+	$BB rm -rf /lib/firmware /etc/firmware 2>/dev/null
+	$BB mkdir -p /system
+	$BB ln -sfn $fw /lib/firmware
+	$BB ln -sfn $fw /etc/firmware
+	$BB mkdir -p /system/vendor
+	$BB ln -sfn $fw /system/vendor/firmware
+	$BB ln -sfn /system/vendor /vendor
+	while [ "$($BB cut -d. -f1 /proc/uptime)" -lt 15 ]; do $BB sleep 1; done
+	$BB insmod $mods/wlan_mt76x8_sdio_prealloc.ko && $BB insmod $mods/wlan_mt76x8_sdio.ko ||
+		{ crumb "Wi-Fi modules would not load"; return 1; }
+	local i=0
+	while [ $i -lt 30 ] && [ ! -e /sys/class/net/wlan0 ]; do $BB sleep 1; i=$((i + 1)); done
+	[ -e /sys/class/net/wlan0 ] || { crumb "no wlan0"; return 1; }
+	crumb "wlan0 after ${i}s"
+}
+
+rescue_ssh() {
+	pidof dropbear > /dev/null && return 0
+	local keys=/data/misc/echolocal/ssh hostkeys=/data/techo5-linux/dropbear
+	[ -x /usr/sbin/dropbear ] && [ -s $keys/authorized_keys ] || return 0
+	$BB mkdir -p $hostkeys /root
+	$BB chmod 700 $hostkeys /root
+	[ -s $hostkeys/dropbear_ed25519_host_key ] ||
+		/usr/bin/dropbearkey -t ed25519 -f $hostkeys/dropbear_ed25519_host_key > /dev/null 2>&1
+	$BB ln -sfn $keys /root/.ssh
+	/usr/sbin/dropbear -s -p 22 -r $hostkeys/dropbear_ed25519_host_key >> $LOGDIR/dropbear.log 2>&1 &&
+		crumb "ssh on port 22"
+}
+
+/usr/local/sbin/techo5-firewall > /dev/null 2>&1 && crumb "firewall up" || crumb "firewall not applied"
+
+if wifi; then
+	IP=$(/usr/local/sbin/techo5-net 2>/tmp/net.err)
+	if [ -n "$IP" ]; then
+		crumb "address $IP"
+		rescue_ssh
+	else
+		crumb "no network: $($BB tr '\n' ' ' < /tmp/net.err | $BB head -c 300)"
+	fi
+fi
+
+snapshot
+crumb "rescue ready: USB console, and SSH once on the network; Fire OS only with /sbin/to-android"
+
+while true; do
+	$BB sleep 30
+	snapshot
+done

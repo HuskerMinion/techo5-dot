@@ -1,8 +1,11 @@
 """The Dot's signed release and the boot image built from it, shared by install-dot.py and update-boot.py."""
+import gzip
+import io
 import os
 import re
 import subprocess
 import sys
+import tarfile
 import zlib
 
 from techo5lib import Release, alpine, fail, repo_root, tar_extract_all, tar_read
@@ -20,7 +23,14 @@ KERNEL_ASSET = KERNEL_ASSETS['biscuit']
 BOARD_TYPE_IDS = {
     'A3S5BH2HU6VAYF': 'biscuit',
     'A7WXQPH584YP': 'radar',
+    'A32DOYMUN6DTXA': 'donut',
 }
+# Each board's root filesystem key in a release's manifest: the Echo Dot 3rd gen (donut) has its own
+# daemon (echod built with -tags dot,donut) and boot scripts (tools/linux/rootfs-donut).
+ROOTFS_KEYS = {'biscuit': 'arm-dot', 'radar': 'arm-dot', 'donut': 'arm-donut'}
+# Where the Echo Dot 3's initramfs is loaded: TWRP's address. The stock header's 0x44000000 leaves under
+# 4 MB below ram_console and pstore at 0x44400000, and an initramfs this size there never boots.
+DONUT_RAMDISK_ADDR = '0x43478000'
 APKS_ASSET = 'techo5-dot-rescue-apks.tar'
 
 
@@ -49,18 +59,26 @@ class DotRelease:
     """The release's files, downloaded into workdir and checked against the release's signed manifest,
     which covers the root filesystem, the Bluetooth kernel and the rescue packages alike."""
 
-    def __init__(self, workdir, tag='latest'):
+    def __init__(self, workdir, tag='latest', board='biscuit'):
         rel = Release(REPO, tag, workdir)
         self.rel = rel
         self.version = rel.version
-        self.rootfs = rel.rootfs('arm-dot')
-        self.kernel = rel.asset(KERNEL_ASSET)
+        self.board = board
+        self.rootfs = rel.rootfs(ROOTFS_KEYS[board])
+        self.kernel = rel.asset(KERNEL_ASSET) if board != 'donut' else None
         self.apks = os.path.join(rel.dir, 'apks-dot')
         tar_extract_all(rel.asset(APKS_ASSET), self.apks)
-        # What the boot image needs from the root filesystem: the Wi-Fi bring-up and busybox.
-        self.wmtup = os.path.join(rel.dir, 'wmtup')
+        # What the boot image needs from the root filesystem: busybox, and the Wi-Fi bring-up on the Dot
+        # 2 boards (wmtup) or our wpa_supplicant on the Dot 3 (tools/linux/build-wpa-supplicant.sh).
         self.busybox = os.path.join(rel.dir, 'busybox.static')
-        for member, out in (('usr/local/bin/wmtup', self.wmtup), ('bin/busybox.static', self.busybox)):
+        self.wmtup = os.path.join(rel.dir, 'wmtup') if board != 'donut' else None
+        self.wpa_supplicant = os.path.join(rel.dir, 'wpa_supplicant-donut') if board == 'donut' else None
+        wants = [('bin/busybox.static', self.busybox)]
+        if self.wmtup:
+            wants.append(('usr/local/bin/wmtup', self.wmtup))
+        if self.wpa_supplicant:
+            wants.append(('sbin/wpa_supplicant', self.wpa_supplicant))
+        for member, out in wants:
             data = tar_read(self.rootfs, member)
             if data is None:
                 fail('the root filesystem has no %s' % member)
@@ -73,26 +91,73 @@ class DotRelease:
         the rest, or None when the release has none for it (then the unit keeps its own)."""
         if board == 'biscuit':
             return self.kernel
+        if board == 'donut':
+            return None  # the Echo Dot 3 runs its own kernel: the Bluetooth stack is modules in its rootfs
         name = KERNEL_ASSETS.get(board)
         if not name or not self.rel.signed(name):
             return None
         return self.rel.asset(name)
 
 
-def build_boot_image(recovery, out, alpine_tgz, busybox, wmtup, apks, kernel=None):
-    """A unit's boot image: its own recovery backup's header (and kernel, without one given), the rescue
-    initramfs on Alpine's base, and the slot, network and TWRP tools."""
+def with_member(apk, member, path, out):
+    """out: the data of the Alpine package apk as a .tar.gz, with member's contents replaced by the file
+    at path. mkimage takes the first copy of a path it meets and packages come before --add, so a
+    replacement has to be made inside the package."""
+    with open(apk, 'rb') as f:
+        blob = f.read()
+    parts, off = [], 0
+    while off < len(blob):  # an apk is three gzip members: signature, control, data
+        d = zlib.decompressobj(31)
+        data = d.decompress(blob[off:]) + d.flush()
+        parts.append(data)
+        off = len(blob) - len(d.unused_data)
+    src = tarfile.open(fileobj=io.BytesIO(parts[-1]))
+    buf = io.BytesIO()
+    found = False
+    with tarfile.open(fileobj=buf, mode='w') as dst:
+        for ti in src.getmembers():
+            if ti.name == member:
+                with open(path, 'rb') as f:
+                    new = f.read()
+                ti.size = len(new)
+                dst.addfile(ti, io.BytesIO(new))
+                found = True
+            else:
+                dst.addfile(ti, src.extractfile(ti) if ti.isfile() else None)
+    if not found:
+        fail('%s has no %s to replace' % (os.path.basename(apk), member))
+    with open(out, 'wb') as f:
+        f.write(gzip.compress(buf.getvalue()))
+
+
+def build_boot_image(recovery, out, alpine_tgz, busybox, wmtup, apks, kernel=None, board='biscuit', wpa_supplicant=None):
+    """A unit's boot image: its own backup's header and kernel (the recovery partition's on the Dot 2
+    boards, without a kernel given; the booted slot's stock kernel on the Echo Dot 3), the rescue initramfs
+    on Alpine's base, and the slot, network and TWRP tools."""
     j = os.path.join
     linux = j(repo_root(), 'tools', 'linux')
+    donut = board == 'donut'
     mk = [sys.executable, j(linux, 'mkimage.py'), '--kernel-image', recovery, '--rootfs', alpine_tgz,
-          '--init', j(linux, 'init'), '--add', busybox + '=/bin/busybox.static', '--add', wmtup + '=/usr/local/bin/wmtup',
+          '--init', j(linux, 'init-donut' if donut else 'init'), '--add', busybox + '=/bin/busybox.static',
           '--cmdline-drop', 'skip_initramfs', '--cmdline-drop', 'root=', '--cmdline-drop', 'dm=',
           '--cmdline-append', 'techo5.stay_minutes=15', '-o', out]
+    if wmtup:
+        mk += ['--add', wmtup + '=/usr/local/bin/wmtup']
+    if donut:
+        mk += ['--ramdisk-addr', DONUT_RAMDISK_ADDR]
     if kernel:
         mk += ['--kernel', kernel]
     for apk in sorted(os.listdir(apks)):
-        if apk.endswith('.apk'):
-            mk += ['--apk', j(apks, apk)]
+        if not apk.endswith('.apk'):
+            continue
+        if donut and apk.startswith('wpa_supplicant-'):
+            # Alpine's 2.11 never completes a handshake with the Dot 3's Wi-Fi driver; ours does
+            # (tools/linux/wpa-patches/0100-donut-no-wmm-replay-counters.patch).
+            swapped = out + '.wpa_supplicant.tar.gz'
+            with_member(j(apks, apk), 'sbin/wpa_supplicant', wpa_supplicant, swapped)
+            mk += ['--apk', swapped]
+            continue
+        mk += ['--apk', j(apks, apk)]
     for t in ('slotctl', 'techo5-net', 'wifi-set', 'to-twrp', 'techo5-firewall'):
         mk += ['--script', j(linux, 'rootfs', 'usr', 'local', 'sbin', t) + '=/usr/local/sbin/' + t]
     if subprocess.run(mk).returncode != 0:

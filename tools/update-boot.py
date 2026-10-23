@@ -22,6 +22,9 @@ there is no rescue, because the rescue environment is in the same image. The way
 own TWRP: hold Volume-Down while powering on for fastboot, `fastboot flash recovery
 backups/<serial>/recovery.img`, let it boot TWRP, and `adb shell sh /cache/techo5/back-to-linux.sh` puts
 back the last image that booted healthy.
+
+On the Echo Dot 3rd gen the image is built on the unit's own stock kernel, from the backup of the boot slot
+Fire OS runs in (backups/<serial>/boot_a.img or boot_b.img), and its TWRP backup is swdl.img.
 """
 import argparse
 import os
@@ -49,9 +52,6 @@ def main():
     need(a.ssh, 'an OpenSSH client (built into Windows 10 and later, Linux and macOS)')
 
     unit = os.path.join(a.backups, a.serial)
-    recovery = os.path.join(unit, 'recovery.img')
-    if not os.path.exists(recovery):
-        fail('no recovery backup for %s at %s (the installer keeps one; --backups points elsewhere)' % (a.serial, recovery))
     os.makedirs(a.work, exist_ok=True)
     image = os.path.join(unit, 'techo5-dot-linux-next.img')
 
@@ -66,20 +66,34 @@ def main():
     # on biscuit's device tree, if at all, and a kernel that does not boot leaves no rescue to reach. So
     # the board is read before anything is built, and a board the release has no kernel for keeps the
     # one from its recovery backup. An id that is empty or not one of the two is refused, not guessed.
-    rc, out = remote("echo type=$(tr -d '\\000' 2>/dev/null < /proc/idme/device_type_id)")
+    rc, out = remote("echo type=$(tr -d '\\000' 2>/dev/null < /proc/idme/device_type_id); "
+                     "echo slot=$(sed -n 's/.*androidboot.slot_suffix=\\([^ ]*\\).*/\\1/p' /proc/cmdline)")
     m = re.search(r'^type=(\S*)$', out, re.M)
     if rc != 0 or not m:
         fail('could not read the board over SSH from %s (%s); nothing was flashed' % (a.address, out or 'no output'))
     board = BOARD_TYPE_IDS.get(m.group(1))
     if not board:
-        fail("%s reports device type id '%s', not an Echo Dot 2nd gen (biscuit) or an Echo 2nd gen (radar); "
-             "nothing was flashed" % (a.address, m.group(1)))
+        fail("%s reports device type id '%s', not an Echo Dot 2nd gen (biscuit), an Echo 2nd gen (radar) or an "
+             "Echo Dot 3rd gen (donut); nothing was flashed" % (a.address, m.group(1)))
+    donut = board == 'donut'
+    if donut and (a.kernel or a.no_bluetooth_kernel):
+        fail('the Echo Dot 3 always runs its own kernel; leave out --kernel and --no-bluetooth-kernel')
+    # recovery is the unit's TWRP backup; donor the image the new one is built on (installer, step 2).
+    recovery = os.path.join(unit, 'swdl.img' if donut else 'recovery.img')
+    if not os.path.exists(recovery):
+        fail('no TWRP backup for %s at %s (the installer keeps one; --backups points elsewhere)' % (a.serial, recovery))
+    donor = recovery
+    if donut:
+        s = re.search(r'^slot=(_[ab])$', out, re.M)
+        donor = os.path.join(unit, 'boot%s.img' % (s.group(1) if s else '_a'))
+        if not os.path.exists(donor):
+            fail('no backup of the boot slot at %s (the installer keeps one)' % donor)
 
     step('boot image')
-    rel = DotRelease(a.work, a.release)
-    note('TECHO5 Dot %s: Bluetooth kernel and rescue packages checked' % rel.version)
+    rel = DotRelease(a.work, a.release, board)
+    note('TECHO5 Dot %s: %s and rescue packages checked' % (rel.version, 'Bluetooth kernel' if not donut else 'release'))
     kernel = None if a.no_bluetooth_kernel else (os.path.abspath(a.kernel) if a.kernel else rel.kernel_for(board))
-    if kernel is None and not a.no_bluetooth_kernel:
+    if kernel is None and not a.no_bluetooth_kernel and not donut:
         note('release %s has no Bluetooth kernel for %s' % (rel.version, board))
     if kernel:
         # A kernel built for the other board would not boot this one, and on the Echo 2nd gen getting back
@@ -92,8 +106,11 @@ def main():
                 kernel, 'built for %s' % kb if kb else 'a kernel whose board cannot be read', board))
     if kernel and not os.path.exists(kernel):
         fail('no kernel at %s' % kernel)
-    note('kernel: %s' % ('%s (Bluetooth)' % os.path.basename(kernel) if kernel else 'from the recovery backup (no Bluetooth)'))
-    build_boot_image(recovery, image, rel.alpine, rel.busybox, rel.wmtup, rel.apks, kernel)
+    if donut:
+        note("kernel: the unit's own, from %s" % os.path.basename(donor))
+    else:
+        note('kernel: %s' % ('%s (Bluetooth)' % os.path.basename(kernel) if kernel else 'from the recovery backup (no Bluetooth)'))
+    build_boot_image(donor, image, rel.alpine, rel.busybox, rel.wmtup, rel.apks, kernel, board, rel.wpa_supplicant)
     want = md5(image)
     size = os.path.getsize(image)
 
@@ -136,6 +153,14 @@ def main():
             healthy = True
             break
         time.sleep(10)
+    if not healthy and donut:
+        fail('the unit did not report a healthy boot.\n'
+             '   If the new image boots, the unit stays in its rescue environment after five tries: reach it on the\n'
+             '   USB console or over SSH. If it does not boot at all, a power cycle starts Fire OS; from there\n'
+             '   (root adb) put the last image that booted healthy back:\n'
+             '     adb shell dd if=/data/techo5-store/techo5/linux.img of=/dev/block/mmcblk0p12\n'
+             '     adb reboot recovery\n'
+             '   (linux.img in the store was not replaced). The unit\'s TWRP backup is %s.' % recovery)
     if not healthy:
         fail('the unit did not report a healthy boot.\n'
              '   If the new kernel boots, the unit stays in its rescue environment after five tries: reach it on\n'

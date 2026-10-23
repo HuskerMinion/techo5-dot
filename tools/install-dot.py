@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Take an unlocked Echo Dot 2 (biscuit) or Echo 2nd gen (radar) from Fire OS or TWRP to the TECHO5 Linux
-image, in one run.
+"""Take an unlocked Echo Dot 2 (biscuit), Echo 2nd gen (radar) or Echo Dot 3rd gen (donut) from Fire OS or
+TWRP to the TECHO5 Linux image, in one run.
 
     python3 tools/install-dot.py
     python3 tools/install-dot.py --serial <serial> --dry-run
@@ -13,16 +13,21 @@ Windows, Linux and macOS alike; needs Python 3 and adb. Nothing is built: the si
 filesystem, Bluetooth kernel, rescue packages) is downloaded and checked, and this unit's boot image is
 built from it and the unit's own recovery backup. What it does, stopping at the first thing not right:
 
-  1. checks the device: biscuit or radar, Fire OS 6, adb as root, a saved Wi-Fi network (or asks for one)
+  1. checks the device: biscuit, radar or donut, Fire OS 6, adb as root, a saved Wi-Fi network (or asks)
   2. backs up every partition that boots the unit into backups/<serial>/, each checked by md5
   3. gets the release and builds this unit's boot image
   4. keeps the unit's Home Assistant identity if it has one (EchoLocal's name and key), or makes one
-  5. writes the boot image to the recovery partition and reads it back
-  6. unpacks the root filesystem into slot a of the store on the cache partition
+  5. writes the boot image to the recovery partition (swdl on the Dot 3) and reads it back
+  6. unpacks the root filesystem into slot a of the store on the cache partition (userdata on the Dot 3)
   7. arms the Linux boot, reboots, and waits on the unit's USB console for a healthy boot
 
-Prerequisites on the Dot: unlocked with amonet, Fire OS 6574.1 in its system slots, and either in TWRP
-or in Fire OS with adb as root. Step by step from a stock Dot:
+The Echo Dot 3rd gen differs in three places: it has no recovery partition, so the image goes where
+kaeru boots recovery from (swdl, which held TWRP); the image carries the unit's own stock kernel, from
+the boot slot Fire OS runs in, since TWRP's kernel is another build; and the store is on userdata, the
+cache partition being 32 MB.
+
+Prerequisites on the Dot: unlocked (amonet on the Dot 2 boards, kamakiri on the Dot 3), Fire OS 6574.1
+in its system slots, and either in TWRP or in Fire OS with adb as root. Step by step from a stock Dot:
 https://github.com/HuskerMinion/techo5/blob/main/docs/getting-started.md
 """
 import argparse
@@ -38,7 +43,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from techo5lib import wifi_conf as techo5_wifi_conf  # noqa: E402
-from techo5lib import (CONSOLE_DOT, Adb, Console, ask, ask_name, ask_wifi, check_serial_access,  # noqa: E402
+from techo5lib import (CONSOLE_DOT, CONSOLE_TECHO5, Adb, Console, ask, ask_name, ask_wifi, check_serial_access,  # noqa: E402
                        console_hint, default_dir, download_checked, fail, head_is_android, interactive, md5,
                        need, new_api_key, note, pick_unit, repo_root, run_main, step, valid_api_key,
                        write_private)
@@ -86,6 +91,14 @@ def readable_name(raw, enc=None):
 
 
 PARTS = ['preloader', 'kb', 'dkb', 'lk_a', 'lk_b', 'tee1', 'tee2', 'expdb', 'misc', 'persist', 'boot_a', 'boot_b', 'recovery']
+# The Echo Dot 3 has no recovery partition: kaeru boots swdl as recovery, and TWRP is there.
+PARTS_DONUT = PARTS[:-1] + ['swdl']
+# Where the store is: the cache partition on the Dot 2 boards, userdata on the Dot 3 (boot.sh binds either
+# at /store).
+STORE = '/cache/techo5'
+STORE_DONUT = '/data/techo5-store/techo5'
+# The consoles TECHO5 Linux brings up: the Dot 2 boards' Google ids, the Dot 3's Linux Foundation ones.
+CONSOLES = (CONSOLE_DOT, CONSOLE_TECHO5)
 
 # Wake words beyond esphome's built-in set, from the community collection at
 # https://github.com/fwartner/home-assistant-wakewords-collection, which ships models with no manifest
@@ -137,7 +150,7 @@ MODEL_SHA256 = {
 SLOT_SCRIPT = r'''set -e
 T=$1
 B=$T/busybox
-S=/cache/techo5
+S=$2
 mkdir -p $S/slots
 # A slot a from an earlier install is set aside until the new one has unpacked, then removed.
 rm -rf $S/slots/a.old $S/slots/b.old
@@ -204,7 +217,7 @@ def main():
             ssh_key = f.read().strip()
         if not ssh_key.startswith(('ssh-', 'ecdsa-', 'sk-')) or len(ssh_key.split()) < 2:
             fail('%s does not look like an SSH public key' % a.ssh_key)
-    a.serial = pick_unit(a.serial, a.adb, ('device', 'recovery'), 'Echo Dot', consoles=(CONSOLE_DOT,))
+    a.serial = pick_unit(a.serial, a.adb, ('device', 'recovery'), 'Echo Dot', consoles=CONSOLES)
     if a.name is not None:
         a.name = ask_name(a.name, '')
     adb = Adb(a.serial, a.adb)
@@ -214,14 +227,23 @@ def main():
     state = adb.state()
     if state not in ('device', 'recovery'):
         fail("adb does not see %s (state: '%s'). Boot it into Fire OS (root adb) or TWRP with USB connected.%s"
-             % (a.serial, state, console_hint((CONSOLE_DOT,))))
+             % (a.serial, state, console_hint(CONSOLES)))
     twrp = state == 'recovery'
     product = adb.sh('getprop ro.product.device; getprop ro.build.product')
     # The Echo 2nd gen (radar) is a biscuit with a bigger speaker: the same SoC, partitions and boot chain,
-    # but its own device trees, so its own Bluetooth kernel (dotimage.KERNEL_ASSETS).
-    board = 'radar' if 'radar' in product else 'biscuit' if 'biscuit' in product else None
+    # but its own device trees, so its own Bluetooth kernel (dotimage.KERNEL_ASSETS). The Echo Dot 3rd gen
+    # (donut_puffin) is another SoC (MT8516) with its own daemon and boot scripts.
+    board = ('radar' if 'radar' in product else 'biscuit' if 'biscuit' in product
+             else 'donut' if 'donut' in product else None)
     if not board:
-        fail('%s is not an Echo Dot 2nd gen (biscuit) or an Echo 2nd gen (radar)' % a.serial)
+        fail('%s is not an Echo Dot 2nd gen (biscuit), an Echo 2nd gen (radar) or an Echo Dot 3rd gen (donut)' % a.serial)
+    donut = board == 'donut'
+    if donut and (a.kernel or a.no_bluetooth_kernel):
+        fail('the Echo Dot 3 always runs its own kernel (Bluetooth comes as modules in its root filesystem); '
+             'leave out --kernel and --no-bluetooth-kernel')
+    # The partition the Linux image goes into (kaeru's "recovery" on the Dot 3), and the store.
+    target = 'swdl' if donut else 'recovery'
+    store = STORE_DONUT if donut else STORE
     ident = adb.sh('id')
     if not ident.startswith('uid=0'):
         fail("adb is not root on %s (%s). EchoLocal's install or boot-root.zip gives root adb; or boot TWRP." % (a.serial, ident))
@@ -236,8 +258,9 @@ def main():
         note('could not read the device type id (/proc/idme); going by the build props: %s' % board)
     slot = adb.sh('getprop ro.boot.slot_suffix')
     bn = '/dev/block/platform/bootdevice/by-name'
-    if adb.sh('test -e %s/recovery && echo yes' % bn) != 'yes':
-        bn = adb.sh('for d in /dev/block/platform/*/by-name /dev/block/by-name; do [ -e $d/recovery ] && { echo $d; break; }; done')
+    if adb.sh('test -e %s/%s && echo yes' % (bn, target)) != 'yes':
+        bn = adb.sh('for d in /dev/block/platform/*/by-name /dev/block/platform/*/*/by-name /dev/block/by-name; '
+                    'do [ -e $d/%s ] && { echo $d; break; }; done' % target)
         if not bn:
             fail('no by-name partition links on %s' % a.serial)
     if twrp:
@@ -258,7 +281,7 @@ def main():
         stage = '/data/local/tmp/techo5'
         fireos = adb.sh('getprop ro.build.version.name')
     if 'Fire OS 6' not in fireos:
-        fail("%s has '%s' in slot %s; this installer is for Fire OS 6 (32-bit kernel)" % (a.serial, fireos, slot))
+        fail("%s has '%s' in slot %s; this installer is for Fire OS 6" % (a.serial, fireos, slot))
     note('%s, %s, slot %s, %s' % (board, fireos, slot, 'in TWRP' if twrp else 'root adb in Fire OS'))
 
     # Wi-Fi: the network Fire OS saved, one set on the unit before (wifi-set), or one given here. Only the
@@ -295,7 +318,7 @@ def main():
     unit = os.path.join(a.backups, a.serial)
     os.makedirs(unit, exist_ok=True)
     step('backups to %s' % unit)
-    for p in PARTS:
+    for p in PARTS_DONUT if donut else PARTS:
         out = os.path.join(unit, p + '.img')
         # amonet's TWRP points preloader, lk and tee at decoy files in /tmp/ota-decoy, so an OTA flashed
         # from it cannot overwrite the unlock. The real partitions are the *_real links, and the preloader
@@ -312,9 +335,9 @@ def main():
         if same:
             note('%s already backed up as %s' % (p, os.path.basename(same[0])))
             continue
-        if os.path.exists(out) and p == 'recovery' and head_is_android(out):
+        if os.path.exists(out) and p == target and head_is_android(out):
             # A recovery backup that no longer matches is TWRP from before a Linux image went in: the way back.
-            note("recovery: keeping the earlier backup (the device's recovery has changed since)")
+            note("%s: keeping the earlier backup (the device's %s has changed since)" % (p, p))
             continue
         dest = out if not os.path.exists(out) else os.path.join(unit, '%s-%s.img' % (p, time.strftime('%Y%m%d-%H%M%S')))
         tmp = dest + '.partial'
@@ -327,24 +350,32 @@ def main():
             fail('%s copy does not match the device (%s vs %s). %s' % (p, got, dev, CABLE))
         os.replace(tmp, dest)
         note('%s %d bytes, md5 ok%s' % (p, os.path.getsize(dest), '' if dest == out else ' (changed since %s.img; saved as %s)' % (p, os.path.basename(dest))))
-    recovery = os.path.join(unit, 'recovery.img')
+    # recovery is the unit's TWRP, the way back; donor is the image whose header and kernel the Linux image
+    # is built on: the same TWRP on the Dot 2 boards, the stock kernel of Fire OS's boot slot on the Dot 3.
+    recovery = os.path.join(unit, target + '.img')
     if not head_is_android(recovery):
-        fail('recovery backup is not an Android boot image')
+        fail('%s backup is not an Android boot image' % target)
+    donor = recovery
+    if donut:
+        donor = os.path.join(unit, 'boot%s.img' % (slot or '_a'))
+        if not head_is_android(donor):
+            fail('%s is not an Android boot image' % donor)
     if is_techo5_image(recovery):
         # The recovery partition already held TECHO5 Linux when this backup was first taken. It is not a
         # way back to TWRP, and as the donor for the new image it would hand over a header already edited
         # for Linux (and perhaps the Bluetooth kernel) instead of the unit's own.
         fail("%s is a TECHO5 Linux boot image, not the unit's TWRP. Put this unit's TWRP image there "
-             "(or boot TWRP, flash it to recovery and move this file aside), then run this again." % recovery)
+             "(or boot TWRP, flash it to %s and move this file aside), then run this again." % (recovery, target))
 
     # ---------------------------------------------------------------------------------------- 3
     step("the release, and this unit's boot image")
     os.makedirs(a.work, exist_ok=True)
-    rel = DotRelease(a.work, a.release)
-    note('TECHO5 Dot %s: root filesystem, Bluetooth kernel and rescue packages checked' % rel.version)
+    rel = DotRelease(a.work, a.release, board)
+    note('TECHO5 Dot %s: root filesystem, %s and rescue packages checked'
+         % (rel.version, 'Bluetooth modules' if donut else 'Bluetooth kernel'))
     rootfs = os.path.abspath(a.rootfs) if a.rootfs else rel.rootfs
     kernel = None if a.no_bluetooth_kernel else (os.path.abspath(a.kernel) if a.kernel else rel.kernel_for(board))
-    if kernel is None and not a.no_bluetooth_kernel:
+    if kernel is None and not a.no_bluetooth_kernel and not donut:
         note('release %s has no Bluetooth kernel for %s (--kernel takes one from tools/linux/build-kernel.sh '
              '--board %s)' % (rel.version, board, board))
     if kernel:
@@ -359,9 +390,12 @@ def main():
     for f in (rootfs, kernel):
         if f and not os.path.exists(f):
             fail('no file at %s' % f)
-    note('kernel: %s' % ('%s (Bluetooth)' % os.path.basename(kernel) if kernel else "the unit's own (no Bluetooth)"))
+    if donut:
+        note("kernel: the unit's own, from %s (Bluetooth as modules)" % os.path.basename(donor))
+    else:
+        note('kernel: %s' % ('%s (Bluetooth)' % os.path.basename(kernel) if kernel else "the unit's own (no Bluetooth)"))
     image = os.path.join(unit, 'techo5-dot-linux.img')
-    build_boot_image(recovery, image, rel.alpine, rel.busybox, rel.wmtup, rel.apks, kernel)
+    build_boot_image(donor, image, rel.alpine, rel.busybox, rel.wmtup, rel.apks, kernel, board, rel.wpa_supplicant)
     note('boot image %d bytes, root filesystem %d bytes' % (os.path.getsize(image), os.path.getsize(rootfs)))
 
     # ---------------------------------------------------------------------------------------- 4
@@ -439,16 +473,20 @@ def main():
     check_serial_access(must=False)
 
     # ---------------------------------------------------------------------------------------- 5
-    step('boot image into the recovery partition')
+    step('boot image into the %s partition' % target)
+    # swdl on the Dot 3 is 32 MB, and system_a starts where it ends: an image that does not fit is never
+    # written. The images are about 13 MB.
+    if donut and os.path.getsize(image) > 32 * 1024 * 1024:
+        fail('the boot image is %d bytes, more than the 32 MB swdl partition holds' % os.path.getsize(image))
     # The image goes into the store first and stays there: to-twrp and back-to-linux.sh use that copy.
-    adb.sh('mkdir -p %s /cache/techo5' % stage)
-    adb.push(image, '/cache/techo5/linux.img')
+    adb.sh('mkdir -p %s %s' % (stage, store))
+    adb.push(image, store + '/linux.img')
     adb.push(rel.busybox, stage + '/busybox')
     want = md5(image)
-    got = adb.sh('chmod 755 %s/busybox; dd if=/cache/techo5/linux.img of=%s/recovery bs=1048576 2>/dev/null; sync; %s/busybox head -c %d %s/recovery | md5sum'
-                 % (stage, bn, stage, os.path.getsize(image), bn)).split(' ')[0]
+    got = adb.sh('chmod 755 %s/busybox; dd if=%s/linux.img of=%s/%s bs=1048576 2>/dev/null; sync; %s/busybox head -c %d %s/%s | md5sum'
+                 % (stage, store, bn, target, stage, os.path.getsize(image), bn, target)).split(' ')[0]
     if got != want:
-        fail('recovery partition reads back %s, wanted %s. The TWRP backup is at %s.' % (got, want, recovery))
+        fail('%s partition reads back %s, wanted %s. The TWRP backup is at %s.' % (target, got, want, recovery))
     note('written and read back, md5 %s' % got)
 
     # ---------------------------------------------------------------------------------------- 6
@@ -459,17 +497,17 @@ def main():
         f.write(SLOT_SCRIPT)
     adb.push(script, stage + '/slot.sh')
     os.remove(script)
-    result = adb.sh('sh %s/slot.sh %s 2>&1' % (stage, stage))
+    result = adb.sh('sh %s/slot.sh %s %s 2>&1' % (stage, stage, store))
     if 'slot a: ' not in result:
         fail('installing the slot failed: %s' % result)
     note(result)
     # The way back to TWRP without a PC: the unit's own TWRP (its recovery backup, checked in step 2 not to
     # be a Linux image) and the script that undoes it.
-    adb.push(recovery, '/cache/techo5/twrp.img')
-    if adb.sh('md5sum /cache/techo5/twrp.img').split(' ')[0] != md5(recovery):
+    adb.push(recovery, store + '/twrp.img')
+    if adb.sh('md5sum %s/twrp.img' % store).split(' ')[0] != md5(recovery):
         fail('the TWRP copy on the unit does not match %s' % recovery)
-    adb.push(os.path.join(repo_root(), 'tools', 'linux', 'back-to-linux.sh'), '/cache/techo5/back-to-linux.sh')
-    note('TWRP copy kept on the unit (to-twrp puts it back; /cache/techo5/back-to-linux.sh returns)')
+    adb.push(os.path.join(repo_root(), 'tools', 'linux', 'back-to-linux.sh'), store + '/back-to-linux.sh')
+    note('TWRP copy kept on the unit (to-twrp puts it back; %s/back-to-linux.sh returns)' % store)
 
     # SSH keys and Wi-Fi go to userdata, where they outlast slots and updates.
     tmp = os.path.join(a.work, 'provision-' + a.serial)
@@ -514,7 +552,7 @@ def main():
     # The unit is found on its USB serial console by its own serial number and asked how the boot went:
     # that works whatever address DHCP hands Linux, and from TWRP, where no address was known at all.
     note("waiting for the unit's Linux console on USB")
-    console = Console(a.serial, CONSOLE_DOT)
+    console = Console(a.serial, CONSOLE_TECHO5 if donut else CONSOLE_DOT)
     query = ("echo slot=$(cat /run/techo5/slot 2>/dev/null); echo release=$(cat /etc/techo5-release 2>/dev/null); "
              "echo ip=$(ifconfig wlan0 2>/dev/null | sed -n 's/.*inet addr:\\([0-9.]*\\).*/\\1/p'); echo echod=$(pidof echod); "
              "echo tries=$(dd if=/dev/mmcblk0p8 bs=512 skip=14 count=1 2>/dev/null | tr -d '\\000')")

@@ -76,6 +76,28 @@ Linux kernel, https://git.kernel.org (GPL-2.0)
   Boot images, which wrap that kernel with a unit's own ramdisk, are built per unit and not
   distributed.
 
+  Releases from dot-v1.0.31 also ship Bluetooth kernel modules for the Echo Dot 3rd gen
+  (bluetooth.ko, hci_vhci.ko and cmac.ko, Linux 4.4.22 for 64-bit ARM, in
+  techo5-donut-rootfs-<version>.tar.gz under /usr/lib/techo5/modules). They are GPL-2.0, and each
+  release carries their complete source: techo5-donut-bt-modules-source.tar.xz.
+    - Base: Amazon's GPL source release for the Echo Input, Echo_Input_src-6.5.4.7-20210719, as
+      imported in https://github.com/bengris32/android_kernel_amazon_cupcake (commit d16134f). Amazon
+      has not published the Echo Dot 3rd gen's; the Echo Input's is the same 4.4.22 MT8516 tree.
+    - Bluetooth: net/bluetooth, drivers/bluetooth, include/net/bluetooth, crypto/cmac.c and two build
+      files are taken unchanged from upstream linux-4.4.22, only where Amazon's tree has no file of its
+      own (tools/linux/bt-modules/added-from-4.4.22.txt). Nothing else is changed.
+    - Configuration: the tree's cupcake_defconfig with Bluetooth, the virtual HCI driver and CMAC
+      turned on as modules.
+    - The script that does all of it is tools/linux/build-bt-modules.sh. It builds in a fixed
+      directory, so no path of the machine that built them is compiled in.
+  The Echo Dot 3rd gen's kernel itself is the unit's own, from its own boot partition, and is never
+  distributed.
+
+wpa_supplicant, https://w1.fi/wpa_supplicant/
+  Copyright (c) Jouni Malinen and contributors, BSD license. The Echo Dot 3rd gen's root filesystem
+  carries Alpine's 2.11 rebuilt with tools/linux/wpa-patches/0100-donut-no-wmm-replay-counters.patch
+  (tools/linux/build-wpa-supplicant.sh).
+
 Alpine Linux, https://alpinelinux.org
   The release root filesystem is assembled from Alpine 3.24 armv7 packages, unmodified except
   bluealsa; each package keeps its own license, and its source is published by Alpine.

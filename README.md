@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="images/biscuit.png" alt="BISCUIT" width="120">&nbsp;&nbsp;<img src="images/radar.png" alt="RADAR" width="120">
+  <img src="images/biscuit.png" alt="BISCUIT" width="120">&nbsp;&nbsp;<img src="images/radar.png" alt="RADAR" width="120">&nbsp;&nbsp;<img src="images/donut.png" alt="DONUT" width="120">
 </p>
 
 <h1 align="center">TECHO5 Dot</h1>
@@ -25,14 +25,16 @@
   <a href="#stock-echo-dot-2-vs-techo5-dot">Stock vs TECHO5 Dot</a> ·
   <a href="#installing">Install</a> ·
   <a href="#echo-2nd-gen">Echo 2nd gen</a> ·
+  <a href="#echo-dot-3rd-gen">Echo Dot 3rd gen</a> ·
   <a href="#credits">Credits</a> ·
   <a href="https://github.com/HuskerMinion/techo5">TECHO5 for the Echo Show 5</a>
 </p>
 
 ---
 
-TECHO5 Dot replaces Fire OS on the Amazon Echo Dot 2nd generation (codename `biscuit`) and the Echo
-2nd generation (2017, codename `radar`) with a small Alpine Linux image and one daemon. The Dot becomes a Home Assistant voice satellite: it hears the
+TECHO5 Dot replaces Fire OS on the Amazon Echo Dot 2nd generation (codename `biscuit`), the Echo
+2nd generation (2017, codename `radar`) and the Echo Dot 3rd generation (2018, codename `donut`) with a
+small Alpine Linux image and one daemon. The Dot becomes a Home Assistant voice satellite: it hears the
 wake word on the device, talks to Home Assistant over its encrypted native API, and sends nothing to
 Amazon. It still uses the internet for what you'd expect: checking this repo for signed updates and
 setting its clock.
@@ -59,8 +61,8 @@ Echo Show 5. Both run the same daemon source, built per device.
 
 > **Status: in daily use on three units.** Everything marked ✅ below was verified on a bench Dot
 > that came from Fire OS 6574.1, and the installer and updates on two more. Expect rough edges, and
-> keep your backups. The Echo 2nd gen is supported too, tested on one unit so far; see
-> [Echo 2nd gen](#echo-2nd-gen).
+> keep your backups. The Echo 2nd gen and the Echo Dot 3rd gen are supported too, each tested on one
+> unit so far; see [Echo 2nd gen](#echo-2nd-gen) and [Echo Dot 3rd gen](#echo-dot-3rd-gen).
 
 ## What happened to the Dot
 
@@ -135,7 +137,8 @@ now Bluetooth comes up in the background and a paired speaker reconnects when it
   [EchoLocal](https://github.com/ygelfand/echolocal) installed). Unlocking isn't part of this project;
   [Getting started](https://github.com/HuskerMinion/techo5/blob/main/docs/getting-started.md#echo-dot-2nd-gen)
   has every command. For an Echo 2nd gen, see [Echo 2nd gen](#echo-2nd-gen): it's unlocked the same
-  way, over wires soldered inside.
+  way, over wires soldered inside. For an Echo Dot 3rd gen, unlocked with kamakiri-donut, see
+  [Echo Dot 3rd gen](#echo-dot-3rd-gen) for what differs.
 - The Dot joined to Wi-Fi once in Fire OS. If it hasn't been, the installer asks for a network.
 - A Windows, Linux or macOS computer with Python 3, adb and git
   ([setup for each](https://github.com/HuskerMinion/techo5/blob/main/docs/getting-started.md#set-up-your-computer-once)),
@@ -238,6 +241,52 @@ On Windows, a PC that has seen other Amazon devices may bind the TECHO5 USB cons
 Google's ADB driver instead of a COM port. The install still finished, because Wi-Fi came up. To get
 the console, pick **USB Serial Device** for it in Device Manager.
 
+### Echo Dot 3rd gen
+
+<img src="images/donut.png" alt="DONUT" width="90" align="right">
+
+The Echo Dot 3rd gen (2018, model D9N29T, `donut`) is a different machine from the Dot 2: a MediaTek
+MT8516, four microphones, and Wi-Fi and Bluetooth on an MT7668. It uses the same release, installer and
+update channel, with its own build of the daemon and its own root filesystem. Supported, tested on one
+unit so far. Details are in [docs/hardware-donut.md](docs/hardware-donut.md). The 2019 refresh and the
+model with a clock are other boards and aren't supported.
+
+Tested on that unit: voice with Home Assistant, all four microphones, the speaker, the headphone jack,
+the buttons, mute and its light, the light ring, Wi-Fi, Bluetooth (a phone plays to it) and the Bluetooth proxy.
+Not yet tried on a Dot 3: an update from a published release, `update-boot.py`, the rescue after five
+failed boots, and installing on a unit with no saved Wi-Fi network.
+
+It differs from the Dot 2 in a few places:
+- **It keeps its own kernel.** The image carries the unit's stock kernel, which loads Amazon's Wi-Fi
+  and Bluetooth drivers from the unit's own system partition. The Bluetooth stack that kernel lacks
+  ships as modules built from source, and each release carries their complete source.
+- **Linux goes in `swdl`.** There's no recovery partition: the unlock boots `swdl` as recovery,
+  where the kit put TWRP. The installer keeps TWRP's copy in the store, so `to-twrp` works as on
+  the Dot 2.
+- **Our own wpa_supplicant.** Alpine's 2.11 can't finish a Wi-Fi handshake with this driver; ours
+  carries a one-line fix (see the hardware notes).
+
+**USB is under the base.** There's no USB port on the case. D− and D+ are on test pads TM4 and TM5,
+ground on TM1. Solder short wires from a USB cable: white (D−) to TM4, green (D+) to TM5, black to TM1.
+Leave the red (5 V) wire unconnected; the Dot runs from its own adapter. Once it's installed you rarely
+need USB, since updates, SSH and Home Assistant all go over Wi-Fi.
+
+**Unlock** with the kamakiri-donut v1.0.0 kit from
+[its XDA thread](https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-dot-3rd-gen-2018-donut.4801400/):
+hold the action (dot) button while you plug in the power to reach the bootrom, and start kamakiri with
+the Dot powered off. The kit leaves TWRP in `swdl` and stock Fire OS in both slots. Then flash its
+`boot-root.zip` for root adb.
+
+**Install** from Fire OS with root adb, or from TWRP:
+
+```
+python3 tools/install-dot.py
+```
+
+It backs up every boot partition, including `swdl` with TWRP in it, builds the image on the unit's own
+kernel, and puts the root filesystem on userdata. On Windows the TECHO5 console shows up as a USB serial
+device (`1d6b:0104`).
+
 ## Where things are
 
 - [docs/porting-plan.md](docs/porting-plan.md): how it was built, milestone by milestone, and what
@@ -246,6 +295,8 @@ the console, pick **USB Serial Device** for it in Device Manager.
   security backports.
 - [docs/hardware-radar.md](docs/hardware-radar.md): the Echo 2nd gen: its board, audio, kernel,
   unlock and USB.
+- [docs/hardware-donut.md](docs/hardware-donut.md): the Echo Dot 3rd gen: its board, partitions,
+  boot image, Wi-Fi, audio and Bluetooth modules.
 - [docs/microphones.md](docs/microphones.md): the array measurements, echo cancellation, and the
   LED whine that turned out to be Fire OS's.
 - `tools/`: the installer, the Wi-Fi tool, the boot image updater, and `tools/linux/` (initramfs,
@@ -254,7 +305,7 @@ the console, pick **USB Serial Device** for it in Device Manager.
 - [docs/building.md](docs/building.md): building the kernel, bluez-alsa, the daemon and the root
   filesystem yourself.
 - The daemon's source: [TECHO5](https://github.com/HuskerMinion/techo5), branch `main`, built with
-  `-tags dot`.
+  `-tags dot` (`-tags dot,donut` for the Echo Dot 3rd gen).
 
 ## Credits
 
@@ -265,12 +316,19 @@ See [NOTICE](NOTICE) for the full list.
   too). RADAR is the 30-foot dish of NSSL's first research Doppler weather radar, NOAA Photo Library,
   OAR/ERL/National Severe Storms Laboratory, public domain,
   [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Nssl0026_-_Flickr_-_NOAA_Photo_Library.jpg).
+  DONUT is a chocolate-glazed doughnut with sprinkles, photo by Kiran Foster,
+  [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Chocolate-glazed_doughnut_with_sprinkles_(7429937320).jpg),
+  [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/).
 - [EchoLocal](https://github.com/ygelfand/echolocal) (MIT, Yuri Gelfand): the Echo Dot 2 daemon this
   project is built on (see above).
 - [EchoMuse / emOS](https://github.com/wilbowes/EchoMuse) (MIT, Wil Bowes): the first Linux
   userspace on this hardware. Its notes on the USB gadget, Wi-Fi patch download and the mic array
   saved days.
-- amonet and kaeru ([R0rt1z2](https://github.com/R0rt1z2)): the unlock.
+- amonet and kaeru ([R0rt1z2](https://github.com/R0rt1z2)): the unlock. The Echo Dot 3rd gen's
+  kamakiri-donut kit and its
+  [XDA thread](https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-dot-3rd-gen-2018-donut.4801400/).
+- [Pallav Aggarwal's teardown](https://pallavaggarwal.in/2023/01/10/teardown-amazon-echo-dot-3rd-gen/)
+  of the Echo Dot 3rd gen.
 - [@proffalken](https://github.com/proffalken): the
   [step-by-step install from Linux](https://gist.github.com/proffalken/377ae50146affe1886dddaaacb87926b)
   (the exact Fire OS build, trusting the adb key, byte-safe backups, the Linux serial console lookup)
@@ -284,7 +342,11 @@ See [NOTICE](NOTICE) for the full list.
   root filesystem slot design this project shares.
 - Amazon's GPL kernel source releases for the Echo Dot (2nd generation), Echo_Dot_src-6.5.7.1-20251024,
   and the Echo (2nd generation), Echo_v2_src-6.5.7.1-20251024: the kernels the Bluetooth builds
-  start from.
+  start from. For the Echo Dot 3rd gen's Bluetooth modules, the Echo Input's
+  (Echo_Input_src-6.5.4.7-20210719, as imported in
+  [bengris32/android_kernel_amazon_cupcake](https://github.com/bengris32/android_kernel_amazon_cupcake)).
+- [wpa_supplicant](https://w1.fi/wpa_supplicant/) (Jouni Malinen and contributors, BSD): Wi-Fi on
+  the Echo Dot 3rd gen, rebuilt with one change.
 - [Alpine Linux](https://alpinelinux.org/), [BlueZ](https://www.bluez.org/) and BusyBox: the system
   underneath.
 - [microWakeWord](https://github.com/kahrendt/microWakeWord) (Kevin Ahrendt) and the
@@ -298,6 +360,6 @@ See [NOTICE](NOTICE) for the full list.
 
 MIT for this project. See [LICENSE](LICENSE) and [NOTICE](NOTICE). The kernel patches in
 `tools/linux/kernel-patches` and the bluez-alsa patch keep their upstream licenses (GPL-2.0 and
-MIT).
+MIT), and so do the Echo Dot 3rd gen's wpa_supplicant patch (BSD) and Bluetooth modules (GPL-2.0).
 
 TECHO5 Dot isn't affiliated with Amazon. Echo and Alexa are trademarks of Amazon.com, Inc.

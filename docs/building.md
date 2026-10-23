@@ -87,11 +87,27 @@ bash tools/linux/build-bluealsa.sh        # -> build/bluealsa/bluealsa
 Skipping steps 4 and 5? Take the release's kernel (the installer's default), and its bluez-alsa out of
 the release's root filesystem (`usr/bin/bluealsa` in `techo5-dot-rootfs.tar.gz`).
 
+### The Echo Dot 3rd gen's Bluetooth modules and wpa_supplicant (Linux)
+
+The Echo Dot 3rd gen keeps its own kernel, so it needs no kernel from step 4. Its Bluetooth stack is
+built as modules for that kernel instead, and its wpa_supplicant carries one fix
+([hardware-donut.md](hardware-donut.md)):
+
+```
+bash tools/linux/build-bt-modules.sh --source-tarball build/techo5-donut-bt-modules-source.tar.xz
+mkdir -p build/bt-modules && cp /tmp/techo5-donut-kernel/modules/*.ko build/bt-modules/
+bash tools/linux/build-wpa-supplicant.sh  # -> build/wpa_supplicant/wpa_supplicant
+```
+
 ## 6. The root filesystem
 
 ```
 python3 tools/linux/build-dot-rootfs.py --daemon bin/echod-dot --release v0.0.0-test --out build/rootfs.tar.gz
 ```
+
+For the Echo Dot 3rd gen, build the daemon with `-tags dot,donut` and add `--board donut`; it takes
+the modules and wpa_supplicant from `build/` and adds
+[tools/linux/rootfs-donut](../tools/linux/rootfs-donut) over the Dot 2's files.
 
 [mkrootfs.py](../tools/linux/mkrootfs.py) unpacks the Alpine base and the packages, adds the binaries
 and [tools/linux/rootfs](../tools/linux/rootfs), and writes the tarball with root ownership. It needs no
@@ -127,8 +143,8 @@ pwsh ./tools/release-dot.ps1 -Version v0.6.0 -Notes "..." -DryRun
 ```
 
 A PowerShell script for the maintainer's Windows machine: it builds the daemon from the TECHO5
-checkout, `btbridge`, `wmtup` and the root filesystem, and publishes the kernel and the rescue
-packages with it. The manifest names all of them, with their sha256 and size, and is signed with
+checkout, `btbridge`, `wmtup` and both root filesystems (the Dot 2's and the Echo Dot 3rd gen's), and
+publishes the kernels, the rescue packages and the Echo Dot 3rd gen's module source with them. The manifest names all of them, with their sha256 and size, and is signed with
 `TECHO5_SIGN_KEY`: that signature is the installer's only check on what it downloads. `SHA256SUMS` is
 published too, for checking a file by hand; nothing signs it, so no installer reads it.
 

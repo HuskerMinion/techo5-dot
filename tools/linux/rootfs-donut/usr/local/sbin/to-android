@@ -1,0 +1,12 @@
+#!/bin/sh
+# to-android: boot Fire OS once more, from a running slot. Every Linux boot asks for the next one to be
+# Linux too (the initramfs's init); this clears that request, so the next boot is Android's and it stays
+# there until recovery is asked for again (adb reboot recovery).
+if [ "$1" != --yes ]; then
+	echo "This reboots into Fire OS, which stays until 'adb reboot recovery'. Run 'to-android --yes'."
+	exit 1
+fi
+[ -b /dev/mmcblk0p8 ] || mknod -m 600 /dev/mmcblk0p8 b 179 8
+dd if=/dev/zero of=/dev/mmcblk0p8 bs=32 count=1 conv=notrunc,sync 2>/dev/null
+sync
+reboot

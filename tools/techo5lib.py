@@ -412,11 +412,20 @@ class Fastboot:
         self.base = tool(exe)
 
     def present(self):
-        r = subprocess.run(self.base + ['devices'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            r = subprocess.run(self.base + ['devices'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+        except subprocess.TimeoutExpired:
+            return False
         return any(line.split()[:1] == [self.serial] for line in r.stdout.decode('utf-8', 'replace').splitlines())
 
-    def run(self, *args):
-        r = subprocess.run(self.base + ['-s', self.serial] + list(args), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    def run(self, *args, timeout=None):
+        """Runs fastboot for this unit: its exit code and what it printed. With timeout, a fastboot still
+        waiting after that many seconds (for a unit that left) is stopped, and the code is -1."""
+        try:
+            r = subprocess.run(self.base + ['-s', self.serial] + list(args), stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return -1, 'no answer from fastboot in %d s' % timeout
         return r.returncode, r.stdout.decode('utf-8', 'replace').strip()
 
 

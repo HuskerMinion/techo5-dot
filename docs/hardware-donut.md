@@ -115,7 +115,7 @@ On one unit, from Fire OS 6574.1 through `tools/install-dot.py`:
 - Wi-Fi from boot, and the Home Assistant Bluetooth proxy
 - Bluetooth audio from a phone, with the pairing kept across a reboot
 - an update into the spare slot, committed once healthy
+- an update to dot-v1.0.31, the first release with the Dot 3, from Home Assistant's update card
 
-Not yet: an update from a published release (the first one is the release that adds the Dot 3), the
-rescue environment after five failed boots, `update-boot.py`, installing on a unit with no saved Wi-Fi
+Not yet: the rescue environment after five failed boots, `update-boot.py`, installing on a unit with no saved Wi-Fi
 network, and a check that the firewall rules load on the stock kernel.

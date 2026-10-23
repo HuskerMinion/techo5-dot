@@ -252,9 +252,9 @@ unit so far. Details are in [docs/hardware-donut.md](docs/hardware-donut.md). Th
 model with a clock are other boards and aren't supported.
 
 Tested on that unit: voice with Home Assistant, all four microphones, the speaker, the headphone jack,
-the buttons, mute and its light, the light ring, Wi-Fi, Bluetooth (a phone plays to it) and the Bluetooth proxy.
-Not yet tried on a Dot 3: an update from a published release, `update-boot.py`, the rescue after five
-failed boots, and installing on a unit with no saved Wi-Fi network.
+the buttons, mute and its light, the light ring, Wi-Fi, Bluetooth (a phone plays to it), the Bluetooth
+proxy, and an update to dot-v1.0.31 from Home Assistant. Not yet tried on a Dot 3: `update-boot.py`,
+the rescue after five failed boots, and installing on a unit with no saved Wi-Fi network.
 
 It differs from the Dot 2 in a few places:
 - **It keeps its own kernel.** The image carries the unit's stock kernel, which loads Amazon's Wi-Fi

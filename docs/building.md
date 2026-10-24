@@ -61,6 +61,11 @@ go build -o bin/wmtup ./cmd/wmtup
 unset GOOS GOARCH GOARM CGO_ENABLED
 ```
 
+AirPlay 2 comes from TECHO5's `tools/linux/build-shairport-sync.sh` (Linux or WSL, with zig), which writes
+`bin/techo5-shairport-sync-arm` and `bin/techo5-nqptp-arm` there. Copy them into this repository's `bin/` as
+`techo5-shairport-sync` and `techo5-nqptp`; without them the image has the classic AirPlay receiver only, and
+`tools/release-dot.ps1` refuses to publish it.
+
 ## 4. The Bluetooth kernel (Linux)
 
 The stock Fire OS kernel has no Bluetooth stack. [tools/linux/build-kernel.sh](../tools/linux/build-kernel.sh)

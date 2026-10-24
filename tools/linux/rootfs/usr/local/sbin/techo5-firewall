@@ -7,7 +7,9 @@
 #      the daemon binds it only while the page is open, so it refuses connections the rest of the
 #      time, the same arrangement as Sendspin's), DHCP replies, ping, IPv6 neighbor discovery, and
 #      anything answering a connection the Dot made. On Wi-Fi only: AirPlay (5000/tcp, 6001-6010/udp)
-#      and Spotify Connect (4070/tcp), which nothing listens on unless their switches are on. DLNA's SSDP
+#      and Spotify Connect (4070/tcp), which nothing listens on unless their switches are on, and AirPlay 2
+#      (7000/tcp, PTP's 319-320/udp, and the ports its receiver opens for each session, from a sender that
+#      reached 7000 in the last ten minutes). DLNA's SSDP
 #      searches (1900/udp, IPv4), so a music app looking for a player finds the Dot when it asks,
 #      rather than only after the Dot's next announcement.
 # Out: everything, as before.
@@ -24,6 +26,9 @@ for T in iptables-legacy ip6tables-legacy; do
 	$T -P INPUT ACCEPT
 	$T -F INPUT
 	$T -A INPUT -i lo -j ACCEPT
+	# Every packet to AirPlay 2's session port marks its sender, so one playing for hours stays marked:
+	# before the rule that takes in what is already established, and with no verdict of its own.
+	$T -A INPUT -i wlan0 -p tcp --dport 7000 -m recent --name AIRPLAY --set
 	$T -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 	$T -A INPUT -p tcp --dport 6053 -j ACCEPT
 	$T -A INPUT -p udp --dport 5353 -j ACCEPT
@@ -34,6 +39,12 @@ for T in iptables-legacy ip6tables-legacy; do
 	$T -A INPUT -i wlan0 -p tcp --dport 5000 -j ACCEPT
 	$T -A INPUT -i wlan0 -p udp --dport 6001:6010 -j ACCEPT
 	$T -A INPUT -i wlan0 -p tcp --dport 4070 -j ACCEPT
+	# AirPlay 2 (airplay.go): its session, nqptp's PTP, and the event, data and audio ports the receiver
+	# opens for each session, which the kernel picks, from a sender marked above.
+	$T -A INPUT -i wlan0 -p tcp --dport 7000 -j ACCEPT
+	$T -A INPUT -i wlan0 -p udp --dport 319:320 -j ACCEPT
+	$T -A INPUT -i wlan0 -p tcp --dport 1024:65535 -m recent --name AIRPLAY --rcheck --seconds 600 -j ACCEPT
+	$T -A INPUT -i wlan0 -p udp --dport 1024:65535 -m recent --name AIRPLAY --rcheck --seconds 600 -j ACCEPT
 done
 iptables-legacy -A INPUT -p udp --sport 67 --dport 68 -j ACCEPT
 iptables-legacy -A INPUT -p icmp -j ACCEPT
@@ -44,4 +55,4 @@ ip6tables-legacy -A INPUT -p udp --sport 547 --dport 546 -j ACCEPT
 ok=1
 iptables-legacy -P INPUT DROP || ok=
 ip6tables-legacy -P INPUT DROP || ok=
-[ -n "$ok" ] && echo "techo5-firewall: inbound closed except 6053, 5353, 22, 8928, 8181, 1900/udp, and on Wi-Fi 5000, 6001-6010, 4070" >&2
+[ -n "$ok" ] && echo "techo5-firewall: inbound closed except 6053, 5353, 22, 8928, 8181, 1900/udp, and on Wi-Fi 5000, 6001-6010, 4070, 7000, 319-320/udp and AirPlay 2's senders" >&2

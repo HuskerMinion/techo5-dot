@@ -7,7 +7,7 @@ Nothing of any one unit goes in: no firmware (each unit adopts its own into the 
 no Home Assistant identity, so it can be published. The boot image is not in it: the installer builds that
 per unit. Inputs (docs/building.md): the Alpine base, busybox.static, apks-dot/ and apks-bt-dot/ in
 TECHO5_INPUTS (default inputs/), and bin/wmtup, bin/btbridge and build/bluealsa/bluealsa; bin/techo5-librespot
-when it is there.
+when it is there, and bin/techo5-shairport-sync and bin/techo5-nqptp (AirPlay 2) on the Dot 2 when both are.
 
 --board donut builds the Echo Dot 3rd gen's instead: echod built with -tags dot,donut, the Dot 3's boot
 scripts (rootfs-donut, over the Dot 2's), our wpa_supplicant (build-wpa-supplicant.sh) in place of
@@ -42,6 +42,11 @@ def main():
     ap.add_argument('--librespot', default=j(REPO, 'bin', 'techo5-librespot'),
                     help="Spotify Connect's receiver: techo5's tools/linux/build-librespot.sh writes it as "
                          "bin/techo5-librespot-arm there; left out when missing")
+    ap.add_argument('--shairport', default=j(REPO, 'bin', 'techo5-shairport-sync'),
+                    help="AirPlay 2's receiver: techo5's tools/linux/build-shairport-sync.sh writes it as "
+                         "bin/techo5-shairport-sync-arm there; with --nqptp, left out when either is missing")
+    ap.add_argument('--nqptp', default=j(REPO, 'bin', 'techo5-nqptp'),
+                    help="the clock AirPlay 2 needs, bin/techo5-nqptp-arm from the same build")
     ap.add_argument('--bluealsa', default=os.environ.get('TECHO5_BLUEALSA') or j(REPO, 'build', 'bluealsa', 'bluealsa'))
     ap.add_argument('--inputs', default=os.environ.get('TECHO5_INPUTS') or j(REPO, 'inputs'))
     ap.add_argument('--out', default=j(REPO, 'bin', 'techo5-dot-rootfs.tar.gz'))
@@ -96,6 +101,14 @@ def main():
         cmd += ['--add', a.librespot + '=/usr/local/bin/techo5-librespot']
     else:
         print('no %s: the image will not offer Spotify Connect' % a.librespot)
+    # AirPlay 2 on the Dot 2 only, the one it has been tried on; elsewhere the daemon keeps the classic
+    # receiver, as it does without these (it also needs the loopback and /dev/shm, from boot.sh).
+    if donut:
+        pass
+    elif os.path.exists(a.shairport) and os.path.exists(a.nqptp):
+        cmd += ['--add', a.shairport + '=/usr/local/bin/techo5-shairport-sync', '--add', a.nqptp + '=/usr/local/bin/techo5-nqptp']
+    else:
+        print('no %s or %s: AirPlay will be the classic receiver' % (a.shairport, a.nqptp))
     for m in models:
         cmd += ['--data', '%s=/usr/share/techo5/models/%s' % (m, os.path.basename(m))]
     rc = subprocess.run(cmd).returncode

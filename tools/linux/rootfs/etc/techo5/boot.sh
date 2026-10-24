@@ -29,8 +29,10 @@ $BB mount -t proc proc /proc 2>/dev/null
 $BB mount -o remount,hidepid=2 /proc 2>/dev/null
 $BB mount -t sysfs sysfs /sys 2>/dev/null
 $BB mount -t tmpfs -o mode=0755 tmpfs /dev 2>/dev/null
-$BB mkdir -p /dev/pts /tmp /data /android /store
+$BB mkdir -p /dev/pts /dev/shm /tmp /data /android /store
 $BB mount -t devpts devpts /dev/pts 2>/dev/null
+# POSIX shared memory, where nqptp keeps the clock AirPlay 2's receiver reads (feature/streaming).
+$BB mount -t tmpfs -o mode=1777,size=1m tmpfs /dev/shm 2>/dev/null
 # The initramfs wrote which slot this is into /run before switching; a tmpfs over /run would hide it,
 # so it is read first and put back after.
 SLOT=$($BB cat /run/techo5/slot 2>/dev/null)
@@ -120,6 +122,10 @@ if [ -d /usr/share/techo5/models ] && [ -d /data/misc/echolocal ]; then
 	done
 	[ $n -gt 0 ] && say "wake word models: $n files added from the image"
 fi
+
+# --- The loopback, which nothing else brings up: AirPlay 2's receiver and nqptp talk over it (localhost:9000).
+# Without it the daemon keeps the classic AirPlay receiver (feature/streaming).
+$BB ip link set lo up 2>/dev/null
 
 # --- Inbound closed except what the Dot serves, before any network exists (usr/local/sbin/techo5-firewall).
 /usr/local/sbin/techo5-firewall 2>&1 | while read -r l; do say "$l"; done

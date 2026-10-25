@@ -20,6 +20,11 @@ export PATH
 
 command -v iptables-legacy > /dev/null || { echo "techo5-firewall: no iptables-legacy in this image" >&2; exit 1; }
 
+# AirPlay 2's ports only where the image carries its receiver (the Dot 3's doesn't): elsewhere a sender
+# that touched 7000 would be let in to every port above 1023 for nothing.
+AP2=
+[ -x /usr/local/bin/techo5-nqptp ] && [ -x /usr/local/bin/techo5-shairport-sync ] && AP2=1
+
 for T in iptables-legacy ip6tables-legacy; do
 	# Open while the chain is rebuilt, so a rule that fails part way never leaves the unit unreachable
 	# with half a list; closed again at the end.
@@ -28,7 +33,7 @@ for T in iptables-legacy ip6tables-legacy; do
 	$T -A INPUT -i lo -j ACCEPT
 	# Every packet to AirPlay 2's session port marks its sender, so one playing for hours stays marked:
 	# before the rule that takes in what is already established, and with no verdict of its own.
-	$T -A INPUT -i wlan0 -p tcp --dport 7000 -m recent --name AIRPLAY --set
+	[ -n "$AP2" ] && $T -A INPUT -i wlan0 -p tcp --dport 7000 -m recent --name AIRPLAY --set
 	$T -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 	$T -A INPUT -p tcp --dport 6053 -j ACCEPT
 	$T -A INPUT -p udp --dport 5353 -j ACCEPT
@@ -41,10 +46,12 @@ for T in iptables-legacy ip6tables-legacy; do
 	$T -A INPUT -i wlan0 -p tcp --dport 4070 -j ACCEPT
 	# AirPlay 2 (airplay.go): its session, nqptp's PTP, and the event, data and audio ports the receiver
 	# opens for each session, which the kernel picks, from a sender marked above.
-	$T -A INPUT -i wlan0 -p tcp --dport 7000 -j ACCEPT
-	$T -A INPUT -i wlan0 -p udp --dport 319:320 -j ACCEPT
-	$T -A INPUT -i wlan0 -p tcp --dport 1024:65535 -m recent --name AIRPLAY --rcheck --seconds 600 -j ACCEPT
-	$T -A INPUT -i wlan0 -p udp --dport 1024:65535 -m recent --name AIRPLAY --rcheck --seconds 600 -j ACCEPT
+	if [ -n "$AP2" ]; then
+		$T -A INPUT -i wlan0 -p tcp --dport 7000 -j ACCEPT
+		$T -A INPUT -i wlan0 -p udp --dport 319:320 -j ACCEPT
+		$T -A INPUT -i wlan0 -p tcp --dport 1024:65535 -m recent --name AIRPLAY --rcheck --seconds 600 -j ACCEPT
+		$T -A INPUT -i wlan0 -p udp --dport 1024:65535 -m recent --name AIRPLAY --rcheck --seconds 600 -j ACCEPT
+	fi
 done
 iptables-legacy -A INPUT -p udp --sport 67 --dport 68 -j ACCEPT
 iptables-legacy -A INPUT -p icmp -j ACCEPT
@@ -55,4 +62,4 @@ ip6tables-legacy -A INPUT -p udp --sport 547 --dport 546 -j ACCEPT
 ok=1
 iptables-legacy -P INPUT DROP || ok=
 ip6tables-legacy -P INPUT DROP || ok=
-[ -n "$ok" ] && echo "techo5-firewall: inbound closed except 6053, 5353, 22, 8928, 8181, 1900/udp, and on Wi-Fi 5000, 6001-6010, 4070, 7000, 319-320/udp and AirPlay 2's senders" >&2
+[ -n "$ok" ] && echo "techo5-firewall: inbound closed except 6053, 5353, 22, 8928, 8181, 1900/udp, and on Wi-Fi 5000, 6001-6010, 4070${AP2:+, 7000, 319-320/udp and AirPlay 2's senders}" >&2

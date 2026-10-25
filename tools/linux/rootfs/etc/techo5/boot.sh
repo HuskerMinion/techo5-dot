@@ -217,6 +217,11 @@ adopt_audio_device
 if [ -e $FW/WIFI_RAM_CODE_8163 ]; then
 	[ -L /etc/firmware ] || $BB rm -rf /etc/firmware
 	$BB ln -sfn $FW /etc/firmware
+	# The Linux 6.1 kernel's connectivity driver (the Echo 2nd gen's, from LibreEcho) reads WMT_SOC.cfg and
+	# the Wi-Fi image from /lib/firmware: without them its /dev/stpwmt refuses wmtup's first open with
+	# EPERM. Links to the unit's copy, beside whatever else the slot keeps there; harmless on 3.18.
+	$BB mkdir -p /lib/firmware
+	for f in $FW/*; do [ -e /lib/firmware/${f##*/} ] || $BB ln -s $f /lib/firmware/; done
 	# The driver's module init reads WMT_SOC.cfg from a path compiled into the kernel,
 	# /system/vendor/firmware/, whatever anyone tells it. Missing, wmt_lib_init fails and the kernel's
 	# own cleanup of that failure dereferences NULL — a panic and a watchdog reset, which is how this

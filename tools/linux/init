@@ -307,6 +307,10 @@ wifi() {
 	$BB ln -sfn $fw /system/vendor/firmware
 	$BB ln -sfn /system/vendor /vendor
 	$BB ln -sfn $fw /etc/firmware
+	# The Linux 6.1 kernel's connectivity driver (the Echo 2nd gen's, from LibreEcho) reads WMT_SOC.cfg
+	# and the Wi-Fi image from /lib/firmware instead, and fails the first open of /dev/stpwmt without it.
+	$BB mkdir -p /lib/firmware
+	for f in $fw/*; do [ -e /lib/firmware/${f##*/} ] || $BB ln -s $f /lib/firmware/; done
 	crumb "firmware from $fw: $($BB ls $fw 2>/dev/null | $BB wc -l) files"
 
 	if [ -x /usr/local/bin/wmtup ]; then

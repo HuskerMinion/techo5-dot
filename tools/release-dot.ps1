@@ -186,6 +186,12 @@ if ($LASTEXITCODE -ne 0) { throw 'building the root filesystem failed' }
 # just built, as the Spot's release does, rather than on somebody's unit.
 $release = (& tar -xzOf $rootfs ./etc/techo5-release) -join ''
 if ($release -notmatch "techo5-dot $([regex]::Escape($Version)) ") { throw "the root filesystem says '$release', not $Version" }
+# AirPlay 2: build-dot-rootfs.py adds its receiver and nqptp only when bin/ has both, so a worktree without them
+# copied in would ship the classic receiver alone.
+$inRootfs = @(& tar -tzf $rootfs) -replace '^\./', ''
+foreach ($b in 'techo5-shairport-sync', 'techo5-nqptp') {
+    if ($inRootfs -notcontains "usr/local/bin/$b") { throw "$rootfs has no usr/local/bin/${b}: copy bin/$b-arm from techo5 (tools/linux/build-shairport-sync.sh) into bin/$b" }
+}
 $rootfsDonut = Join-Path $out "techo5-donut-rootfs-$Version.tar.gz"
 & $py (Join-Path (Join-Path (Join-Path $root 'tools') 'linux') 'build-dot-rootfs.py') --board donut --daemon (Join-Path $out 'echod-arm-donut') --release $Version --inputs $Inputs --bluealsa $Bluealsa --wpa-supplicant $WpaSupplicant --bt-modules $BtModules --out $rootfsDonut
 if ($LASTEXITCODE -ne 0) { throw 'building the Echo Dot 3 root filesystem failed' }

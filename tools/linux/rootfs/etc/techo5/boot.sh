@@ -66,9 +66,10 @@ say() { echo "techo5-dot boot: $*"; }
 say "slot $($BB cat /run/techo5/slot 2>/dev/null) release $($BB cat /etc/techo5-release 2>/dev/null)"
 
 # The same image runs on the Echo 2nd gen (radar), a biscuit with a bigger speaker. Amazon's device type
-# id tells them apart; the idme driver ends it with a NUL. Anything else is taken for a biscuit.
+# id tells them apart; the idme driver ends it with a NUL, and Linux 6.1 (LibreEcho's) has it in the
+# device tree instead. Anything else is taken for a biscuit.
 BOARD=biscuit
-[ "$($BB tr -d '\000\n' 2>/dev/null < /proc/idme/device_type_id)" = A7WXQPH584YP ] && BOARD=radar
+[ "$($BB cat /proc/idme/device_type_id /proc/device-tree/idme/device_type_id/value 2>/dev/null | $BB tr -d '\000\n')" = A7WXQPH584YP ] && BOARD=radar
 say "board $BOARD"
 
 # The bootloader message is the initramfs's to manage, and it has already asked for the next boot to

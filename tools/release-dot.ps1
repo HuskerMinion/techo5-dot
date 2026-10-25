@@ -197,6 +197,11 @@ $rootfsDonut = Join-Path $out "techo5-donut-rootfs-$Version.tar.gz"
 if ($LASTEXITCODE -ne 0) { throw 'building the Echo Dot 3 root filesystem failed' }
 $release = (& tar -xzOf $rootfsDonut ./etc/techo5-release) -join ''
 if ($release -notmatch "techo5-donut $([regex]::Escape($Version)) ") { throw "the Echo Dot 3 root filesystem says '$release', not $Version" }
+# And AirPlay 2 there too.
+$inDonut = @(& tar -tzf $rootfsDonut) -replace '^\./', ''
+foreach ($b in 'techo5-shairport-sync', 'techo5-nqptp') {
+    if ($inDonut -notcontains "usr/local/bin/$b") { throw "$rootfsDonut has no usr/local/bin/${b}: copy bin/$b-arm from techo5 (tools/linux/build-shairport-sync.sh) into bin/$b" }
+}
 Copy-Item -Force $BtModulesSource (Join-Path $out 'techo5-donut-bt-modules-source.tar.xz')
 
 Write-Host "== Bluetooth kernel, rescue packages and checksums"

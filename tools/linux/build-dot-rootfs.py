@@ -70,6 +70,15 @@ def main():
     # upgrade the packages a base already has.
     if len(alpine) > 1:
         sys.exit('more than one Alpine armv7 minirootfs in %s: keep only the one techo5lib.py names' % a.inputs)
+    # Every package folder holds exactly its list: mkrootfs.py unpacks whatever is there, so a package
+    # never fetched would be left out without a word, and a newer one fetched beside the old would be both.
+    for lst, d in (('rescue', 'apks-dot'), ('bt', 'apks-bt-dot'), ('rootfs', 'apks-rootfs-dot')):
+        with open(j(HERE, 'packages-%s.txt' % lst)) as f:
+            want = set(l.strip() for l in f if l.strip().endswith('.apk') and not l.startswith('#'))
+        have = set(n for n in os.listdir(j(a.inputs, d)) if n.endswith('.apk')) if os.path.isdir(j(a.inputs, d)) else set()
+        if want != have:
+            sys.exit('%s does not match packages-%s.txt (missing: %s; not listed: %s); tools/fetch-inputs.py in TECHO5'
+                     % (j(a.inputs, d), lst, ' '.join(sorted(want - have)) or '-', ' '.join(sorted(have - want)) or '-'))
     try:
         commit = subprocess.run(['git', '-C', REPO, 'rev-parse', '--short', 'HEAD'], stdout=subprocess.PIPE).stdout.decode().strip()
     except OSError:

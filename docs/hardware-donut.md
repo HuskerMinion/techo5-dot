@@ -72,13 +72,16 @@ and Fire OS's own 2.6 send 0 and join. TECHO5 ships Alpine's 2.11 with that one 
 
 ## Audio
 
-- **Speaker:** DL1 at 48 kHz, S24_LE. The ring buffer is 6 periods of 1024 frames (48 KB, 128 ms).
-  A ring of 36 KB or less goes into the audio block's SRAM, and clearing that memory the way ALSA
-  does crashes the kernel. The DL1 front end needs a routed back end before it opens.
-- **Jack:** the same DL1 stream, switched to the SoC codec's headphone path. The jack codec refuses
-  96 kHz.
-- **Microphones:** TDM capture, four channels; the echo reference is the DL1 loopback at the same
-  rate.
+- **Speaker:** DL1 at 96 kHz, 16-bit, to the TAS2770 amplifier alone (the jack's back end off). At
+  48 kHz the amplifier turns the high frequencies of voices and music into static (#20). The ring
+  buffer is 6 periods of 2048 frames (48 KB, 128 ms). A ring of 36 KB or less goes into the audio
+  block's SRAM, and clearing that memory the way ALSA does crashes the kernel. The DL1 front end needs
+  a routed back end before it opens.
+- **Jack:** DL1 at 48 kHz, S24_LE, with both back ends on and the amplifier muted. The jack codec
+  refuses 96 kHz, so echod closes DL1 and opens it again in the other format when the jack is plugged
+  in or out.
+- **Microphones:** TDM capture, four channels; the echo reference is the DL1 loopback, which follows
+  either format.
 
 ## Bluetooth
 

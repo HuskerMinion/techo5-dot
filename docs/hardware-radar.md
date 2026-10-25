@@ -96,6 +96,36 @@ through it), Wi-Fi, the speaker and the headphone jack all working. Releases aft
 as `techo5-dot-kernel-bt-radar.zImage-dtb`, and the installer and `update-boot.py` take it for a radar;
 with an older release a radar keeps its own kernel.
 
+### Linux 6.1 (optional)
+
+[LibreEcho](https://github.com/aslater3/LibreEcho-Linux)'s Linux 6.1 kernel for the MT8163 runs the
+Echo 2nd gen too. `tools/linux/build-kernel-61.sh` builds it at a pinned commit with its
+`mt8163_arm32_defconfig` and `tools/linux/kernel-61-radar.fragment` (what TECHO5 needs on top: 32 MMC
+minors so the partition numbers match, eventfd and friends for Go, the firewall's netfilter matches,
+`hci_vhci`, `uhid`, zram). Releases carry it as `techo5-dot-kernel-61-radar.zImage-dtb`. It's opt-in:
+
+```
+python3 tools/install-dot.py --linux-61                                  # a new install
+python3 tools/update-boot.py --serial <serial> --address <address> --linux-61   # a unit on TECHO5 now
+python3 tools/update-boot.py --serial <serial> --address <address> --linux-318  # back to 3.18
+```
+
+A unit on 6.1 stays on 6.1 when `update-boot.py` runs again without either switch. It boots from the
+recovery partition like the 3.18 kernel, packed the same way (the unit's own recovery header, no MediaTek
+header on the kernel).
+
+What changes for the daemon: the board comes from the device tree's `idme` node (6.1 has no
+`/proc/idme`); the mute is LibreEcho's `amz_privacy` driver (`privacy_state` for the button,
+`mute_lamp` for a mute set from Home Assistant; a mute set by the button is released only by the
+button); the light ring has no global current setting; and the kernel applies the speaker's
+crossover itself, so the 3.18 filter controls are skipped. The Wi-Fi driver reads its firmware from
+`/lib/firmware`, which the initramfs and `boot.sh` link from the vendor partition.
+
+Tested on one unit, 2026-10-25: Wi-Fi, Home Assistant, the wake word and answers, the speaker, the
+light ring, the buttons and the mute (button and Home Assistant). Not yet tested on 6.1: Bluetooth,
+the headphone jack, AirPlay 2. The Echo Dot 2nd gen doesn't run on this kernel yet: it needs its own
+device tree.
+
 ## Unlock and USB
 
 - Unlocked with amonet-radar v1.0.0 (R0rt1z2, branch `mt8163-radar`) `fastbrick`, from stock Fire OS

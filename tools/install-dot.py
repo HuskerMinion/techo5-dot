@@ -47,7 +47,7 @@ from techo5lib import (CONSOLE_DOT, CONSOLE_TECHO5, Adb, Console, ask, ask_name,
                        console_hint, default_dir, download_checked, fail, head_is_android, interactive, md5,
                        need, new_api_key, note, pick_unit, repo_root, run_main, step, valid_api_key,
                        write_private)
-from dotimage import BOARD_TYPE_IDS, DotRelease, build_boot_image, kernel_board  # noqa: E402
+from dotimage import BOARD_TYPE_IDS, KERNEL_61_VERSIONS, DotRelease, build_boot_image, kernel_board, kernel_is_61  # noqa: E402
 
 # CABLE is what a backup that came over USB short or wrong usually means: the device reads the same
 # every time, and the copy breaks off part way, with the Dot dropping off USB (techo5#86).
@@ -198,6 +198,8 @@ def main():
     ap.add_argument('--kernel', help="a kernel you built for this board (tools/linux/build-kernel.sh, --board radar for "
                     "an Echo 2nd gen) instead of the release's")
     ap.add_argument('--no-bluetooth-kernel', action='store_true', help="keep the unit's own kernel, which has no Bluetooth")
+    ap.add_argument('--linux-61', action='store_true', help="Echo 2nd gen: the release's Linux 6.1 kernel (LibreEcho's) "
+                    "instead of its 3.18 one")
     ap.add_argument('--rootfs', help="a root filesystem you built (tools/linux/build-dot-rootfs.py) instead of the release's")
     ap.add_argument('--wake-words', default='okay_nabu,hey_jarvis,hey_mycroft,alexa,' + ','.join(EXTRA_MODELS), help='models for a unit that has none')
     ap.add_argument('--ssh-key', help='an SSH public key allowed to log in as root once SSH is switched on')
@@ -241,6 +243,10 @@ def main():
     if donut and (a.kernel or a.no_bluetooth_kernel):
         fail('the Echo Dot 3 always runs its own kernel (Bluetooth comes as modules in its root filesystem); '
              'leave out --kernel and --no-bluetooth-kernel')
+    if a.linux_61 and board not in KERNEL_61_VERSIONS:
+        fail('--linux-61 is for the Echo 2nd gen (radar); %s is %s' % (a.serial, board))
+    if a.linux_61 and (a.kernel or a.no_bluetooth_kernel):
+        fail("--linux-61 chooses the release's kernel; leave out --kernel and --no-bluetooth-kernel")
     # The partition the Linux image goes into (kaeru's "recovery" on the Dot 3), and the store.
     target = 'swdl' if donut else 'recovery'
     store = STORE_DONUT if donut else STORE
@@ -374,7 +380,9 @@ def main():
     note('TECHO5 Dot %s: root filesystem, %s and rescue packages checked'
          % (rel.version, 'Bluetooth modules' if donut else 'Bluetooth kernel'))
     rootfs = os.path.abspath(a.rootfs) if a.rootfs else rel.rootfs
-    kernel = None if a.no_bluetooth_kernel else (os.path.abspath(a.kernel) if a.kernel else rel.kernel_for(board))
+    kernel = None if a.no_bluetooth_kernel else (os.path.abspath(a.kernel) if a.kernel else rel.kernel_for(board, a.linux_61))
+    if kernel is None and a.linux_61:
+        fail('release %s has no Linux 6.1 kernel for %s; nothing was written' % (rel.version, board))
     if kernel is None and not a.no_bluetooth_kernel and not donut:
         note('release %s has no Bluetooth kernel for %s (--kernel takes one from tools/linux/build-kernel.sh '
              '--board %s)' % (rel.version, board, board))
@@ -393,7 +401,8 @@ def main():
     if donut:
         note("kernel: the unit's own, from %s (Bluetooth as modules)" % os.path.basename(donor))
     else:
-        note('kernel: %s' % ('%s (Bluetooth)' % os.path.basename(kernel) if kernel else "the unit's own (no Bluetooth)"))
+        note('kernel: %s' % ('%s (%s)' % (os.path.basename(kernel), 'Linux 6.1' if kernel_is_61(kernel, board) else 'Bluetooth')
+                             if kernel else "the unit's own (no Bluetooth)"))
     image = os.path.join(unit, 'techo5-dot-linux.img')
     build_boot_image(donor, image, rel.alpine, rel.busybox, rel.wmtup, rel.apks, kernel, board, rel.wpa_supplicant)
     note('boot image %d bytes, root filesystem %d bytes' % (os.path.getsize(image), os.path.getsize(rootfs)))

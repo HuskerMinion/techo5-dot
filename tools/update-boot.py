@@ -12,6 +12,9 @@ installed without the Bluetooth kernel. By default the kernel and rescue package
 release, the one built for the unit's board. An Echo 2nd gen (radar) keeps the kernel from its recovery
 backup when the release has none for it (dot-v1.0.18 and earlier), unless --kernel is given.
 
+The Echo 2nd gen can run LibreEcho's Linux 6.1 kernel instead (--linux-61; tools/linux/build-kernel-61.sh),
+from the same recovery partition. A unit already on it stays on it; --linux-318 takes it back to 3.18.
+
 The previous image stays in the store as linux-prev.img, and linux.img (what back-to-linux.sh and to-twrp
 use) is only replaced once the new image has booted healthy. Needs SSH to the unit: turn on its SSH switch
 in Home Assistant, with a key set. Windows, Linux and macOS alike; needs Python 3 and ssh.
@@ -35,7 +38,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from techo5lib import default_dir, fail, md5, need, note, run_main, step  # noqa: E402
-from dotimage import BOARD_TYPE_IDS, DotRelease, build_boot_image, kernel_board  # noqa: E402
+from dotimage import BOARD_TYPE_IDS, KERNEL_61_VERSIONS, DotRelease, build_boot_image, kernel_board, kernel_is_61  # noqa: E402
 
 
 def main():
@@ -44,6 +47,9 @@ def main():
     ap.add_argument('--address', required=True, help="the unit's address on your network")
     ap.add_argument('--kernel', help="a kernel you built for this board instead of the release's")
     ap.add_argument('--no-bluetooth-kernel', action='store_true', help="keep the kernel from the unit's recovery backup")
+    line = ap.add_mutually_exclusive_group()
+    line.add_argument('--linux-61', action='store_true', help="Echo 2nd gen: the release's Linux 6.1 kernel (LibreEcho's)")
+    line.add_argument('--linux-318', action='store_true', help="Echo 2nd gen: back to the release's 3.18 kernel from 6.1")
     ap.add_argument('--release', default='latest', help="a release tag (dot-vX.Y.Z), or latest")
     ap.add_argument('--backups', default=default_dir('TECHO5_BACKUPS', 'backups'))
     ap.add_argument('--work', default=default_dir('TECHO5_WORK', 'build'))
@@ -66,8 +72,11 @@ def main():
     # on biscuit's device tree, if at all, and a kernel that does not boot leaves no rescue to reach. So
     # the board is read before anything is built, and a board the release has no kernel for keeps the
     # one from its recovery backup. An id that is empty or not one of the two is refused, not guessed.
-    rc, out = remote("echo type=$(tr -d '\\000' 2>/dev/null < /proc/idme/device_type_id); "
-                     "echo slot=$(sed -n 's/.*androidboot.slot_suffix=\\([^ ]*\\).*/\\1/p' /proc/cmdline)")
+    # The 3.18 kernels have the vendor idme in /proc; LibreEcho's 6.1 has it in the device tree.
+    rc, out = remote("echo type=$({ cat /proc/idme/device_type_id || cat /proc/device-tree/idme/device_type_id/value; } "
+                     "2>/dev/null | tr -d '\\000'); "
+                     "echo slot=$(sed -n 's/.*androidboot.slot_suffix=\\([^ ]*\\).*/\\1/p' /proc/cmdline); "
+                     "echo release=$(uname -r)")
     m = re.search(r'^type=(\S*)$', out, re.M)
     if rc != 0 or not m:
         fail('could not read the board over SSH from %s (%s); nothing was flashed' % (a.address, out or 'no output'))
@@ -78,6 +87,14 @@ def main():
     donut = board == 'donut'
     if donut and (a.kernel or a.no_bluetooth_kernel):
         fail('the Echo Dot 3 always runs its own kernel; leave out --kernel and --no-bluetooth-kernel')
+    if (a.linux_61 or a.linux_318) and board not in KERNEL_61_VERSIONS:
+        fail('--linux-61 and --linux-318 are for the Echo 2nd gen (radar); this is %s' % board)
+    if (a.linux_61 or a.linux_318) and (a.kernel or a.no_bluetooth_kernel):
+        fail("--linux-61 and --linux-318 choose the release's kernel; leave out --kernel and --no-bluetooth-kernel")
+    r = re.search(r'^release=(\S*)$', out, re.M)
+    # uname -r: 6.1.178-techo5-radar, with a + after it when built from a tree without a release tag.
+    on61 = bool(r and board in KERNEL_61_VERSIONS and KERNEL_61_VERSIONS[board] in r.group(1))
+    linux61 = a.linux_61 or (on61 and not a.linux_318)
     # recovery is the unit's TWRP backup; donor the image the new one is built on (installer, step 2).
     recovery = os.path.join(unit, 'swdl.img' if donut else 'recovery.img')
     if not os.path.exists(recovery):
@@ -92,7 +109,10 @@ def main():
     step('boot image')
     rel = DotRelease(a.work, a.release, board)
     note('TECHO5 Dot %s: %s and rescue packages checked' % (rel.version, 'Bluetooth kernel' if not donut else 'release'))
-    kernel = None if a.no_bluetooth_kernel else (os.path.abspath(a.kernel) if a.kernel else rel.kernel_for(board))
+    kernel = None if a.no_bluetooth_kernel else (os.path.abspath(a.kernel) if a.kernel else rel.kernel_for(board, linux61))
+    if kernel is None and linux61 and not a.kernel:
+        # Never the 3.18 kernel in its place without being asked: that is --linux-318.
+        fail('release %s has no Linux 6.1 kernel for %s; nothing was flashed' % (rel.version, board))
     if kernel is None and not a.no_bluetooth_kernel and not donut:
         note('release %s has no Bluetooth kernel for %s' % (rel.version, board))
     if kernel:
@@ -109,7 +129,8 @@ def main():
     if donut:
         note("kernel: the unit's own, from %s" % os.path.basename(donor))
     else:
-        note('kernel: %s' % ('%s (Bluetooth)' % os.path.basename(kernel) if kernel else 'from the recovery backup (no Bluetooth)'))
+        note('kernel: %s' % ('%s (%s)' % (os.path.basename(kernel), 'Linux 6.1' if kernel_is_61(kernel, board) else 'Bluetooth')
+                             if kernel else 'from the recovery backup (no Bluetooth)'))
     build_boot_image(donor, image, rel.alpine, rel.busybox, rel.wmtup, rel.apks, kernel, board, rel.wpa_supplicant)
     want = md5(image)
     size = os.path.getsize(image)

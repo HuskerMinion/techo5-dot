@@ -75,6 +75,15 @@ bash tools/linux/build-kernel.sh          # -> build/kernel/zImage-dtb
 `--board radar` builds the Echo 2nd gen's instead, into `build/kernel-radar/`
 ([hardware-radar.md](hardware-radar.md)). A release carries both.
 
+The Echo 2nd gen's optional Linux 6.1 kernel (LibreEcho's) needs the Arm GNU Toolchain
+(`arm-none-linux-gnueabihf`) on PATH:
+
+```
+bash tools/linux/build-kernel-61.sh       # -> build/kernel-61/techo5-dot-kernel-61-radar.zImage-dtb
+```
+
+A release carries it too (`release-dot.ps1 -KernelRadar61`).
+
 ## 5. bluez-alsa (Linux)
 
 Alpine's `bluealsa` crashes at start-up on the Dot. [tools/linux/build-bluealsa.sh](../tools/linux/build-bluealsa.sh)

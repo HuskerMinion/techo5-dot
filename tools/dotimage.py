@@ -19,6 +19,11 @@ KERNEL_ASSETS = {
     'radar': 'techo5-dot-kernel-bt-radar.zImage-dtb',
 }
 KERNEL_ASSET = KERNEL_ASSETS['biscuit']
+# The Echo 2nd gen's Linux 6.1 kernel (LibreEcho's, tools/linux/build-kernel-61.sh), taken instead of the
+# 3.18 one only when asked for (--linux-61), or by update-boot.py for a unit already running it. Its
+# local version is what tells it from the 3.18 kernel, whose config names the same board.
+KERNEL_61_ASSETS = {'radar': 'techo5-dot-kernel-61-radar.zImage-dtb'}
+KERNEL_61_VERSIONS = {'radar': '-techo5-radar'}
 # Amazon's device type ids, in /proc/idme/device_type_id: the board each kernel is chosen by.
 BOARD_TYPE_IDS = {
     'A3S5BH2HU6VAYF': 'biscuit',
@@ -34,10 +39,9 @@ DONUT_RAMDISK_ADDR = '0x43478000'
 APKS_ASSET = 'techo5-dot-rescue-apks.tar'
 
 
-def kernel_board(path):
-    """The board a zImage-dtb was built for, read from the kernel config it carries (CONFIG_IKCONFIG):
-    CONFIG_ARCH_MTK_PROJECT, 'biscuit' or 'radar'. The appended device trees cannot tell them apart: both
-    boards' call themselves MT8163. None when the kernel is not gzip-compressed or carries no config."""
+def kernel_config(path):
+    """The kernel config a zImage-dtb carries (CONFIG_IKCONFIG), or None when the kernel is not
+    gzip-compressed or carries none."""
     with open(path, 'rb') as f:
         data = f.read()
     at = data.find(b'\x1f\x8b\x08')
@@ -48,11 +52,25 @@ def kernel_board(path):
         at = image.find(b'IKCFG_ST')
         if at < 0:
             return None
-        config = zlib.decompressobj(31).decompress(image[at + 8:])
+        return zlib.decompressobj(31).decompress(image[at + 8:])
     except zlib.error:
         return None
-    m = re.search(rb'^CONFIG_ARCH_MTK_PROJECT="([a-z0-9_]+)"$', config, re.M)
+
+
+def kernel_board(path):
+    """The board a zImage-dtb was built for, read from the kernel config it carries: CONFIG_ARCH_MTK_PROJECT,
+    'biscuit' or 'radar' (LibreEcho's 6.1 kernel keeps it too). The appended device trees cannot tell them
+    apart: both boards' call themselves MT8163. None when the board cannot be read."""
+    config = kernel_config(path)
+    m = config and re.search(rb'^CONFIG_ARCH_MTK_PROJECT="([a-z0-9_]+)"$', config, re.M)
     return m.group(1).decode() if m else None
+
+
+def kernel_is_61(path, board):
+    """Whether a zImage-dtb is board's Linux 6.1 kernel (KERNEL_61_VERSIONS), not its 3.18 one."""
+    want = KERNEL_61_VERSIONS.get(board)
+    config = kernel_config(path)
+    return bool(want and config and re.search(rb'^CONFIG_LOCALVERSION="%s"$' % re.escape(want.encode()), config, re.M))
 
 
 class DotRelease:
@@ -86,9 +104,15 @@ class DotRelease:
                 f.write(data)
         self.alpine = alpine(workdir)
 
-    def kernel_for(self, board):
-        """The release's Bluetooth kernel for board, downloaded and checked against the signed manifest like
-        the rest, or None when the release has none for it (then the unit keeps its own)."""
+    def kernel_for(self, board, linux61=False):
+        """The release's Bluetooth kernel for board (its Linux 6.1 kernel with linux61), downloaded and
+        checked against the signed manifest like the rest, or None when the release has none for it (then
+        the unit keeps its own)."""
+        if linux61:
+            name = KERNEL_61_ASSETS.get(board)
+            if not name or not self.rel.signed(name):
+                return None
+            return self.rel.asset(name)
         if board == 'biscuit':
             return self.kernel
         if board == 'donut':
@@ -166,6 +190,8 @@ def build_boot_image(recovery, out, alpine_tgz, busybox, wmtup, apks, kernel=Non
 
 if __name__ == '__main__':
     # release-dot.ps1 checks each kernel it publishes is the board's: python tools/dotimage.py board <file>
+    # prints the board, with " 6.1" after it for a Linux 6.1 kernel.
     if len(sys.argv) != 3 or sys.argv[1] != 'board':
         sys.exit('usage: dotimage.py board <zImage-dtb>')
-    print(kernel_board(sys.argv[2]) or '')
+    b = kernel_board(sys.argv[2])
+    print((b + (' 6.1' if kernel_is_61(sys.argv[2], b) else '')) if b else '')

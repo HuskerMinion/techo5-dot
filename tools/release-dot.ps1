@@ -12,6 +12,9 @@
     techo5-dot-rootfs-<version>.tar.gz  the whole root filesystem for a slot (tools/linux/build-dot-rootfs.py)
     techo5-dot-kernel-bt.zImage-dtb   the Echo Dot 2's kernel rebuilt with Bluetooth (GPL-2.0)
     techo5-dot-kernel-bt-radar.zImage-dtb  the Echo 2nd gen's (radar), the same way (GPL-2.0)
+    techo5-dot-kernel-61-radar.zImage-dtb  the Echo 2nd gen's Linux 6.1 kernel, LibreEcho's with our
+                                      config (tools/linux/build-kernel-61.sh; GPL-2.0), taken only when
+                                      asked for (install-dot.py / update-boot.py --linux-61)
     echod-arm-donut                   the Echo Dot 3rd gen's daemon (-tags dot,donut)
     techo5-donut-rootfs-<version>.tar.gz  its root filesystem (build-dot-rootfs.py --board donut), with
                                       the Bluetooth stack its stock kernel lacks as modules (GPL-2.0)
@@ -41,9 +44,12 @@ param(
     [string]$Kernel = $(if ($env:TECHO5_DOT_KERNEL) { $env:TECHO5_DOT_KERNEL } else { Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'build') 'kernel') 'zImage-dtb' }),
     # The Echo 2nd gen's (radar) Bluetooth kernel (tools/linux/build-kernel.sh --board radar).
     [string]$KernelRadar = $(if ($env:TECHO5_DOT_KERNEL_RADAR) { $env:TECHO5_DOT_KERNEL_RADAR } else { Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'build') 'kernel-radar') 'zImage-dtb' }),
+    # The Echo 2nd gen's Linux 6.1 kernel (tools/linux/build-kernel-61.sh).
+    [string]$KernelRadar61 = $(if ($env:TECHO5_DOT_KERNEL_RADAR_61) { $env:TECHO5_DOT_KERNEL_RADAR_61 } else { Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'build') 'kernel-61') 'techo5-dot-kernel-61-radar.zImage-dtb' }),
     # Optional: the sha256 each kernel must have (from its build log), so a stale or swapped file is caught.
     [string]$KernelSha256 = '',
     [string]$KernelRadarSha256 = '',
+    [string]$KernelRadar61Sha256 = '',
     # bluez-alsa with its crash fix (tools/linux/build-bluealsa.sh -o build/bluealsa).
     [string]$Bluealsa = $(if ($env:TECHO5_BLUEALSA) { $env:TECHO5_BLUEALSA } else { Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') 'build') 'bluealsa') 'bluealsa' }),
     # The Echo Dot 3's wpa_supplicant (tools/linux/build-wpa-supplicant.sh -> build/wpa_supplicant).
@@ -83,16 +89,20 @@ New-Item -ItemType Directory -Force $out | Out-Null
 if (-not $SignKey -or -not (Test-Path $SignKey)) { throw "no release signing key: set TECHO5_SIGN_KEY or pass -SignKey" }
 if (-not (Test-Path $Kernel)) { throw "no Bluetooth kernel at ${Kernel}: build it (tools/linux/build-kernel.sh -o build/kernel) or pass -Kernel" }
 if (-not (Test-Path $KernelRadar)) { throw "no radar Bluetooth kernel at ${KernelRadar}: build it (tools/linux/build-kernel.sh --board radar) or pass -KernelRadar" }
+if (-not (Test-Path $KernelRadar61)) { throw "no radar Linux 6.1 kernel at ${KernelRadar61}: build it (tools/linux/build-kernel-61.sh) or pass -KernelRadar61" }
 # A kernel on the wrong board comes up on the other board's device trees, if at all, and leaves no rescue
 # to reach, so each kernel is proved to be its board's before anything is built: the two must differ,
 # and each must carry its own board's config (CONFIG_ARCH_MTK_PROJECT, read by tools/dotimage.py).
 $py = if ($IsLinux -or $IsMacOS) { 'python3' } else { 'python' }
 $kernelHash = (Get-FileHash -Algorithm SHA256 $Kernel).Hash.ToLower()
 $kernelRadarHash = (Get-FileHash -Algorithm SHA256 $KernelRadar).Hash.ToLower()
+$kernelRadar61Hash = (Get-FileHash -Algorithm SHA256 $KernelRadar61).Hash.ToLower()
 if ($kernelHash -eq $kernelRadarHash) { throw "-Kernel and -KernelRadar are the same kernel ($kernelHash): each board needs its own" }
+# dotimage.py prints "radar 6.1" for the 6.1 kernel, so each of the three is only ever taken for its own.
 foreach ($k in @(
         @{ Name = '-Kernel'; Path = $Kernel; Board = 'biscuit'; Hash = $kernelHash; Want = $KernelSha256 },
-        @{ Name = '-KernelRadar'; Path = $KernelRadar; Board = 'radar'; Hash = $kernelRadarHash; Want = $KernelRadarSha256 })) {
+        @{ Name = '-KernelRadar'; Path = $KernelRadar; Board = 'radar'; Hash = $kernelRadarHash; Want = $KernelRadarSha256 },
+        @{ Name = '-KernelRadar61'; Path = $KernelRadar61; Board = 'radar 6.1'; Hash = $kernelRadar61Hash; Want = $KernelRadar61Sha256 })) {
     if ($k.Want -and $k.Hash -ne $k.Want.ToLower()) { throw "$($k.Name) $($k.Path) has sha256 $($k.Hash), not $($k.Want)" }
     $board = (& $py (Join-Path (Join-Path $root 'tools') 'dotimage.py') board $k.Path) -join ''
     if ($LASTEXITCODE -ne 0) { throw "could not read the board of $($k.Name) $($k.Path)" }
@@ -186,6 +196,7 @@ Copy-Item -Force $BtModulesSource (Join-Path $out 'techo5-donut-bt-modules-sourc
 Write-Host "== Bluetooth kernel, rescue packages and checksums"
 Copy-Item -Force $Kernel (Join-Path $out 'techo5-dot-kernel-bt.zImage-dtb')
 Copy-Item -Force $KernelRadar (Join-Path $out 'techo5-dot-kernel-bt-radar.zImage-dtb')
+Copy-Item -Force $KernelRadar61 (Join-Path $out 'techo5-dot-kernel-61-radar.zImage-dtb')
 $apks = Get-ChildItem (Join-Path (Join-Path $Inputs 'apks-dot') '*.apk')
 if (-not $apks) { throw "no rescue packages in $(Join-Path $Inputs 'apks-dot')" }
 Push-Location (Join-Path $Inputs 'apks-dot')
@@ -201,13 +212,14 @@ $from = "https://github.com/$repo/releases/download/$tag"
     -arm-dot (Join-Path $out 'echod-arm-dot') -rootfs-arm-dot $rootfs `
     -arm-donut (Join-Path $out 'echod-arm-donut') -rootfs-arm-donut $rootfsDonut `
     -asset (Join-Path $out 'techo5-dot-kernel-bt.zImage-dtb') -asset (Join-Path $out 'techo5-dot-kernel-bt-radar.zImage-dtb') `
+    -asset (Join-Path $out 'techo5-dot-kernel-61-radar.zImage-dtb') `
     -asset (Join-Path $out 'techo5-dot-rescue-apks.tar') `
     -out (Join-Path $out 'manifest.json') -sign-key $SignKey
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'mkmanifest failed' }
 Pop-Location
 Get-Content (Join-Path $out 'manifest.json')
 
-$names = 'echod-arm-dot', "techo5-dot-rootfs-$Version.tar.gz", 'manifest.json', 'manifest.json.sig', 'techo5-dot-kernel-bt.zImage-dtb', 'techo5-dot-kernel-bt-radar.zImage-dtb', 'techo5-dot-rescue-apks.tar',
+$names = 'echod-arm-dot', "techo5-dot-rootfs-$Version.tar.gz", 'manifest.json', 'manifest.json.sig', 'techo5-dot-kernel-bt.zImage-dtb', 'techo5-dot-kernel-bt-radar.zImage-dtb', 'techo5-dot-kernel-61-radar.zImage-dtb', 'techo5-dot-rescue-apks.tar',
     'echod-arm-donut', "techo5-donut-rootfs-$Version.tar.gz", 'techo5-donut-bt-modules-source.tar.xz'
 # SHA256SUMS: for checking a download by hand. The installer checks the kernels and the rescue packages
 # against the signed manifest instead, which names them all: nothing signs this file, so it is no
@@ -220,7 +232,7 @@ if ($DryRun) {
     return
 }
 Write-Host "== release $tag on $repo"
-$Notes += "`n`nThe Bluetooth kernel (techo5-dot-kernel-bt.zImage-dtb, Linux 3.18.19, GPL-2.0) is built by tools/linux/build-kernel.sh from Amazon's GPL source for the Echo Dot 2nd gen (Echo_Dot_src-6.5.7.1) with the configuration and backports in tools/linux. The Echo 2nd gen's (techo5-dot-kernel-bt-radar.zImage-dtb) is built the same way, by build-kernel.sh --board radar, from Amazon's GPL source for the Echo 2nd gen (Echo_v2_src-6.5.7.1). The Echo Dot 3rd gen's Bluetooth modules (bluetooth.ko, hci_vhci.ko, cmac.ko in techo5-donut-rootfs, Linux 4.4.22, GPL-2.0) are built by tools/linux/build-bt-modules.sh from Amazon's GPL source for the Echo Input (Echo_Input_src-6.5.4.7) with the Bluetooth sources it lacks from mainline 4.4.22; their complete source is techo5-donut-bt-modules-source.tar.xz."
+$Notes += "`n`nThe Bluetooth kernel (techo5-dot-kernel-bt.zImage-dtb, Linux 3.18.19, GPL-2.0) is built by tools/linux/build-kernel.sh from Amazon's GPL source for the Echo Dot 2nd gen (Echo_Dot_src-6.5.7.1) with the configuration and backports in tools/linux. The Echo 2nd gen's (techo5-dot-kernel-bt-radar.zImage-dtb) is built the same way, by build-kernel.sh --board radar, from Amazon's GPL source for the Echo 2nd gen (Echo_v2_src-6.5.7.1). The Echo 2nd gen's Linux 6.1 kernel (techo5-dot-kernel-61-radar.zImage-dtb, GPL-2.0) is LibreEcho's (https://github.com/aslater3/LibreEcho-Linux, commit 56a648f00166012bb1dce18ef9636adb5c8dcafc) with the configuration in tools/linux/kernel-61-radar.fragment, built by tools/linux/build-kernel-61.sh. The Echo Dot 3rd gen's Bluetooth modules (bluetooth.ko, hci_vhci.ko, cmac.ko in techo5-donut-rootfs, Linux 4.4.22, GPL-2.0) are built by tools/linux/build-bt-modules.sh from Amazon's GPL source for the Echo Input (Echo_Input_src-6.5.4.7) with the Bluetooth sources it lacks from mainline 4.4.22; their complete source is techo5-donut-bt-modules-source.tar.xz."
 $ghArgs = @('release', 'create', $tag) + $assets + @('--repo', $repo, '--title', "TECHO5 Dot $Version", '--notes', $Notes)
 # A version with a suffix (-rc.1, -beta) is a prerelease whether or not -Prerelease was given: GitHub
 # otherwise makes it /releases/latest, which is what the installers and every unit's updater follow.

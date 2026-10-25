@@ -64,6 +64,14 @@ ip6tables-legacy -A INPUT -p ipv6-icmp -j ACCEPT
 ip6tables-legacy -A INPUT -p udp --sport 547 --dport 546 -j ACCEPT
 
 if [ -n "$ap2fail" ]; then
+	# None of AirPlay 2's rules stays: whichever went in before one failed comes out again.
+	for T in iptables-legacy ip6tables-legacy; do
+		$T -D INPUT -i wlan0 -p tcp --dport 7000 -m recent --name AIRPLAY --set 2> /dev/null
+		$T -D INPUT -i wlan0 -p tcp --dport 7000 -j ACCEPT 2> /dev/null
+		$T -D INPUT -i wlan0 -p udp --dport 319:320 -j ACCEPT 2> /dev/null
+		$T -D INPUT -i wlan0 -p tcp --dport 1024:65535 -m recent --name AIRPLAY --rcheck --seconds 600 -j ACCEPT 2> /dev/null
+		$T -D INPUT -i wlan0 -p udp --dport 1024:65535 -m recent --name AIRPLAY --rcheck --seconds 600 -j ACCEPT 2> /dev/null
+	done
 	: > /run/techo5-no-airplay2
 	echo "techo5-firewall: AirPlay 2's rules failed (no recent match in this kernel?); AirPlay stays classic" >&2
 	AP2=

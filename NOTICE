@@ -98,6 +98,24 @@ wpa_supplicant, https://w1.fi/wpa_supplicant/
   carries Alpine's 2.11 rebuilt with tools/linux/wpa-patches/0100-donut-no-wmm-replay-counters.patch
   (tools/linux/build-wpa-supplicant.sh).
 
+Shairport Sync, nqptp and librespot
+  Both boards' root filesystems carry three programs built by TECHO5's tools/linux scripts, with their
+  license files in /usr/share/licenses and in tools/linux/licenses here:
+    - Shairport Sync 5.6.1, https://github.com/mikebrady/shairport-sync, the AirPlay 2 receiver, as
+      /usr/local/bin/techo5-shairport-sync. MIT, with parts under BSD and ISC licenses (its LICENSES
+      file). Copyright (c) 2014-2026 Mike Brady and the other authors it names. Unmodified; FFmpeg's
+      ALAC and AAC decoders and swresample (LGPL-2.1-or-later, https://ffmpeg.org) are linked in
+      statically, and TECHO5's tools/linux/build-shairport-sync.sh rebuilds or relinks it.
+    - nqptp 1.2.9, https://github.com/mikebrady/nqptp, the clock AirPlay 2 needs, as
+      /usr/local/bin/techo5-nqptp. GPL-2.0. Changed by TECHO5's tools/linux/nqptp-run-as-user.patch
+      (adds -u <user>), which is GPL-2.0 too.
+    - librespot 0.8.0, https://github.com/librespot-org/librespot, the Spotify Connect receiver, as
+      /usr/local/bin/techo5-librespot. MIT, Copyright (c) 2015 Paul Lietar. Changed by TECHO5's
+      tools/linux/librespot-volume-fifo.patch (adds --volume-fifo); its Rust dependencies, named by its
+      Cargo.lock, keep their own licenses (most MIT or Apache-2.0).
+  Their source archives, with the patches, licenses and build scripts, are attached to each release
+  from dot-v1.0.35 on (techo5-third-party-sources*.tar.gz).
+
 Alpine Linux, https://alpinelinux.org
   The release root filesystem is assembled from Alpine 3.24 armv7 packages, unmodified except
   bluealsa; each package keeps its own license, and its source is published by Alpine.

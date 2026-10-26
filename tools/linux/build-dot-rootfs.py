@@ -106,14 +106,21 @@ def main():
             cmd += ['--data', '%s=/usr/lib/techo5/modules/%s' % (m, os.path.basename(m))]
     else:
         cmd += ['--add', a.wmtup + '=/usr/local/bin/wmtup']
+    # Each program built from others' sources carries its licenses (tools/linux/licenses) in /usr/share/licenses.
+    def licenses(name):
+        for f in sorted(glob.glob(j(HERE, 'licenses', name, '*'))):
+            cmd.extend(['--data', '%s=/usr/share/licenses/%s/%s' % (f, name, os.path.basename(f))])
     if os.path.exists(a.librespot):
         cmd += ['--add', a.librespot + '=/usr/local/bin/techo5-librespot']
+        licenses('librespot')
     else:
         print('no %s: the image will not offer Spotify Connect' % a.librespot)
     # AirPlay 2 on both boards: the daemon keeps the classic receiver where it can't run it (it also needs
     # the loopback and /dev/shm, from boot.sh, and the firewall's AirPlay 2 rules, techo5-firewall).
     if os.path.exists(a.shairport) and os.path.exists(a.nqptp):
         cmd += ['--add', a.shairport + '=/usr/local/bin/techo5-shairport-sync', '--add', a.nqptp + '=/usr/local/bin/techo5-nqptp']
+        licenses('shairport-sync')
+        licenses('nqptp')
     else:
         print('no %s or %s: AirPlay will be the classic receiver' % (a.shairport, a.nqptp))
     for m in models:

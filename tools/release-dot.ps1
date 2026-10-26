@@ -71,10 +71,17 @@ param(
     [string]$PrebuiltArmDot = '',
     # The same for the Echo Dot 3's echod-arm-donut, from the same CI run.
     [string]$PrebuiltArmDonut = '',
+    # The sources of the programs the root filesystems carry built from others' sources (Shairport Sync,
+    # nqptp, librespot; NOTICE), from TECHO5's tools/linux/third-party-sources.sh: their licenses want the
+    # source beside the binaries. Published as techo5-third-party-sources.tar.gz.
+    [string]$ThirdPartySources = '',
     # Build and sign everything into bin\release\<version>, publish nothing.
     [switch]$DryRun
 )
 $ErrorActionPreference = 'Stop'
+if (-not $DryRun -and (-not $ThirdPartySources -or -not (Test-Path $ThirdPartySources))) {
+    throw "no -ThirdPartySources archive: build it with TECHO5's tools/linux/third-party-sources.sh"
+}
 $repo = 'HuskerMinion/techo5-dot'
 # The tag says which device a release is for; the version says which build it is. They are not the same
 # string and must not be swapped: the tag names the release (and the CI tag the binary was attested
@@ -232,6 +239,10 @@ Get-Content (Join-Path $out 'manifest.json')
 
 $names = 'echod-arm-dot', "techo5-dot-rootfs-$Version.tar.gz", 'manifest.json', 'manifest.json.sig', 'techo5-dot-kernel-bt.zImage-dtb', 'techo5-dot-kernel-bt-radar.zImage-dtb', 'techo5-dot-kernel-61-radar.zImage-dtb', 'techo5-dot-rescue-apks.tar',
     'echod-arm-donut', "techo5-donut-rootfs-$Version.tar.gz", 'techo5-donut-bt-modules-source.tar.xz'
+if ($ThirdPartySources) {
+    Copy-Item $ThirdPartySources (Join-Path $out 'techo5-third-party-sources.tar.gz') -Force
+    $names += 'techo5-third-party-sources.tar.gz'
+}
 # SHA256SUMS: for checking a download by hand. The installer checks the kernels and the rescue packages
 # against the signed manifest instead, which names them all: nothing signs this file, so it is no
 # check against whoever served the files it describes.

@@ -120,6 +120,7 @@ def main():
     if os.path.exists(a.shairport) and os.path.exists(a.nqptp):
         cmd += ['--add', a.shairport + '=/usr/local/bin/techo5-shairport-sync', '--add', a.nqptp + '=/usr/local/bin/techo5-nqptp']
         licenses('shairport-sync')
+        licenses('ffmpeg')  # its decoders are linked into shairport-sync
         licenses('nqptp')
     else:
         print('no %s or %s: AirPlay will be the classic receiver' % (a.shairport, a.nqptp))

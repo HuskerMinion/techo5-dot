@@ -9,7 +9,7 @@
 #      anything answering a connection the Dot made. On Wi-Fi only: AirPlay (5000/tcp, 6001-6010/udp)
 #      and Spotify Connect (4070/tcp), which nothing listens on unless their switches are on, and AirPlay 2
 #      (7000/tcp, PTP's 319-320/udp, and the ports its receiver opens for each session, from a sender that
-#      reached 7000 in the last ten minutes). DLNA's SSDP
+#      reached 7000 in the last ten minutes) while its receiver runs. DLNA's SSDP
 #      searches (1900/udp, IPv4), so a music app looking for a player finds the Dot when it asks,
 #      rather than only after the Dot's next announcement.
 # Out: everything, as before.
@@ -20,13 +20,16 @@ export PATH
 
 command -v iptables-legacy > /dev/null || { echo "techo5-firewall: no iptables-legacy in this image" >&2; exit 1; }
 
-# AirPlay 2's ports only where the image carries its receiver: elsewhere a sender that touched 7000 would
-# be let in to every port above 1023 for nothing. Its rules need the kernel's recent match; where one of
-# them fails, /run/techo5-no-airplay2 says so, and the daemon keeps the classic receiver (feature/streaming).
+# AirPlay 2's ports only where the image carries its receiver, and only while it runs: its rules are a chain
+# of their own, TECHO5-AP2, made here but jumped to only by the daemon, while the AirPlay 2 receiver runs
+# (feature/streaming, airplay2_door.go), from where /run/techo5-airplay2-jump says. A sender that touched
+# 7000 would otherwise be let in to every port above 1023 whether AirPlay was on or not. Its rules need the
+# kernel's recent match; where one of them fails, /run/techo5-no-airplay2 says so, and the daemon keeps the
+# classic receiver.
 AP2=
 [ -x /usr/local/bin/techo5-nqptp ] && [ -x /usr/local/bin/techo5-shairport-sync ] && AP2=1
 ap2fail=
-rm -f /run/techo5-no-airplay2
+rm -f /run/techo5-no-airplay2 /run/techo5-airplay2-jump
 
 for T in iptables-legacy ip6tables-legacy; do
 	# Open while the chain is rebuilt, so a rule that fails part way never leaves the unit unreachable
@@ -34,9 +37,6 @@ for T in iptables-legacy ip6tables-legacy; do
 	$T -P INPUT ACCEPT
 	$T -F INPUT
 	$T -A INPUT -i lo -j ACCEPT
-	# Every packet to AirPlay 2's session port marks its sender, so one playing for hours stays marked:
-	# before the rule that takes in what is already established, and with no verdict of its own.
-	if [ -n "$AP2" ]; then $T -A INPUT -i wlan0 -p tcp --dport 7000 -m recent --name AIRPLAY --set || ap2fail=1; fi
 	$T -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 	$T -A INPUT -p tcp --dport 6053 -j ACCEPT
 	$T -A INPUT -p udp --dport 5353 -j ACCEPT
@@ -48,12 +48,18 @@ for T in iptables-legacy ip6tables-legacy; do
 	$T -A INPUT -i wlan0 -p udp --dport 6001:6010 -j ACCEPT
 	$T -A INPUT -i wlan0 -p tcp --dport 4070 -j ACCEPT
 	# AirPlay 2 (airplay.go): its session, nqptp's PTP, and the event, data and audio ports the receiver
-	# opens for each session, which the kernel picks, from a sender marked above.
+	# opens for each session, which the kernel picks, from a sender seen on 7000. Every packet to 7000 marks
+	# its sender, so one playing for hours stays marked: the daemon's jump goes in at 2, after loopback and
+	# before what is already established is taken in.
+	$T -F TECHO5-AP2 2> /dev/null
+	$T -X TECHO5-AP2 2> /dev/null
 	if [ -n "$AP2" ]; then
-		$T -A INPUT -i wlan0 -p tcp --dport 7000 -j ACCEPT &&
-			$T -A INPUT -i wlan0 -p udp --dport 319:320 -j ACCEPT &&
-			$T -A INPUT -i wlan0 -p tcp --dport 1024:65535 -m recent --name AIRPLAY --rcheck --seconds 600 -j ACCEPT &&
-			$T -A INPUT -i wlan0 -p udp --dport 1024:65535 -m recent --name AIRPLAY --rcheck --seconds 600 -j ACCEPT ||
+		$T -N TECHO5-AP2 &&
+			$T -A TECHO5-AP2 -p tcp --dport 7000 -m recent --name AIRPLAY --set &&
+			$T -A TECHO5-AP2 -p tcp --dport 7000 -j ACCEPT &&
+			$T -A TECHO5-AP2 -p udp --dport 319:320 -j ACCEPT &&
+			$T -A TECHO5-AP2 -p tcp --dport 1024:65535 -m recent --name AIRPLAY --rcheck --seconds 600 -j ACCEPT &&
+			$T -A TECHO5-AP2 -p udp --dport 1024:65535 -m recent --name AIRPLAY --rcheck --seconds 600 -j ACCEPT ||
 			ap2fail=1
 	fi
 done
@@ -64,20 +70,18 @@ ip6tables-legacy -A INPUT -p ipv6-icmp -j ACCEPT
 ip6tables-legacy -A INPUT -p udp --sport 547 --dport 546 -j ACCEPT
 
 if [ -n "$ap2fail" ]; then
-	# None of AirPlay 2's rules stays: whichever went in before one failed comes out again.
+	# None of AirPlay 2's rules stays: the chain goes, whatever went in before one failed.
 	for T in iptables-legacy ip6tables-legacy; do
-		$T -D INPUT -i wlan0 -p tcp --dport 7000 -m recent --name AIRPLAY --set 2> /dev/null
-		$T -D INPUT -i wlan0 -p tcp --dport 7000 -j ACCEPT 2> /dev/null
-		$T -D INPUT -i wlan0 -p udp --dport 319:320 -j ACCEPT 2> /dev/null
-		$T -D INPUT -i wlan0 -p tcp --dport 1024:65535 -m recent --name AIRPLAY --rcheck --seconds 600 -j ACCEPT 2> /dev/null
-		$T -D INPUT -i wlan0 -p udp --dport 1024:65535 -m recent --name AIRPLAY --rcheck --seconds 600 -j ACCEPT 2> /dev/null
+		$T -F TECHO5-AP2 2> /dev/null
+		$T -X TECHO5-AP2 2> /dev/null
 	done
 	: > /run/techo5-no-airplay2
 	echo "techo5-firewall: AirPlay 2's rules failed (no recent match in this kernel?); AirPlay stays classic" >&2
 	AP2=
 fi
+[ -n "$AP2" ] && echo "INPUT 2 -i wlan0" > /run/techo5-airplay2-jump
 
 ok=1
 iptables-legacy -P INPUT DROP || ok=
 ip6tables-legacy -P INPUT DROP || ok=
-[ -n "$ok" ] && echo "techo5-firewall: inbound closed except 6053, 5353, 22, 8928, 8181, 1900/udp, and on Wi-Fi 5000, 6001-6010, 4070${AP2:+, 7000, 319-320/udp and AirPlay 2's senders}" >&2
+[ -n "$ok" ] && echo "techo5-firewall: inbound closed except 6053, 5353, 22, 8928, 8181, 1900/udp, and on Wi-Fi 5000, 6001-6010, 4070${AP2:+, and while AirPlay 2 runs 7000, 319-320/udp and its senders}" >&2

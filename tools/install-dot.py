@@ -558,7 +558,9 @@ def main():
     # block device is never truncated anyway. That refusal once left a count of 5 from earlier tries in
     # place, so the first boot went straight to rescue (techo5-dot#19). Read back, so it can't again.
     tries = adb.sh("printf 'TECHO5-TRIES 0 installed\\n' | dd of=%s/misc bs=512 seek=14 count=1 2>/dev/null; sync; "
-                   "dd if=%s/misc bs=512 skip=14 count=1 2>/dev/null | head -c 24" % (bn, bn))
+                   "dd if=%s/misc bs=512 skip=14 count=1 2>/dev/null | tr -d '\\000'" % (bn, bn))
+    # The first line only, here rather than with head: Fire OS's head has no -c (techo5-dot#19 again).
+    tries = (tries.splitlines() or [''])[0]
     if not tries.startswith('TECHO5-TRIES 0'):
         fail('the boot count in misc could not be reset (it reads %r); the unit would stay in rescue' % tries)
     adb.sh('rm -f %s/rootfs.tar.gz %s/busybox %s/slot.sh; sync' % (stage, stage, stage))

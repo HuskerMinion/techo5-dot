@@ -554,8 +554,14 @@ def main():
 
     # ---------------------------------------------------------------------------------------- 7
     step('arming the Linux boot and rebooting')
-    adb.sh("printf 'TECHO5-TRIES 0 installed\\n' | dd of=%s/misc bs=512 seek=14 count=1 conv=notrunc 2>/dev/null; "
-           'rm -f %s/rootfs.tar.gz %s/busybox %s/slot.sh; sync' % (bn, stage, stage, stage))
+    # No conv=notrunc: some Fire OS builds' dd refuse every conv option ("conv option disabled"), and a
+    # block device is never truncated anyway. That refusal once left a count of 5 from earlier tries in
+    # place, so the first boot went straight to rescue (techo5-dot#19). Read back, so it can't again.
+    tries = adb.sh("printf 'TECHO5-TRIES 0 installed\\n' | dd of=%s/misc bs=512 seek=14 count=1 2>/dev/null; sync; "
+                   "dd if=%s/misc bs=512 skip=14 count=1 2>/dev/null | head -c 24" % (bn, bn))
+    if not tries.startswith('TECHO5-TRIES 0'):
+        fail('the boot count in misc could not be reset (it reads %r); the unit would stay in rescue' % tries)
+    adb.sh('rm -f %s/rootfs.tar.gz %s/busybox %s/slot.sh; sync' % (stage, stage, stage))
     adb.reboot('recovery')
 
     # The unit is found on its USB serial console by its own serial number and asked how the boot went:

@@ -403,7 +403,7 @@ class Adb:
         self.run('wait-for-device')
 
     def reboot(self, target=None):
-        self.run(*(['reboot'] + ([target] if target else [])))
+        return self.run(*(['reboot'] + ([target] if target else [])))
 
 
 class Fastboot:
@@ -899,6 +899,41 @@ def console_exchange(port, command, wait):
         return '\n'.join(out)
     finally:
         sp.close()
+
+
+# What shows why a unit restarted under an installer step: the kernel's last console lines (pstore, or
+# /proc/last_kmsg on older kernels) and the rescue environment's log. The rescue init does not mount
+# pstore, so it is mounted first (harmless when it already is). The log is on userdata, where the
+# rescue init keeps it (LOGDIR in tools/linux/init).
+RESCUE_LOG = '/data/techo5-linux/rescue.log'
+EVIDENCE = ('mount -t pstore pstore /sys/fs/pstore 2>/dev/null; '
+            'cat /sys/fs/pstore/console-ramoops* /proc/last_kmsg 2>/dev/null | tail -200; '
+            'echo ----- rescue.log; tail -100 %s 2>/dev/null' % RESCUE_LOG)
+EVIDENCE_BY_HAND = ('mount -t pstore pstore /sys/fs/pstore 2>/dev/null\n'
+                    '   cat /sys/fs/pstore/console-ramoops* /proc/last_kmsg 2>/dev/null | tail -200\n'
+                    '   tail -100 ' + RESCUE_LOG)
+
+
+def collect_evidence(console, folder, name='restart-evidence.txt', seconds=180, every=5,
+                     sleep=time.sleep, clock=time.time):
+    """The unit restarted under a step. Waits up to seconds for it to come back on its rescue console,
+    saves EVIDENCE into folder/name and says where; or, when it does not come back, says what to run by
+    hand. Call it after reading console.gone, since a run that reaches the unit again clears it."""
+    note('waiting up to %d minutes for the unit to come back, to read why it restarted' % (seconds // 60))
+    text = None
+    deadline = clock() + seconds
+    while clock() < deadline and text is None:
+        text = console.run(EVIDENCE, 20)
+        if text is None:
+            sleep(every)
+    if text is None:
+        return ('The unit did not come back on its console in time. Once it has, collect these by hand\n'
+                '   on its USB console and keep them for the issue:\n   ' + EVIDENCE_BY_HAND)
+    out = os.path.join(folder, name)
+    os.makedirs(folder, exist_ok=True)
+    with open(out, 'w', encoding='utf-8') as f:
+        f.write(text + '\n')
+    return 'Attach this file to the issue: %s' % out
 
 
 class Console:

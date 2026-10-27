@@ -139,7 +139,8 @@ now Bluetooth comes up in the background and a paired speaker reconnects when it
   has every command. For an Echo 2nd gen, see [Echo 2nd gen](#echo-2nd-gen): it's unlocked the same
   way, over wires soldered inside. For an Echo Dot 3rd gen, unlocked with kamakiri-donut, see
   [Echo Dot 3rd gen](#echo-dot-3rd-gen) for what differs.
-- The Dot joined to Wi-Fi once in Fire OS. If it hasn't been, the installer asks for a network.
+- Two files for the unlock, both linked from the amonet-biscuit XDA thread (see Getting started): the amonet-biscuit release ZIP (it holds `boot-root.zip`) and the Fire OS update file `update-kindle-biscuit_puffin-NS6574_user_7623_0013121734532.bin`. The installer downloads everything else.
+- The Dot joined to Wi-Fi once in Fire OS (optional). If it hasn't been, or you pass `--wifi "<network name>"`, the installer asks for the passphrase.
 - A Windows, Linux or macOS computer with Python 3, adb and git
   ([setup for each](https://github.com/HuskerMinion/techo5/blob/main/docs/getting-started.md#set-up-your-computer-once)),
   plus Home Assistant. Nothing is compiled.

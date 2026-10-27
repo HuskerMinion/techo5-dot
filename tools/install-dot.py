@@ -19,7 +19,7 @@ built from it and the unit's own recovery backup. What it does, stopping at the 
   4. keeps the unit's Home Assistant identity if it has one (EchoLocal's name and key), or makes one
   5. writes the boot image to the recovery partition (swdl on the Dot 3) and reads it back
   6. unpacks the root filesystem into slot a of the store on the cache partition (userdata on the Dot 3)
-  7. arms the Linux boot, reboots, and waits on the unit's USB console for a healthy boot
+  7. arms the Linux boot, reboots, and waits on the unit USB console for a healthy boot
 
 The Echo Dot 3rd gen differs in three places: it has no recovery partition, so the image goes where
 kaeru boots recovery from (swdl, which held TWRP); the image carries the unit's own stock kernel, from
@@ -179,6 +179,15 @@ def is_techo5_image(path):
     with open(path, 'rb') as f:
         head = f.read(576)
     return head.startswith(b'ANDROID!') and b'techo5' in head[64:576]
+
+
+def in_rescue(kv):
+    """The console's answers say the unit is in rescue: no slot booted and five or more unhealthy boots
+    counted. kv is the parsed slot=/tries= lines; a missing or empty tries means not known, so not rescue."""
+    if kv.get('slot', '').strip():
+        return False
+    m = re.search(r'TECHO5-TRIES\s+(\d+)', kv.get('tries', ''))
+    return bool(m) and int(m.group(1)) >= 5
 
 
 def api_port_open(address):
@@ -500,15 +509,17 @@ def main():
 
     # ---------------------------------------------------------------------------------------- 6
     step('root filesystem into slot a')
+    note('pushing the root filesystem (about 49 MB): roughly 1 to 3 minutes over USB, with no output until done')
     adb.push(rootfs, stage + '/rootfs.tar.gz')
     script = os.path.join(a.work, 'techo5-dot-slot.sh')
     with open(script, 'w', newline='\n') as f:
         f.write(SLOT_SCRIPT)
     adb.push(script, stage + '/slot.sh')
     os.remove(script)
+    note('unpacking it into slot a: roughly 1 to 2 minutes, with no output until done')
     result = adb.sh('sh %s/slot.sh %s %s 2>&1' % (stage, stage, store))
     if 'slot a: ' not in result:
-        fail('installing the slot failed: %s' % result)
+        fail('installing the slot failed: %s\nNothing else has changed yet; run the installer again to retry this step.' % result)
     note(result)
     # The way back to TWRP without a PC: the unit's own TWRP (its recovery backup, checked in step 2 not to
     # be a Linux image) and the script that undoes it.
@@ -557,14 +568,19 @@ def main():
     # No conv=notrunc: some Fire OS builds' dd refuse every conv option ("conv option disabled"), and a
     # block device is never truncated anyway. That refusal once left a count of 5 from earlier tries in
     # place, so the first boot went straight to rescue (techo5-dot#19). Read back, so it can't again.
-    tries = adb.sh("printf 'TECHO5-TRIES 0 installed\\n' | dd of=%s/misc bs=512 seek=14 count=1 2>/dev/null; sync; "
-                   "dd if=%s/misc bs=512 skip=14 count=1 2>/dev/null | tr -d '\\000'" % (bn, bn))
-    # The first line only, here rather than with head: Fire OS's head has no -c (techo5-dot#19 again).
-    tries = (tries.splitlines() or [''])[0]
+    # The busybox pushed in step 5 does both the write and the read-back: Fire OS's own toolbox has a head
+    # without -c and a dd that refuses conv= (techo5-dot#19).
+    bb = stage + '/busybox'
+    tries = adb.sh("printf 'TECHO5-TRIES 0 installed\\n' | %s dd of=%s/misc bs=512 seek=14 count=1 2>/dev/null; sync; "
+                   "%s dd if=%s/misc bs=512 skip=14 count=1 2>/dev/null | %s tr -d '\\000' | %s head -n 1" % (bb, bn, bb, bn, bb, bb))
     if not tries.startswith('TECHO5-TRIES 0'):
-        fail('the boot count in misc could not be reset (it reads %r); the unit would stay in rescue' % tries)
+        fail('the boot count in misc could not be reset (it reads %r). Everything else is installed, but the unit '
+             'would stay in rescue on its next boot. It is still in recovery: run the installer again.' % tries)
     adb.sh('rm -f %s/rootfs.tar.gz %s/busybox %s/slot.sh; sync' % (stage, stage, stage))
-    adb.reboot('recovery')
+    r = adb.reboot('recovery')
+    if r is not None and r.returncode != 0:
+        fail('adb reboot recovery failed (%s). The install is done; reboot the unit by hand (unplug the power and '
+             'plug it back in), or run the installer again.' % (r.stderr or b'').decode('utf-8', 'replace').strip())
 
     # The unit is found on its USB serial console by its own serial number and asked how the boot went:
     # that works whatever address DHCP hands Linux, and from TWRP, where no address was known at all.
@@ -573,7 +589,7 @@ def main():
     query = ("echo slot=$(cat /run/techo5/slot 2>/dev/null); echo release=$(cat /etc/techo5-release 2>/dev/null); "
              "echo ip=$(ifconfig wlan0 2>/dev/null | sed -n 's/.*inet addr:\\([0-9.]*\\).*/\\1/p'); echo echod=$(pidof echod); "
              "echo tries=$(dd if=/dev/mmcblk0p8 bs=512 skip=14 count=1 2>/dev/null | tr -d '\\000')")
-    healthy, said, told = False, '', ''
+    healthy, rescue, said, told = False, False, '', ''
     start = time.time()
     deadline, ticked = start + 8 * 60, start
     while time.time() < deadline:
@@ -596,11 +612,23 @@ def main():
                 said = now
             if kv.get('ip'):
                 ip = kv['ip'].strip()
+            if in_rescue(kv):
+                rescue = True
+                break
             # Healthy is the boot's own verdict: echod up for 90 s, and the try count back to 0.
             if 'healthy' in kv.get('tries', ''):
                 healthy = True
                 break
         time.sleep(5)
+    if rescue:
+        print()
+        print('%s is in rescue: no slot booted, and the boot count has reached five (%s).' % (a.serial, kv.get('tries', '').strip()))
+        print('Waiting longer would not help, so the wait stopped here. On the unit USB console, run techo5-retry')
+        print('to clear the count and try the slots again. To see what went wrong, read the boot crumbs with')
+        print('tools/linux/readmisc.sh, which runs ON the Dot, through adb:')
+        print('  adb push tools/linux/readmisc.sh /data/local/tmp/')
+        print('  adb shell sh /data/local/tmp/readmisc.sh')
+        sys.exit(1)
     up = False
     if ip:
         deadline = time.time() + 60
@@ -620,7 +648,9 @@ def main():
     else:
         print('Rebooted, but the unit was not confirmed up%s.' % (' (%s:6053 did not answer)' % ip if ip else ''))
         print('After five boots that never become healthy it stays in rescue (techo5-retry tries again). The USB console')
-        print('shows the boot and the crumbs (tools/linux/readmisc.sh).')
+        print('shows the boot and the crumbs. readmisc.sh runs ON the Dot, through adb (unit in TWRP or Fire OS):')
+        print('  adb push tools/linux/readmisc.sh /data/local/tmp/')
+        print('  adb shell sh /data/local/tmp/readmisc.sh')
         sys.exit(1)
 
 

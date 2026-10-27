@@ -641,6 +641,10 @@ def ask_wifi(ssid):
 
 # ------------------------------------------------------------------------------------------ serial ports
 
+class ConsoleGone(OSError):
+    """The console went away while a command ran on it: the unit restarted, or its USB was pulled."""
+
+
 class SerialPort:
     """A serial port at 115200 8N1, raw, with non-blocking reads."""
 
@@ -722,16 +726,49 @@ class SerialPort:
                     time.sleep(0.01)
 
     def read(self):
+        """What has arrived, b'' when nothing has, and also when the port has gone (see alive)."""
         if IS_WINDOWS:
             buf = self._ctypes.create_string_buffer(4096)
             n = self._wintypes.DWORD()
-            if not self.k32.ReadFile(self.handle, buf, 4096, self._ctypes.byref(n), None):
+            # With the timeouts set at open, a read with nothing there succeeds with no bytes.
+            self.read_failed = not self.k32.ReadFile(self.handle, buf, 4096, self._ctypes.byref(n), None)
+            if self.read_failed:
                 return b''
             return buf.raw[:n.value]
         try:
             return os.read(self.fd, 4096)
         except BlockingIOError:
             return b''
+        except OSError:  # EIO and the like: hung up under us; alive says so
+            return b''
+
+    def alive(self):
+        """Whether the port is still there: a unit that restarts, or a cable pulled, takes it away. A read
+        can't tell on POSIX: raw with VMIN and VTIME at 0, a quiet port reads b'' just as a hung-up one
+        does. A hung-up tty fails every ioctl, so its settings are asked for. On Windows, a read that
+        failed with the port no longer in the system's list of serial ports."""
+        if IS_WINDOWS:
+            if not getattr(self, 'read_failed', False):
+                return True
+            import winreg
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'HARDWARE\DEVICEMAP\SERIALCOMM') as k:
+                    i = 0
+                    while True:
+                        try:
+                            if winreg.EnumValue(k, i)[1] == self.name:
+                                return True
+                        except OSError:
+                            return False
+                        i += 1
+            except OSError:
+                return True  # the list can't be read: no reason to think the port is gone
+        import termios
+        try:
+            termios.tcgetattr(self.fd)
+        except (termios.error, OSError):
+            return False
+        return True
 
     def close(self):
         if IS_WINDOWS:
@@ -833,6 +870,7 @@ def console_exchange(port, command, wait):
         buf = b''
         lines = []
         deadline = time.time() + wait
+        checked = time.time()
         while time.time() < deadline:
             chunk = sp.read()
             if chunk:
@@ -841,6 +879,12 @@ def console_exchange(port, command, wait):
                 if end in lines:
                     break
             else:
+                # A unit that restarts mid-command takes the port with it: seen within seconds, rather
+                # than after the whole wait (techo5-spot#11).
+                if time.time() - checked >= 2:
+                    checked = time.time()
+                    if not sp.alive():
+                        raise ConsoleGone('%s went away' % port)
                 time.sleep(0.1)
         if end not in lines:
             return None
@@ -863,6 +907,9 @@ class Console:
 
     def __init__(self, serial, ids):
         self.serial, self.ids, self.port = serial, ids, None
+        # gone says why the last run's console went away under it (the unit restarted, or its USB was
+        # pulled), empty when it did not.
+        self.gone = ''
         # blocked is why the last port tried could not be opened, empty when it could. It used to be
         # dropped, so a console that was there all along but not this user's to open (Linux's dialout
         # group, or ModemManager holding it) looked the same as no console at all, for the whole wait.
@@ -874,6 +921,8 @@ class Console:
     def _is_unit(self, port):
         try:
             out = console_exchange(port, 'grep -q androidboot.serialno=%s /proc/cmdline && echo IS-THE-UNIT' % self.serial, 3)
+        except ConsoleGone:  # it left while asked; not one that could not be opened
+            return False
         except OSError as e:
             self._opened(port, e)
             return False
@@ -917,11 +966,18 @@ class Console:
         port = self.port or self.find()
         if not port:
             return None
+        self.gone = ''
         guarded = ('if grep -q androidboot.serialno=%s /proc/cmdline; then '
                    'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; ( %s ); fi'
                    % (self.serial, command))
         try:
             out = console_exchange(port, guarded, wait)
+        except ConsoleGone as e:
+            # Not a port we could not open: it went while the command ran. Said apart from no answer,
+            # since what the command did on the unit before it went is not known.
+            self.gone = str(e)
+            self.port = None
+            return None
         except OSError as e:
             self._opened(port, e)
             self.port = None

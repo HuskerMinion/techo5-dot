@@ -15,7 +15,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from techo5lib import CONSOLE_DOT, Console, ask_wifi, fail, note, run_main  # noqa: E402
+from techo5lib import CONSOLE_DOT, CONSOLE_TECHO5, Console, ask_wifi, fail, note, run_main  # noqa: E402
 
 
 def main():
@@ -26,7 +26,10 @@ def main():
     a = ap.parse_args()
     if not a.forget and not a.ssid:
         fail('give --ssid, or --forget')
+    # The Dot 2 boards' console is 18d1:4ee7, the Dot 3's (donut) 1d6b:0104.
     console = Console(a.serial, CONSOLE_DOT)
+    if not console.find():
+        console = Console(a.serial, CONSOLE_TECHO5)
     if not console.find():
         fail('no TECHO5 Linux console for %s on USB (is it plugged in and booted into Linux?)' % a.serial)
     if a.forget:

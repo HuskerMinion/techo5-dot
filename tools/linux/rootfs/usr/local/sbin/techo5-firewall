@@ -51,15 +51,20 @@ for T in iptables-legacy ip6tables-legacy; do
 	# opens for each session, which the kernel picks, from a sender seen on 7000. Every packet to 7000 marks
 	# its sender, so one playing for hours stays marked: the daemon's jump goes in at 2, after loopback and
 	# before what is already established is taken in.
+	# Over IPv6 a sender is marked by its /64: one with privacy addresses (macOS by default) can open the
+	# session from its stable address and send the audio from a temporary one (TECHO5 #343). On a home network
+	# that /64 is the whole LAN, so for those ten minutes any IPv6 host on it reaches the ports above 1023.
 	$T -F TECHO5-AP2 2> /dev/null
 	$T -X TECHO5-AP2 2> /dev/null
+	mask=
+	[ "$T" = ip6tables-legacy ] && mask="--mask ffff:ffff:ffff:ffff::"
 	if [ -n "$AP2" ]; then
 		$T -N TECHO5-AP2 &&
-			$T -A TECHO5-AP2 -p tcp --dport 7000 -m recent --name AIRPLAY --set &&
+			$T -A TECHO5-AP2 -p tcp --dport 7000 -m recent --name AIRPLAY $mask --set &&
 			$T -A TECHO5-AP2 -p tcp --dport 7000 -j ACCEPT &&
 			$T -A TECHO5-AP2 -p udp --dport 319:320 -j ACCEPT &&
-			$T -A TECHO5-AP2 -p tcp --dport 1024:65535 -m recent --name AIRPLAY --rcheck --seconds 600 -j ACCEPT &&
-			$T -A TECHO5-AP2 -p udp --dport 1024:65535 -m recent --name AIRPLAY --rcheck --seconds 600 -j ACCEPT ||
+			$T -A TECHO5-AP2 -p tcp --dport 1024:65535 -m recent --name AIRPLAY $mask --rcheck --seconds 600 -j ACCEPT &&
+			$T -A TECHO5-AP2 -p udp --dport 1024:65535 -m recent --name AIRPLAY $mask --rcheck --seconds 600 -j ACCEPT ||
 			ap2fail=1
 	fi
 done

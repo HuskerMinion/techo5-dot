@@ -46,7 +46,8 @@ setting its clock.
 | 🎙️ **All seven microphones** | Averaged, with echo cancellation, and a wake word heard on the device. |
 | 🔊 **A Bluetooth speaker again** | Pair a phone, or send the Dot's audio to a speaker; a Home Assistant Bluetooth proxy on top. |
 | 📞 **A speakerphone again** | Calls through your own SIP provider, placed by voice or from Home Assistant, answered with the action button; a help call that alerts your phones and dials people in turn. |
-| 🔐 **Locked down** | A firewall that lets in only Home Assistant, mDNS, SSH, Sendspin, the setup page, and on Wi-Fi AirPlay and Spotify Connect while they are on; SSH is keys-only and starts off, and the setup page answers only while it is open. |
+| 🔐 **Locked down** | A firewall that blocks inbound traffic except what the Dot serves (Home Assistant, mDNS, SSH, Sendspin, the setup page, DHCP, ping and DLNA discovery), plus AirPlay and Spotify Connect on Wi-Fi while they are on; SSH is keys-only and starts off, and the setup page answers only while it is open. |
+| 🎤 **Record takes of a word** | For training a wake word: a switch under Privacy & Security in Home Assistant, off by default. With it on, the setup page can ask for a recording and the action button starts it. See [TECHO5's training guide](https://github.com/HuskerMinion/techo5/blob/main/docs/training-wake-word.md). |
 | 🔄 **Signed updates with rollback** | ed25519-signed releases install into a spare slot and roll back on their own if they don't come up healthy. |
 
 **Built on [EchoLocal](https://github.com/ygelfand/echolocal)** by Yuri Gelfand (MIT), which first
@@ -106,7 +107,7 @@ Echo Show 5. Both run the same daemon source, built per device.
 | Routines and smart home control | Alexa | Whatever Home Assistant does ✅ |
 | Updates | Amazon, automatic | Signed releases from this repo, offered in Home Assistant, A/B slots with automatic rollback ✅ |
 | Remote access | None | SSH, keys only, behind a Home Assistant switch that starts off ✅ |
-| Network exposure | Amazon's | Firewall: inbound only the Home Assistant API, mDNS, SSH, Sendspin and the setup page, and on Wi-Fi AirPlay and Spotify Connect (nothing listens there unless they are on) ✅ |
+| Network exposure | Amazon's | Firewall: inbound only the Home Assistant API, mDNS, SSH, Sendspin, the setup page, DLNA discovery (SSDP), DHCP replies and ping, and on Wi-Fi AirPlay and Spotify Connect (nothing listens there unless they are on) ✅ |
 | Changing Wi-Fi | Alexa app | `wifi-set` on the Dot, or `tools/set-wifi.py` from a computer over USB ✅ |
 | If it won't boot | Factory reset | Rescue mode (USB console, SSH, firewall) after five bad boots. Fire OS and TWRP are still on the device, one command away ✅ |
 

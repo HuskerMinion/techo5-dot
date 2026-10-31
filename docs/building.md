@@ -127,6 +127,11 @@ the modules and wpa_supplicant from `build/` and adds
 and [tools/linux/rootfs](../tools/linux/rootfs), and writes the tarball with root ownership. It needs no
 root, QEMU or Linux.
 
+Spotify Connect and AirPlay 2 are in the image only if `bin/` has their programs: TECHO5's
+`tools/linux/build-librespot.sh` output as `bin/techo5-librespot`, and the output of
+`build-shairport-sync.sh` as `bin/techo5-shairport-sync` and `bin/techo5-nqptp`. Without them the script
+says so and builds the image without that feature.
+
 ## 7. Install your build
 
 On a Dot in TWRP or rooted Fire OS, the installer takes your files in place of the release's:
@@ -156,7 +161,10 @@ brought up to date (and tested) before a release.
 pwsh ./tools/release-dot.ps1 -Version v0.6.0 -Notes "..." -DryRun
 ```
 
-A PowerShell script for the maintainer's Windows machine: it builds the daemon from the TECHO5
+A PowerShell script for the maintainer's Windows machine. A real release (not `-DryRun`) needs
+`-ThirdPartySources`, the archive from TECHO5's `tools/linux/third-party-sources.sh`, published as
+`techo5-third-party-sources.tar.gz`. The root filesystem asset is named
+`techo5-dot-rootfs-<version>.tar.gz`. The script builds the daemon from the TECHO5
 checkout, `btbridge`, `wmtup` and both root filesystems (the Dot 2's and the Echo Dot 3rd gen's), and
 publishes the kernels, the rescue packages and the Echo Dot 3rd gen's module source with them. The manifest names all of them, with their sha256 and size, and is signed with
 `TECHO5_SIGN_KEY`: that signature is the installer's only check on what it downloads. `SHA256SUMS` is

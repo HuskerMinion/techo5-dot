@@ -141,5 +141,5 @@ device tree.
 
 - Amazon's GPL kernel source, Echo_v2_src-6.5.7.1-20251024 (the `radar` board files and defconfig).
 - EchoLocal PR #64 (vithurshanselvarajah) and EchoMuse PR #687 (wilbowes, sascha-hemi): radar ports,
-  open at the time of writing; the `MFP Gpio Mute` and speaker EQ findings are theirs.
+  #64 open and #687 closed unmerged at the time of writing; the `MFP Gpio Mute` and speaker EQ findings are theirs.
 - amonet `mt8163-radar` and R0rt1z2's TWRP device tree.

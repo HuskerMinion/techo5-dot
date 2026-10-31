@@ -121,7 +121,7 @@ On one unit, from Fire OS 6574.1 through `tools/install-dot.py`:
 - an update to dot-v1.0.31, the first release with the Dot 3, from Home Assistant's update card
 
 On a second unit, from Fire OS 6.5.5.5 (`NS6555/4301`, kernel `4.4.22+` built Nov 2022) through
-`tools/install-dot.py` v1.0.42, unlocked with kamakiri-donut v1.0.0 from Windows (UsbDk):
+`tools/install-dot.py` from release dot-v1.0.42, unlocked with kamakiri-donut v1.0.0 from Windows (UsbDk):
 - the boot reported healthy, with the unit's own kernel; the release's Bluetooth modules have the same
   vermagic (`4.4.22+ SMP preempt mod_unload aarch64`) and load
 - Wi-Fi, after `tools/set-wifi.py` moved it off the network Fire OS had saved, which was gone

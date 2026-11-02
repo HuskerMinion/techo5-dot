@@ -3,6 +3,9 @@
 # amplifier before letting go of the speaker, and its last writes reach userdata while it is still
 # writable. Init sends everything else TERM, and KILL a second later, only after this.
 BB=/bin/busybox.static
+# A reboot through init is one on purpose, for the next boot's reason (boot.sh), unless whoever asked
+# for it left a more exact one.
+[ -d /data/techo5-linux ] && { [ -s /data/techo5-linux/restart-reason ] || echo restart > /data/techo5-linux/restart-reason; }
 pid=$($BB pidof echod)
 if [ -n "$pid" ]; then
 	$BB kill -TERM $pid

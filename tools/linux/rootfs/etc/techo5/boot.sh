@@ -100,6 +100,32 @@ if [ -d /data/misc/echolocal ] && { [ ! -e /data/misc/echolocal/timezone ] || [ 
 	$BB rm -f /data/misc/echolocal/timezone /data/misc/echolocal/timezone-set-here
 	echo UTC > /data/misc/echolocal/timezone
 fi
+# Why this boot happened, for Last boot reason (echod's diagnostics), as on TECHO5's images: a restart
+# on purpose leaves its reason in restart-reason (shutdown.sh for any reboot through init, the daemon
+# for its own, and the trial's reboot below); a kernel that panicked leaves a dmesg record in pstore;
+# anything else is what the bootloader says. MediaTek's bootloader calls a restart on purpose a
+# watchdog reset (it goes through the watchdog), which is why the mark is read first.
+t5_boot_reason() {
+	r=$($BB cat /data/techo5-linux/restart-reason 2>/dev/null)
+	$BB rm -f /data/techo5-linux/restart-reason
+	case "$r" in update | restart | recovery)
+		echo "$r"
+		return
+		;;
+	esac
+	if $BB ls /sys/fs/pstore/dmesg-* >/dev/null 2>&1; then
+		echo panic
+		return
+	fi
+	case " $($BB cat /proc/cmdline) " in
+	*" androidboot.bootreason=kernel_panic "* | *" boot_reason=8 "*) echo panic ;;
+	*" androidboot.bootreason=wdt"* | *" boot_reason=3 "* | *" boot_reason=4 "* | *" boot_reason=9 "* | *" boot_reason=10 "*) echo watchdog ;;
+	*" androidboot.bootreason=power_key "* | *" androidboot.bootreason=usb "* | *" boot_reason=0 "* | *" boot_reason=1 "*) echo power ;;
+	*) echo unknown ;;
+	esac
+}
+$BB mount -t pstore pstore /sys/fs/pstore 2>/dev/null
+t5_boot_reason > /run/techo5/boot-reason
 # The kernel keeps its last words in RAM across a restart (pstore), where it has it. Mounting it
 # makes them readable, and a copy on userdata outlives the next boot; a power cut clears the RAM, so
 # this only catches a device that restarted itself.
@@ -372,6 +398,7 @@ say "ready at $($BB date)"
 		case "$($BB cat $S/slots/$SLOT.state 2>/dev/null)" in
 		trial*)
 			echo "techo5-dot boot: slot $SLOT on trial never became healthy; rebooting to spend a try" > /dev/kmsg
+			echo recovery > /data/techo5-linux/restart-reason 2>/dev/null
 			$BB sync
 			$BB reboot
 			;;

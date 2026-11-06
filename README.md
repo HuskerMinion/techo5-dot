@@ -62,8 +62,8 @@ Echo Show 5. Both run the same daemon source, built per device.
 
 > **Status: in daily use on three units.** Everything marked ✅ below was verified on a bench Dot
 > that came from Fire OS 6574.1, and the installer and updates on two more. Expect rough edges, and
-> keep your backups. The Echo 2nd gen and the Echo Dot 3rd gen are supported too, the Echo 2nd gen
-> tested on one unit so far and the Dot 3rd gen on two; see [Echo 2nd gen](#echo-2nd-gen) and [Echo Dot 3rd gen](#echo-dot-3rd-gen).
+> keep your backups. The Echo 2nd gen and the Echo Dot 3rd gen are supported too, each tested on
+> one unit so far; see [Echo 2nd gen](#echo-2nd-gen) and [Echo Dot 3rd gen](#echo-dot-3rd-gen).
 
 ## What happened to the Dot
 

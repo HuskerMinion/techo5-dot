@@ -5,9 +5,14 @@ TWRP to the TECHO5 Linux image, in one run.
     python3 tools/install-dot.py
     python3 tools/install-dot.py --serial <serial> --dry-run
     python3 tools/install-dot.py --serial <serial> --name Kitchen
+    python3 tools/install-dot.py --serial <serial> --for-someone-else
 
 Run with nothing, it finds the unit (asking which, when there are several) and asks for a name when
 the unit has none. Every question has a switch, for running it from a script.
+
+--for-someone-else is for a Dot you are giving away. It asks for no Wi-Fi network, name or key, writes none,
+and marks the Dot to start its own setup when it is next powered on; the new owner's Home Assistant can then
+add it with nothing typed. It cannot be used with --name, --wifi, --wifi-passphrase-file or --key-file.
 
 Windows, Linux and macOS alike; needs Python 3 and adb. Nothing is built: the signed release (root
 filesystem, Bluetooth kernel, rescue packages) is downloaded and checked, and this unit's boot image is
@@ -43,7 +48,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from techo5lib import wifi_conf as techo5_wifi_conf  # noqa: E402
-from techo5lib import (CONSOLE_DOT, CONSOLE_TECHO5, Adb, Console, ask, ask_name, ask_wifi, check_serial_access,  # noqa: E402
+from techo5lib import (CONSOLE_DOT, CONSOLE_TECHO5, Adb, Console, ask, ask_name, ask_wifi, check_gift, check_serial_access,  # noqa: E402
                        console_hint, default_dir, download_checked, fail, head_is_android, interactive, md5,
                        need, new_api_key, note, pick_unit, repo_root, run_main, step, valid_api_key,
                        write_private)
@@ -104,6 +109,9 @@ CONSOLES = (CONSOLE_DOT, CONSOLE_TECHO5)
 # https://github.com/fwartner/home-assistant-wakewords-collection, which ships models with no manifest
 # alongside them — the phrase is supplied here and written into one. Kept in step with TECHO5's own
 # tools/fetch-inputs.py, which bundles the same set into the Show/Spot image.
+# Empty file the gift install leaves in the state directory (layout.StateDir): first run is pending.
+FIRSTRUN_MARKER = '/data/misc/echolocal/firstrun'
+
 EXTRA_MODELS = {
     'computer': ('en/computer/computer_v2.tflite', 'Computer'),
     'jarvis': ('en/jarvis/jarvis_v2.tflite', 'Jarvis'),
@@ -214,11 +222,15 @@ def main():
     ap.add_argument('--ssh-key', help='an SSH public key allowed to log in as root once SSH is switched on')
     ap.add_argument('--wifi', '--wifi-ssid', dest='wifi_ssid', help="a Wi-Fi network to join instead of the one Fire OS saved (asks for the passphrase)")
     ap.add_argument('--wifi-passphrase-file', help='a file holding the --wifi passphrase, for running from a script')
+    ap.add_argument('--for-someone-else', action='store_true',
+                    help='a gift install: no Wi-Fi, name or key is asked for or written; the Dot starts its own setup when next powered on')
     ap.add_argument('--dry-run', action='store_true', help='checks, backups, download and boot image; write nothing')
     ap.add_argument('--backups', default=default_dir('TECHO5_BACKUPS', 'backups'))
     ap.add_argument('--work', default=default_dir('TECHO5_WORK', 'build'))
     ap.add_argument('--adb', default='adb')
     a = ap.parse_args()
+    check_gift(a, **{'--name': a.name, '--wifi': a.wifi_ssid, '--wifi-passphrase-file': a.wifi_passphrase_file,
+                     '--key-file': a.key_file})
     need(a.adb, 'install the Android platform tools (adb)')
     ssh_key = None
     if a.ssh_key:
@@ -304,7 +316,9 @@ def main():
     wifi = adb.sh('sed -n "s/^[ \\t]*ssid=//p" /data/misc/wifi/wpa_supplicant.conf 2>/dev/null | head -1')
     own_wifi = adb.sh('test -s /data/techo5-linux/wifi.conf && echo yes') == 'yes'
     wifi_conf = None
-    if a.wifi_ssid or (not wifi and not own_wifi):
+    if a.for_someone_else:
+        note('gift install: no Wi-Fi network is asked for or written; the new owner sets it up')
+    elif a.wifi_ssid or (not wifi and not own_wifi):
         ssid = a.wifi_ssid
         if not ssid:
             note('%s has no saved Wi-Fi network' % a.serial)
@@ -422,7 +436,9 @@ def main():
     have_key = adb.sh('test -s /data/misc/echolocal/psk && echo yes') == 'yes'
     name, psk, key_file = None, None, None
     shown = None  # the name and key printed at the end, for adding the Dot to Home Assistant
-    if have_name and have_key:
+    if a.for_someone_else:
+        note('gift install: no name or Home Assistant key is asked for or written')
+    elif have_name and have_key:
         # Written by an installer before dot-v1.0.15 on Windows, in the Windows code page rather than
         # UTF-8: Home Assistant could not add the device. Read in that code page, and written again as
         # UTF-8 below, once the key is known to be good.
@@ -556,6 +572,11 @@ def main():
         adb.sh('mkdir -p /data/misc/echolocal/models; chmod 700 /data/misc/echolocal')
         push_text(name, '/data/misc/echolocal/name')
         push_text(psk, '/data/misc/echolocal/psk')
+    if a.for_someone_else:
+        # An empty file in the state directory (layout.StateDir): the Dot starts its own setup (first run).
+        adb.sh('mkdir -p /data/misc/echolocal; chmod 700 /data/misc/echolocal')
+        push_text('', FIRSTRUN_MARKER)
+        note('first-run marker written')
     if models:
         adb.sh('mkdir -p /data/misc/echolocal/models')
         for m in sorted(os.listdir(models)):
@@ -638,6 +659,8 @@ def main():
             up = api_port_open(ip)
 
     print()
+    if a.for_someone_else:
+        print("This Dot will start its own setup when it is next powered on. Its owner's Home Assistant can add it with nothing typed.\n")
     if shown:
         print("Home Assistant will discover '%s' as an ESPHome device. When it asks for the encryption key, paste:\n\n    %s\n\n(also saved in %s)\n" % (shown + (key_file,)))
     if healthy and up:

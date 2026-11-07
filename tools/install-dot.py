@@ -5,14 +5,12 @@ TWRP to the TECHO5 Linux image, in one run.
     python3 tools/install-dot.py
     python3 tools/install-dot.py --serial <serial> --dry-run
     python3 tools/install-dot.py --serial <serial> --name Kitchen
-    python3 tools/install-dot.py --serial <serial> --for-someone-else
 
 Run with nothing, it finds the unit (asking which, when there are several) and asks for a name when
 the unit has none. Every question has a switch, for running it from a script.
 
---for-someone-else is for a Dot you are giving away. It asks for no Wi-Fi network, name or key, writes none,
-and marks the Dot to start its own setup when it is next powered on; the new owner's Home Assistant can then
-add it with nothing typed. It cannot be used with --name, --wifi, --wifi-passphrase-file or --key-file.
+--for-someone-else (a Dot you are giving away, set up by its new owner) is not available yet: a Dot with no
+network cannot be given one without a PC until it can get it over Bluetooth (Improv, TECHO5 #355).
 
 Windows, Linux and macOS alike; needs Python 3 and adb. Nothing is built: the signed release (root
 filesystem, Bluetooth kernel, rescue packages) is downloaded and checked, and this unit's boot image is
@@ -225,12 +223,16 @@ def main():
     ap.add_argument('--wifi', '--wifi-ssid', dest='wifi_ssid', help="a Wi-Fi network to join instead of the one Fire OS saved (asks for the passphrase)")
     ap.add_argument('--wifi-passphrase-file', help='a file holding the --wifi passphrase, for running from a script')
     ap.add_argument('--for-someone-else', action='store_true',
-                    help='a gift install: no Wi-Fi, name or key is asked for or written; the Dot starts its own setup when next powered on')
+                    help='not available yet: a Dot cannot be given a network without a PC until Improv is in (TECHO5 #355)')
     ap.add_argument('--dry-run', action='store_true', help='checks, backups, download and boot image; write nothing')
     ap.add_argument('--backups', default=default_dir('TECHO5_BACKUPS', 'backups'))
     ap.add_argument('--work', default=default_dir('TECHO5_WORK', 'build'))
     ap.add_argument('--adb', default='adb')
     a = ap.parse_args()
+    if a.for_someone_else:
+        fail('--for-someone-else is not available on a Dot yet: with no network it could not be given one without a\n'
+             '   PC until it can get it over Bluetooth (Improv, TECHO5 #355). Install it with your network and give it\n'
+             '   away as it is, or wait for that release.')
     check_gift(a, **{'--name': a.name, '--wifi': a.wifi_ssid, '--wifi-passphrase-file': a.wifi_passphrase_file,
                      '--key-file': a.key_file})
     need(a.adb, 'install the Android platform tools (adb)')

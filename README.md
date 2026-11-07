@@ -175,7 +175,7 @@ Add `--for-someone-else` to install a Dot that is going to another person:
 python3 tools/install-dot.py --for-someone-else
 ```
 
-It asks for no Wi-Fi network, name or key, and writes none. The Dot starts its own setup the next time it is powered on, and the new owner's Home Assistant can add it with nothing typed. Everything else (backups, image, first boot) is the same. It cannot be used with `--name`, `--wifi` or `--key-file`.
+It asks for no Wi-Fi network, name or key, and writes none. It also clears any name, key and saved network an earlier install left, so the new owner starts fresh. The Dot starts its own setup the next time it is powered on, and the new owner's Home Assistant can add it with nothing typed. Everything else (backups, image, first boot) is the same. It cannot be used with `--name`, `--wifi` or `--key-file`.
 
 The installer:
 1. Backs up every boot-critical partition to `backups/<serial>/` and checks each copy against the

@@ -57,6 +57,14 @@ class GiftInstall(unittest.TestCase):
         self.assertRegex(src, r"if a\.for_someone_else:\n\s+note\('gift install: no Wi-Fi network")
         self.assertRegex(src, r"if a\.for_someone_else:\n\s+note\('gift install: no name or Home Assistant key")
         self.assertIn("push_text('', FIRSTRUN_MARKER)", src)
+        # an earlier name, key and network are removed, and a configuration with no network is kept, so
+        # techo5-net does not fall back to Fire OS's saved one
+        self.assertIn("rm -f /data/misc/echolocal/name /data/misc/echolocal/psk /data/techo5-linux/wifi.conf", src)
+        self.assertIn("push_text(EMPTY_WIFI_CONF, '/data/techo5-linux/wpa_supplicant.conf')", src)
+
+    def test_empty_conf_has_no_network(self):
+        self.assertNotIn('network', install_dot.EMPTY_WIFI_CONF)
+        self.assertIn('ctrl_interface', install_dot.EMPTY_WIFI_CONF)
 
 
 if __name__ == '__main__':

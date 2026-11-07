@@ -109,6 +109,8 @@ CONSOLES = (CONSOLE_DOT, CONSOLE_TECHO5)
 # https://github.com/fwartner/home-assistant-wakewords-collection, which ships models with no manifest
 # alongside them — the phrase is supplied here and written into one. Kept in step with TECHO5's own
 # tools/fetch-inputs.py, which bundles the same set into the Show/Spot image.
+# A wpa_supplicant configuration with no network, for a gift install.
+EMPTY_WIFI_CONF = 'ctrl_interface=/run/wpa\nupdate_config=0\n'
 # Empty file the gift install leaves in the state directory (layout.StateDir): first run is pending.
 FIRSTRUN_MARKER = '/data/misc/echolocal/firstrun'
 
@@ -576,7 +578,12 @@ def main():
         # An empty file in the state directory (layout.StateDir): the Dot starts its own setup (first run).
         adb.sh('mkdir -p /data/misc/echolocal; chmod 700 /data/misc/echolocal')
         push_text('', FIRSTRUN_MARKER)
-        note('first-run marker written')
+        # Nothing of the giver's stays. techo5-net uses a kept wpa_supplicant.conf as it is, and falls back to
+        # Fire OS's saved network only when there is none, so a configuration with no network goes in.
+        adb.sh('rm -f /data/misc/echolocal/name /data/misc/echolocal/psk /data/techo5-linux/wifi.conf')
+        adb.sh('mkdir -p /data/techo5-linux')
+        push_text(EMPTY_WIFI_CONF, '/data/techo5-linux/wpa_supplicant.conf')
+        note('first-run marker written; the name, key and any saved network are cleared')
     if models:
         adb.sh('mkdir -p /data/misc/echolocal/models')
         for m in sorted(os.listdir(models)):

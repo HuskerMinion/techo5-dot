@@ -24,6 +24,29 @@ class NodeSlug(unittest.TestCase):
         self.assertEqual(len(install_dot.node_slug('a' * 80)), 63)
 
 
+class MdnsAnswer(unittest.TestCase):
+    """The address is read from the extra records of a service answer, names compressed."""
+
+    def answer(self):
+        lab = lambda *ps: b''.join(bytes([len(p)]) + p for p in ps)
+        svc = lab(b'_esphomelib', b'_tcp', b'local') + b'\0'          # at offset 12
+        msg = b'\0\0\x84\0\0\0\0\x01\0\0\0\x01'
+        inst = lab(b'den') + b'\xc0\x0c'                               # den._esphomelib._tcp.local
+        msg += svc + b'\0\x0c\0\x01\0\0\x11\x94' + len(inst).to_bytes(2, 'big') + inst
+        host = lab(b'den') + b'\xc0' + bytes([12 + 1 + 11 + 1 + 4])    # den.local, "local" from svc
+        return msg + host + b'\0\x01\x80\x01\0\0\0\x78\0\x04' + bytes([10, 0, 0, 7])
+
+    def test_reads_the_address(self):
+        self.assertEqual(install_dot.a_record(self.answer(), 'den.local'), '10.0.0.7')
+
+    def test_other_names_and_queries_are_not_it(self):
+        self.assertIsNone(install_dot.a_record(self.answer(), 'kitchen.local'))
+        q = bytearray(self.answer())
+        q[2] = 0  # a question, not an answer
+        self.assertIsNone(install_dot.a_record(bytes(q), 'den.local'))
+        self.assertIsNone(install_dot.a_record(b'\0\0\x84', 'den.local'))
+
+
 class RescueDetection(unittest.TestCase):
     def test_rescue_when_no_slot_and_five_tries(self):
         self.assertTrue(install_dot.in_rescue({'slot': '', 'tries': 'TECHO5-TRIES 5 unhealthy'}))

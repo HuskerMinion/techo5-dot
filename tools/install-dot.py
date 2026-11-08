@@ -225,12 +225,115 @@ def node_slug(name):
 
 def find_on_network(host):
     """The unit's IPv4 address from its own mDNS name (host.local), the way Home Assistant finds it, or None.
-    Windows 10 and later, macOS, and Linux with nss-mdns all resolve .local names."""
+
+    Asked and listened for here rather than through the system's resolver: Windows drops an mDNS answer
+    from another subnet, which is what a unit on its own network behind an mDNS reflector sends."""
+    return mdns_lookup(host + '.local') or system_lookup(host + '.local')
+
+
+def system_lookup(name):
     try:
-        for _, _, _, _, sa in socket.getaddrinfo(host + '.local', 6053, socket.AF_INET, socket.SOCK_STREAM):
+        for _, _, _, _, sa in socket.getaddrinfo(name, 6053, socket.AF_INET, socket.SOCK_STREAM):
             return sa[0]
     except OSError:
         pass
+    return None
+
+
+def mdns_lookup(name, wait=3.0):
+    """name's A record from whoever answers an mDNS question for it, or None."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, 'SO_REUSEPORT'):
+            try:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except OSError:
+                pass
+        s.bind(('', 5353))
+        # On the network card the default route uses: left to the system, Windows can send it out of a
+        # virtual adapter (WSL, Hyper-V) that no unit is on.
+        lan = lan_address()
+        s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP,
+                     socket.inet_aton('224.0.0.251') + socket.inet_aton(lan or '0.0.0.0'))
+        if lan:
+            s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(lan))
+        s.settimeout(0.3)
+    except OSError:
+        return None
+    want = name.lower().rstrip('.')
+
+    def question(n, typ):
+        return b''.join(bytes([len(p)]) + p.encode('ascii') for p in n.split('.')) + b'\0' + typ + b'\0\x01'
+    # The name's A record, and the ESPHome service's PTR: the daemon's mDNS answers only for its service,
+    # with its address among the extra records, and not a question for the name alone.
+    query = b'\0\0\0\0\0\x02\0\0\0\0\0\0' + question(want, b'\0\x01') + question('_esphomelib._tcp.local', b'\0\x0c')
+    try:
+        end, asked = time.time() + wait, 0
+        while time.time() < end:
+            if time.time() >= asked + 1:
+                s.sendto(query, ('224.0.0.251', 5353))
+                asked = time.time()
+            try:
+                data, _ = s.recvfrom(9000)
+            except socket.timeout:
+                continue
+            except OSError:
+                continue
+            ip = a_record(data, want)
+            if ip:
+                return ip
+    finally:
+        s.close()
+    return None
+
+
+def lan_address():
+    """This computer's IPv4 address on the default route, or None. A UDP connect sends nothing."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as u:
+            u.connect(('192.0.2.1', 9))  # TEST-NET-1: only the route is looked up
+            return u.getsockname()[0]
+    except OSError:
+        return None
+
+
+def a_record(msg, want):
+    """The IPv4 address an mDNS message gives for name want, among its answers and extra records, or None."""
+    def name_at(i, depth=0):
+        labels = []
+        while i < len(msg) and depth < 20:
+            n = msg[i]
+            if n == 0:
+                return '.'.join(labels), i + 1
+            if n & 0xC0 == 0xC0:
+                if i + 1 >= len(msg):
+                    break
+                rest, _ = name_at(((n & 0x3F) << 8) | msg[i + 1], depth + 1)
+                return '.'.join(labels + ([rest] if rest else [])), i + 2
+            labels.append(msg[i + 1:i + 1 + n].decode('ascii', 'replace'))
+            i += 1 + n
+        return None, len(msg)
+    try:
+        if len(msg) < 12 or not msg[2] & 0x80:  # a response
+            return None
+        qd, an, ns, ar = (int.from_bytes(msg[k:k + 2], 'big') for k in (4, 6, 8, 10))
+        i = 12
+        for _ in range(qd):
+            _, i = name_at(i)
+            i += 4
+        for _ in range(an + ns + ar):
+            nm, i = name_at(i)
+            if nm is None or i + 10 > len(msg):
+                return None
+            typ = int.from_bytes(msg[i:i + 2], 'big')
+            ln = int.from_bytes(msg[i + 8:i + 10], 'big')
+            i += 10
+            if typ == 1 and ln == 4 and nm.lower().rstrip('.') == want:
+                return socket.inet_ntoa(msg[i:i + 4])
+            i += ln
+    except (IndexError, ValueError):
+        return None
     return None
 
 

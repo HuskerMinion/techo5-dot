@@ -11,6 +11,19 @@ install_dot = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(install_dot)
 
 
+class NodeSlug(unittest.TestCase):
+    """The installer looks a unit up by the mDNS name the daemon makes of its name (layout.Slug)."""
+
+    def test_like_the_daemon(self):
+        self.assertEqual(install_dot.node_slug('Living Room'), 'living-room')
+        self.assertEqual(install_dot.node_slug('  Extra Dot 2 '), 'extra-dot-2')
+        self.assertEqual(install_dot.node_slug("Kid's  Room!"), 'kid-s-room')
+        self.assertEqual(install_dot.node_slug('--Den--'), 'den')
+        self.assertEqual(install_dot.node_slug('Küche'), 'k-che')
+        self.assertEqual(install_dot.node_slug('Ελλάδα'), '')
+        self.assertEqual(len(install_dot.node_slug('a' * 80)), 63)
+
+
 class RescueDetection(unittest.TestCase):
     def test_rescue_when_no_slot_and_five_tries(self):
         self.assertTrue(install_dot.in_rescue({'slot': '', 'tries': 'TECHO5-TRIES 5 unhealthy'}))

@@ -209,6 +209,31 @@ def api_port_open(address):
         return False
 
 
+def node_slug(name):
+    """The unit's mDNS host name for a display name, as the daemon makes it (layout.NodeName in techo5):
+    "Living Room" is living-room."""
+    out, dash = [], False
+    for ch in name.strip().lower():
+        if 'a' <= ch <= 'z' or '0' <= ch <= '9':
+            out.append(ch)
+            dash = False
+        elif out and not dash:
+            out.append('-')
+            dash = True
+    return ''.join(out).rstrip('-')[:63].rstrip('-')
+
+
+def find_on_network(host):
+    """The unit's IPv4 address from its own mDNS name (host.local), the way Home Assistant finds it, or None.
+    Windows 10 and later, macOS, and Linux with nss-mdns all resolve .local names."""
+    try:
+        for _, _, _, _, sa in socket.getaddrinfo(host + '.local', 6053, socket.AF_INET, socket.SOCK_STREAM):
+            return sa[0]
+    except OSError:
+        pass
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--serial', help="the unit's adb serial (adb devices); found, or asked for, when missing")
@@ -621,8 +646,10 @@ def main():
     healthy, rescue, said, told = False, False, '', ''
     start = time.time()
     deadline, ticked = start + 8 * 60, start
+    seen = False  # whether the console answered at all
     while time.time() < deadline:
         out = console.run(query, 8)
+        seen = seen or bool(out)
         if not out and time.time() - start >= 30:
             # Nothing from the console yet: say so now and then, and why, so the wait never reads as a hang.
             if time.time() - ticked >= 30:
@@ -658,6 +685,18 @@ def main():
         print('  adb push tools/linux/readmisc.sh /data/local/tmp/')
         print('  adb shell sh /data/local/tmp/readmisc.sh')
         sys.exit(1)
+    # No address from Fire OS or the console (a PC that never sees the console, a unit that had no Wi-Fi
+    # address in Fire OS): look for it by its own name, as Home Assistant would.
+    if not ip and shown and node_slug(shown[0]):
+        host = node_slug(shown[0])
+        note('looking for %s.local on the network' % host)
+        deadline = time.time() + 90
+        while time.time() < deadline:
+            ip = find_on_network(host)
+            if ip:
+                note('found at %s' % ip)
+                break
+            time.sleep(5)
     up = False
     if ip:
         deadline = time.time() + 60
@@ -676,6 +715,22 @@ def main():
         print('      SSH: switch it on in Home Assistant, then ssh root@%s (wifi-set, slotctl status, to-twrp)' % ip)
     elif up:
         print('%s answers at %s:6053, but the boot was not confirmed healthy (no console, or not within the wait).' % (a.serial, ip))
+    elif healthy and not ip:
+        print("Done: %s is running TECHO5 Linux and healthy; it isn't on Wi-Fi yet%s." % (
+            a.serial, ', which is right for a gift: its owner gives it a network' if a.for_someone_else else
+            ': hold its mute button for five seconds to give it a network over Bluetooth (Improv)'))
+    elif not seen:
+        # Nothing to go on is not a failure: the console never showed up on this PC, and the unit could not
+        # be found on the network either.
+        print("Rebooted. This PC never saw the unit's USB console%s, so the boot couldn't be checked from here." % (
+            '' if a.for_someone_else else ' and could not find it on the network'))
+        if a.for_someone_else:
+            print("That's expected for a gift with no Wi-Fi. When its owner powers it on, it starts its own setup.")
+        else:
+            print('That alone is not a failure. Give it a few minutes and look for it in Home Assistant (Settings,')
+            print('Devices & services, discovered). If it never shows up, the USB console or readmisc.sh shows why:')
+            print('  adb push tools/linux/readmisc.sh /data/local/tmp/')
+            print('  adb shell sh /data/local/tmp/readmisc.sh')
     else:
         print('Rebooted, but the unit was not confirmed up%s.' % (' (%s:6053 did not answer)' % ip if ip else ''))
         print('After five boots that never become healthy it stays in rescue (techo5-retry tries again). The USB console')

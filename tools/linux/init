@@ -62,6 +62,17 @@ crumb() {
 	printf 'TECHO5-DOT %02d %s\n' "$CRUMB" "$*" | $BB dd of=$MISC bs=512 seek=$((16 + CRUMB)) count=1 conv=notrunc,sync 2>/dev/null
 }
 
+# --- The bootloader message that brings the next boot here (see "Linux is the boot" below), first
+# thing: a power cut in the moments before it is written back would leave it empty, and the next
+# power-on would boot Fire OS (#37). Written only when it isn't there already, so a power cut can't
+# catch a write to it on an ordinary boot; the breadcrumb says which it was.
+msg=$($BB dd if=$MISC bs=32 count=1 2>/dev/null | $BB tr -cd 'a-z-')
+if [ "$msg" != boot-recovery ]; then
+	printf 'boot-recovery' | $BB dd of=$MISC bs=32 count=1 conv=notrunc,sync 2>/dev/null
+	$BB sync
+fi
+
+crumb "bootloader message at boot: ${msg:-empty}"
 crumb "init started: $($BB uname -r) $($BB uname -m), $($BB grep MemTotal /proc/meminfo)"
 crumb "cmdline: $($BB head -c 200 /proc/cmdline)"
 crumb "dev populated: $($BB ls /dev | $BB wc -l) nodes"
@@ -128,7 +139,6 @@ echo "boot count cleared; rebooting to try the slots again"
 EOF
 chmod 755 /sbin/techo5-retry
 printf 'TECHO5-TRIES %d\n' $tries | $BB dd of=$MISC bs=512 seek=$TRIES_BLOCK count=1 conv=notrunc,sync 2>/dev/null
-printf 'boot-recovery' | $BB dd of=$MISC bs=32 count=1 conv=notrunc,sync 2>/dev/null
 $BB sync
 crumb "boot try $tries of $TRIES_MAX; the next boot is Linux too"
 

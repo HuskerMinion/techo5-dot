@@ -193,7 +193,8 @@ As built, differing from the original plan:
   conversation itself. The unit's Wi-Fi firmware is copied into the store (`firmware/`) on the
   first boot and shared by both slots, so Android's system partition is not mounted after that.
   Never call `EXT_CHIP_DETECT`, which panics this kernel.
-- **Default boot:** each boot, the initramfs asks for `boot-recovery` again in MISC and counts
+- **Default boot:** first thing each boot, the initramfs puts `boot-recovery` back in MISC if it is gone (a breadcrumb says
+  what it found), and counts
   tries in MISC block 14. boot.sh resets the count once echod has stayed up. After five unhealthy
   boots the unit boots no slot at all and stays in the rescue initramfs, on the network with SSH and
   the USB console; `techo5-retry` clears the count and `/sbin/to-android` boots Fire OS, but only

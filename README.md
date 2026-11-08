@@ -175,7 +175,7 @@ Add `--for-someone-else` to install a Dot that is going to another person:
 python3 tools/install-dot.py --for-someone-else
 ```
 
-It asks for no Wi-Fi network, name or key, and writes none. It also clears any name, key and saved network an earlier install left, so the new owner starts fresh. The Dot starts its own setup the next time it is powered on: 45 seconds after it starts, its ring pulses teal and it offers Improv over Bluetooth. The new owner presses any of its buttons, gives it their Wi-Fi from Home Assistant or [improv-wifi.com](https://www.improv-wifi.com), and their Home Assistant can then add it with nothing typed. Its first start also clears anything an earlier owner left. Everything else (backups, image, first boot) is the same. It cannot be used with `--name`, `--wifi`, `--wifi-passphrase-file`, `--key-file` or `--ssh-key`, and not on an Echo Dot 3rd gen yet, where Improv hasn't been tried.
+It asks for no Wi-Fi network, name or key, and writes none. It also clears any name, key and saved network an earlier install left, so the new owner starts fresh. The Dot starts its own setup the next time it is powered on: 45 seconds after it starts, its ring pulses teal and it offers Improv over Bluetooth. The new owner presses any of its buttons, gives it their Wi-Fi from Home Assistant or [improv-wifi.com](https://www.improv-wifi.com), and their Home Assistant can then add it with nothing typed. Its first start also clears anything an earlier owner left. Everything else (backups, image, first boot) is the same. It cannot be used with `--name`, `--wifi`, `--wifi-passphrase-file`, `--key-file` or `--ssh-key`.
 
 The installer:
 1. Backs up every boot-critical partition to `backups/<serial>/` and checks each copy against the

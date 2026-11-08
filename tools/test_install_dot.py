@@ -40,11 +40,12 @@ class GiftInstall(unittest.TestCase):
             sys.argv = old
         return None
 
-    def test_refused_until_improv(self):
-        # A Dot with no network could not be given one without a PC until Improv (TECHO5 #355) is in.
-        for extra in ([], ['--name', 'Kitchen']):
+    def test_cannot_be_combined_with_name_wifi_or_key(self):
+        for extra in (['--name', 'Kitchen'], ['--wifi', 'Net'], ['--wifi-passphrase-file', 'p.txt'],
+                      ['--key-file', 'k.key'], ['--ssh-key', 'k.pub']):
             err = self.run_main('--for-someone-else', *extra)
-            self.assertIn('not available on a Dot yet', err or '', extra)
+            self.assertIn('--for-someone-else', err or '', extra)
+            self.assertIn(extra[0], err, extra)
 
     def test_marker_is_in_the_state_directory(self):
         # echod's layout.StateDir on the Dot (echod/internal/layout/device_dot.go)

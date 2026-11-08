@@ -264,6 +264,10 @@ def main():
     if not board:
         fail('%s is not an Echo Dot 2nd gen (biscuit), an Echo 2nd gen (radar) or an Echo Dot 3rd gen (donut)' % a.serial)
     donut = board == 'donut'
+    if donut and a.for_someone_else:
+        fail('--for-someone-else is not available on an Echo Dot 3rd gen yet: Improv (Wi-Fi over Bluetooth) has not\n'
+             '   been tried on it, so it might not be given a network afterward. Install it with a network and give it\n'
+             '   away as it is.')
     if donut and (a.kernel or a.no_bluetooth_kernel):
         fail('the Echo Dot 3 always runs its own kernel (Bluetooth comes as modules in its root filesystem); '
              'leave out --kernel and --no-bluetooth-kernel')

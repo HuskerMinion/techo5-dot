@@ -244,6 +244,9 @@ def mdns_lookup(name, wait=3.0):
     """name's A record from whoever answers an mDNS question for it, or None."""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    except OSError:
+        return None
+    try:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         if hasattr(socket, 'SO_REUSEPORT'):
             try:
@@ -260,6 +263,7 @@ def mdns_lookup(name, wait=3.0):
             s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(lan))
         s.settimeout(0.3)
     except OSError:
+        s.close()
         return None
     want = name.lower().rstrip('.')
 
@@ -272,7 +276,10 @@ def mdns_lookup(name, wait=3.0):
         end, asked = time.time() + wait, 0
         while time.time() < end:
             if time.time() >= asked + 1:
-                s.sendto(query, ('224.0.0.251', 5353))
+                try:
+                    s.sendto(query, ('224.0.0.251', 5353))
+                except OSError:
+                    return None  # no way out for multicast (offline, or only a virtual adapter)
                 asked = time.time()
             try:
                 data, _ = s.recvfrom(9000)
@@ -329,10 +336,12 @@ def a_record(msg, want):
             typ = int.from_bytes(msg[i:i + 2], 'big')
             ln = int.from_bytes(msg[i + 8:i + 10], 'big')
             i += 10
+            if i + ln > len(msg):
+                return None
             if typ == 1 and ln == 4 and nm.lower().rstrip('.') == want:
                 return socket.inet_ntoa(msg[i:i + 4])
             i += ln
-    except (IndexError, ValueError):
+    except (IndexError, ValueError, OSError):
         return None
     return None
 

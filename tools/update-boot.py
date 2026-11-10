@@ -26,8 +26,8 @@ own TWRP: hold Volume-Down while powering on for fastboot, `fastboot flash recov
 backups/<serial>/recovery.img`, let it boot TWRP, and `adb shell sh /cache/techo5/back-to-linux.sh` puts
 back the last image that booted healthy.
 
-On the Echo Dot 3rd gen the image is built on the unit's own stock kernel, from the backup of the boot slot
-Fire OS runs in (backups/<serial>/boot_a.img or boot_b.img), and its TWRP backup is swdl.img.
+On the Echo Dot 3rd gen and the Echo Input the image is built on the unit's own stock kernel, from the backup
+of the boot slot Fire OS runs in (backups/<serial>/boot_a.img or boot_b.img), and its TWRP backup is swdl.img.
 """
 import argparse
 import os
@@ -38,7 +38,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from techo5lib import default_dir, fail, md5, need, note, run_main, step  # noqa: E402
-from dotimage import BOARD_TYPE_IDS, KERNEL_61_VERSIONS, DotRelease, build_boot_image, kernel_board, kernel_is_61  # noqa: E402
+from dotimage import (BOARD_NAMES, BOARD_TYPE_IDS, KERNEL_61_VERSIONS, DotRelease, build_boot_image,  # noqa: E402
+                      donut_platform, kernel_board, kernel_is_61)
 
 
 def main():
@@ -82,11 +83,12 @@ def main():
         fail('could not read the board over SSH from %s (%s); nothing was flashed' % (a.address, out or 'no output'))
     board = BOARD_TYPE_IDS.get(m.group(1))
     if not board:
-        fail("%s reports device type id '%s', not an Echo Dot 2nd gen (biscuit), an Echo 2nd gen (radar) or an "
-             "Echo Dot 3rd gen (donut); nothing was flashed" % (a.address, m.group(1)))
-    donut = board == 'donut'
+        fail("%s reports device type id '%s', not an Echo Dot 2nd gen (biscuit), an Echo 2nd gen (radar), an "
+             "Echo Dot 3rd gen (donut) or an Echo Input (cupcake); nothing was flashed" % (a.address, m.group(1)))
+    # The Echo Input (cupcake) is the Dot 3's board, and takes the Dot 3's image (dotimage.DONUT_BOARDS).
+    donut = donut_platform(board)
     if donut and (a.kernel or a.no_bluetooth_kernel):
-        fail('the Echo Dot 3 always runs its own kernel; leave out --kernel and --no-bluetooth-kernel')
+        fail('the %s always runs its own kernel; leave out --kernel and --no-bluetooth-kernel' % BOARD_NAMES[board])
     if (a.linux_61 or a.linux_318) and board not in KERNEL_61_VERSIONS:
         fail('--linux-61 and --linux-318 are for the Echo 2nd gen (radar); this is %s' % board)
     if (a.linux_61 or a.linux_318) and (a.kernel or a.no_bluetooth_kernel):

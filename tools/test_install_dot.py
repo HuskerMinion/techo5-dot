@@ -9,6 +9,7 @@ sys.path.insert(0, HERE)
 spec = importlib.util.spec_from_file_location('install_dot', os.path.join(HERE, 'install-dot.py'))
 install_dot = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(install_dot)
+import dotimage  # noqa: E402
 
 
 class NodeSlug(unittest.TestCase):
@@ -102,6 +103,41 @@ class GiftInstall(unittest.TestCase):
         self.assertNotIn('network', install_dot.EMPTY_WIFI_CONF)
         self.assertIn('ctrl_interface', install_dot.EMPTY_WIFI_CONF)
 
+
+
+class EchoInput(unittest.TestCase):
+    """The Echo Input (cupcake) is the Dot 3's platform: told by its build props and its idme id, given the
+    Dot 3's root filesystem, and its partitions checked against the numbers the Dot 3's boot scripts use."""
+
+    def test_named_by_its_build_props(self):
+        self.assertEqual(dotimage.board_from_product('cupcake\ncupcake'), 'cupcake')
+        self.assertEqual(dotimage.board_from_product('donut_puffin\ndonut_puffin'), 'donut')
+        self.assertEqual(dotimage.board_from_product('radar_puffin'), 'radar')
+        self.assertEqual(dotimage.board_from_product('biscuit_puffin'), 'biscuit')
+        self.assertIsNone(dotimage.board_from_product('crumpet\ncrumpet'))
+
+    def test_the_dot_3s_platform_and_release_files(self):
+        self.assertEqual(dotimage.BOARD_TYPE_IDS['A1JJ0KFC4ZPNJ3'], 'cupcake')
+        self.assertTrue(dotimage.donut_platform('cupcake'))
+        self.assertTrue(dotimage.donut_platform('donut'))
+        self.assertFalse(dotimage.donut_platform('biscuit'))
+        self.assertEqual(dotimage.ROOTFS_KEYS['cupcake'], dotimage.ROOTFS_KEYS['donut'])
+        for board in dotimage.BOARD_TYPE_IDS.values():
+            self.assertIn(board, dotimage.ROOTFS_KEYS)
+            self.assertIn(board, dotimage.BOARD_NAMES)
+
+    def test_partitions_where_the_boot_scripts_look(self):
+        good = {'misc': '/dev/block/mmcblk0p8', 'swdl': '/dev/block/mmcblk0p12', 'system_a': '/dev/block/mmcblk0p13',
+                'system_b': '/dev/block/mmcblk0p14', 'userdata': '/dev/mmcblk0p16'}
+        self.assertEqual(dotimage.donut_partition_mismatches(good), [])
+        moved = dict(good, misc='/dev/block/mmcblk0p9')
+        self.assertEqual(dotimage.donut_partition_mismatches(moved), ['misc is /dev/block/mmcblk0p9, not mmcblk0p8'])
+        # mmcblk0p1 must not pass for mmcblk0p16, nor a missing link for anything.
+        short = dict(good, userdata='/dev/block/mmcblk0p1')
+        self.assertEqual(len(dotimage.donut_partition_mismatches(short)), 1)
+        missing = dict(good)
+        del missing['swdl']
+        self.assertEqual(dotimage.donut_partition_mismatches(missing), ['swdl is missing, not mmcblk0p12'])
 
 if __name__ == '__main__':
     unittest.main()

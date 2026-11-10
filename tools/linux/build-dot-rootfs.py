@@ -12,6 +12,7 @@ when it is there, and bin/techo5-shairport-sync and bin/techo5-nqptp (AirPlay 2)
 --board donut builds the Echo Dot 3rd gen's instead: echod built with -tags dot,donut, the Dot 3's boot
 scripts (rootfs-donut, over the Dot 2's), our wpa_supplicant (build-wpa-supplicant.sh) in place of
 Alpine's, and the Bluetooth stack its stock kernel lacks as modules (build-bt-modules.sh); no wmtup.
+The Echo Input (cupcake) is the Dot 3's board and runs this same root filesystem.
 Windows, Linux and macOS alike; needs Python 3.
 """
 import argparse
@@ -31,7 +32,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--daemon', required=True, help='echod built with -tags dot (-tags dot,donut for the Dot 3)')
     ap.add_argument('--board', choices=('dot', 'donut'), default='dot',
-                    help='dot: the Echo Dot 2nd gen (biscuit, radar); donut: the Echo Dot 3rd gen')
+                    help='dot: the Echo Dot 2nd gen (biscuit, radar); donut: the Echo Dot 3rd gen and the Echo Input')
     ap.add_argument('--wpa-supplicant', default=j(REPO, 'build', 'wpa_supplicant', 'wpa_supplicant'),
                     help="with --board donut: build-wpa-supplicant.sh's")
     ap.add_argument('--bt-modules', default=j(REPO, 'build', 'bt-modules'),

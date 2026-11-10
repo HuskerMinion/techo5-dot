@@ -15,7 +15,8 @@
     techo5-dot-kernel-61-radar.zImage-dtb  the Echo 2nd gen's Linux 6.1 kernel, LibreEcho's with our
                                       config (tools/linux/build-kernel-61.sh; GPL-2.0), taken only when
                                       asked for (install-dot.py / update-boot.py --linux-61)
-    echod-arm-donut                   the Echo Dot 3rd gen's daemon (-tags dot,donut)
+    echod-arm-donut                   the Echo Dot 3rd gen's daemon (-tags dot,donut), which the Echo
+                                      Input (cupcake) runs too
     techo5-donut-rootfs-<version>.tar.gz  its root filesystem (build-dot-rootfs.py --board donut), with
                                       the Bluetooth stack its stock kernel lacks as modules (GPL-2.0)
     techo5-donut-bt-modules-source.tar.xz  the complete source of those modules (build-bt-modules.sh)

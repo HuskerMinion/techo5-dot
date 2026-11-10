@@ -26,6 +26,7 @@
   <a href="#installing">Install</a> ·
   <a href="#echo-2nd-gen">Echo 2nd gen</a> ·
   <a href="#echo-dot-3rd-gen">Echo Dot 3rd gen</a> ·
+  <a href="#echo-input">Echo Input</a> ·
   <a href="#credits">Credits</a> ·
   <a href="https://github.com/HuskerMinion/techo5">TECHO5 for the Echo Show 5</a>
 </p>
@@ -34,7 +35,8 @@
 
 TECHO5 Dot replaces Fire OS on the Amazon Echo Dot 2nd generation (codename `biscuit`), the Echo
 2nd generation (2017, codename `radar`) and the Echo Dot 3rd generation (2018, codename `donut`) with a
-small Alpine Linux image and one daemon. The Dot becomes a Home Assistant voice satellite: it hears the
+small Alpine Linux image and one daemon. The Echo Input (2018, codename `cupcake`) is supported
+experimentally, on the Echo Dot 3rd gen's image. The Dot becomes a Home Assistant voice satellite: it hears the
 wake word on the device, talks to Home Assistant over its encrypted native API, and sends nothing to
 Amazon. It still uses the internet for what you'd expect: checking this repo for signed updates and
 setting its clock.
@@ -63,7 +65,8 @@ Echo Show 5. Both run the same daemon source, built per device.
 > **Status: in daily use on three units.** Everything marked ✅ below was verified on a bench Dot
 > that came from Fire OS 6574.1, and the installer and updates on two more. Expect rough edges, and
 > keep your backups. The Echo 2nd gen and the Echo Dot 3rd gen are supported too, each tested on
-> one unit so far; see [Echo 2nd gen](#echo-2nd-gen) and [Echo Dot 3rd gen](#echo-dot-3rd-gen).
+> one unit so far; see [Echo 2nd gen](#echo-2nd-gen) and [Echo Dot 3rd gen](#echo-dot-3rd-gen). The
+> Echo Input is **experimental and not yet tried on a unit**; see [Echo Input](#echo-input).
 
 ## What happened to the Dot
 
@@ -308,6 +311,50 @@ It backs up every boot partition, including `swdl` with TWRP in it, builds the i
 kernel, and puts the root filesystem on userdata. On Windows the TECHO5 console shows up as a USB serial
 device (`1d6b:0104`).
 
+### Echo Input
+
+The Echo Input (2018, model C1125P, `cupcake`) is the Echo Dot 3rd gen's board without a speaker: the
+same MediaTek MT8516, kernel, partitions, four microphones and MT7668 Wi-Fi and Bluetooth, with a
+3.5 mm line out for a speaker of your own, one RGB LED in place of the ring, and only the action and
+mute buttons. So it runs the Echo Dot 3rd gen's release as it is: the same installer, root filesystem,
+daemon build and update channel. The installer and the daemon tell the two apart by the device type id
+in idme. Details are in [docs/hardware-cupcake.md](docs/hardware-cupcake.md).
+
+> **Experimental: not yet tried on a unit.** This port was worked out from the Echo Dot 3rd gen's,
+> from [echo-dot-assist](https://github.com/Gamer92000/echo-dot-assist)'s notes on the Echo Input's
+> firmware (Gamer92000, MIT), where it runs on Fire OS, and from the Echo Input's GPL kernel source that
+> the Dot 3's Bluetooth modules are already built from. Keep the installer's backups, and please open an
+> issue with what worked and what didn't.
+
+What differs from the Dot 3, in short:
+- **Sound comes from the line out** (or a Bluetooth speaker). There's no speaker, so there's no Audio
+  output choice and no Speaker gain: the volume is the line out's.
+- **One LED.** It shows the ring's states in one color (each color channel at its brightest
+  segment), so what spins or chases on a ring holds still here.
+- **No volume keys.** Use Home Assistant, the setup page or the phone's volume over Bluetooth. The
+  volume up and down events aren't offered in Home Assistant, and the hold-two-buttons factory reset
+  isn't there either.
+- **Power and USB share the micro-USB socket.** No opening the case, no soldering. Until the install
+  is done the computer's port powers it; if it restarts or drops off USB, put a powered USB hub in
+  between.
+
+**Unlock** with the kamakiri-cupcake kit, **by hand, as
+[its XDA thread](https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-input-2018-cupcake.4797603/)
+says**, and stop once TWRP is running in `swdl` with stock Fire OS in both system slots. Don't let the
+Echo Input go online with the Alexa app on the way: it would update itself.
+
+**Install** from TWRP (or from Fire OS with root adb):
+
+```
+python3 tools/install-dot.py --dry-run
+python3 tools/install-dot.py
+```
+
+As on the Dot 3 it backs up every boot partition (`swdl` with TWRP in it too), builds the image on the
+unit's own kernel and puts the root filesystem on userdata. Before it writes anything it checks that
+`misc`, `swdl`, the system slots and userdata are where the Dot 3's boot scripts look for them, and
+stops if they aren't. The console shows up as "Echo Input Linux" (`1d6b:0104`).
+
 ## Where things are
 
 - [docs/porting-plan.md](docs/porting-plan.md): how it was built, milestone by milestone, and what
@@ -318,6 +365,8 @@ device (`1d6b:0104`).
   unlock and USB.
 - [docs/hardware-donut.md](docs/hardware-donut.md): the Echo Dot 3rd gen: its board, partitions,
   boot image, Wi-Fi, audio and Bluetooth modules.
+- [docs/hardware-cupcake.md](docs/hardware-cupcake.md): the Echo Input: what it shares with the Echo
+  Dot 3rd gen, what differs, and what is still to be checked on a unit.
 - [docs/microphones.md](docs/microphones.md): the array measurements, echo cancellation, and the
   LED whine that turned out to be Fire OS's.
 - `tools/`: the installer, the Wi-Fi tool, the boot image updater, and `tools/linux/` (initramfs,
@@ -326,7 +375,7 @@ device (`1d6b:0104`).
 - [docs/building.md](docs/building.md): building the kernel, bluez-alsa, the daemon and the root
   filesystem yourself.
 - The daemon's source: [TECHO5](https://github.com/HuskerMinion/techo5), branch `main`, built with
-  `-tags dot` (`-tags dot,donut` for the Echo Dot 3rd gen).
+  `-tags dot` (`-tags dot,donut` for the Echo Dot 3rd gen and the Echo Input).
 
 ## Credits
 
@@ -348,6 +397,12 @@ See [NOTICE](NOTICE) for the full list.
 - amonet and kaeru ([R0rt1z2](https://github.com/R0rt1z2)): the unlock. The Echo Dot 3rd gen's
   kamakiri-donut kit and its
   [XDA thread](https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-dot-3rd-gen-2018-donut.4801400/).
+- [echo-dot-assist](https://github.com/Gamer92000/echo-dot-assist) (MIT, Gamer92000): the Echo
+  Input's firmware worked out (its microphones, LED, buttons, line out and Wi-Fi driver), which the
+  Echo Input port here is built on, and the Dot 3's speaker findings before it. The Echo Input's
+  kamakiri-cupcake kit and its
+  [XDA thread](https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-input-2018-cupcake.4797603/)
+  are [R0rt1z2](https://github.com/R0rt1z2)'s.
 - [Pallav Aggarwal's teardown](https://pallavaggarwal.in/2023/01/10/teardown-amazon-echo-dot-3rd-gen/)
   of the Echo Dot 3rd gen.
 - [@proffalken](https://github.com/proffalken): the

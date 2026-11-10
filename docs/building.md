@@ -121,7 +121,8 @@ python3 tools/linux/build-dot-rootfs.py --daemon bin/echod-dot --release v0.0.0-
 
 For the Echo Dot 3rd gen, build the daemon with `-tags dot,donut` and add `--board donut`; it takes
 the modules and wpa_supplicant from `build/` and adds
-[tools/linux/rootfs-donut](../tools/linux/rootfs-donut) over the Dot 2's files.
+[tools/linux/rootfs-donut](../tools/linux/rootfs-donut) over the Dot 2's files. The Echo Input runs
+that same build and root filesystem.
 
 [mkrootfs.py](../tools/linux/mkrootfs.py) unpacks the Alpine base and the packages, adds the binaries
 and [tools/linux/rootfs](../tools/linux/rootfs), and writes the tarball with root ownership. It needs no

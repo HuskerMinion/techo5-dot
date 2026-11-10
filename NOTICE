@@ -42,7 +42,14 @@ proffalken (@proffalken), https://github.com/proffalken
   tools/install-dot.py and TECHO5's docs/getting-started.md are based on.
 
 amonet, kaeru and the biscuit TWRP tree, https://github.com/R0rt1z2
-  The unlock and bootloader payload this project depends on (not redistributed).
+  The unlock and bootloader payload this project depends on (not redistributed). The Echo Dot 3rd
+  gen's and the Echo Input's kamakiri kits (kamakiri-donut, kamakiri-cupcake) likewise.
+
+echo-dot-assist, https://github.com/Gamer92000/echo-dot-assist
+  Copyright (c) 2026 Julian Imhof (Gamer92000), MIT License.
+  Findings on the Echo Dot 3rd gen's speaker path and on the Echo Input's (cupcake) firmware: its
+  microphones, LED, buttons, mute latch, line out and Wi-Fi driver, cited in docs/hardware-donut.md
+  and docs/hardware-cupcake.md. No code is taken from it.
 
 lineageos-echo-show-camera, https://github.com/jxlarrea/lineageos-echo-show-camera
   Echo cancellation and microphone array measurements on the Echo Show family, cited in docs/.

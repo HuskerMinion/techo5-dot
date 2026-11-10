@@ -5,6 +5,9 @@ chip, four microphones instead of seven, and a 64-bit kernel. TECHO5 runs on it 
 tooling, slot scheme and installer as the Dot 2, and its own build of the daemon (`-tags dot,donut`).
 Everything here was read off one unit on Fire OS 6574.1.
 
+The Echo Input (`cupcake`) is this board without a speaker, and runs the same image:
+[hardware-cupcake.md](hardware-cupcake.md) says what differs.
+
 ## Identity
 
 | Item | Value |

@@ -26,7 +26,7 @@ def main():
     a = ap.parse_args()
     if not a.forget and not a.ssid:
         fail('give --ssid, or --forget')
-    # The Dot 2 boards' console is 18d1:4ee7, the Dot 3's (donut) 1d6b:0104.
+    # The Dot 2 boards' console is 18d1:4ee7, the Dot 3's (donut) and the Echo Input's (cupcake) 1d6b:0104.
     console = Console(a.serial, CONSOLE_DOT)
     if not console.find():
         console = Console(a.serial, CONSOLE_TECHO5)

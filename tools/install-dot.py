@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Take an unlocked Echo Dot 2 (biscuit), Echo 2nd gen (radar) or Echo Dot 3rd gen (donut) from Fire OS or
-TWRP to the TECHO5 Linux image, in one run.
+"""Take an unlocked Echo Dot 2 (biscuit), Echo 2nd gen (radar), Echo Dot 3rd gen (donut) or Echo Input
+(cupcake) from Fire OS or TWRP to the TECHO5 Linux image, in one run.
 
     python3 tools/install-dot.py
     python3 tools/install-dot.py --serial <serial> --dry-run
@@ -19,7 +19,7 @@ Windows, Linux and macOS alike; needs Python 3 and adb. Nothing is built: the si
 filesystem, Bluetooth kernel, rescue packages) is downloaded and checked, and this unit's boot image is
 built from it and the unit's own recovery backup. What it does, stopping at the first thing not right:
 
-  1. checks the device: biscuit, radar or donut, Fire OS 6, adb as root, a saved Wi-Fi network (or asks)
+  1. checks the device: biscuit, radar, donut or cupcake, Fire OS 6, adb as root, a saved Wi-Fi network (or asks)
   2. backs up every partition that boots the unit into backups/<serial>/, each checked by md5
   3. gets the release and builds this unit's boot image
   4. keeps the unit's Home Assistant identity if it has one (EchoLocal's name and key), or makes one
@@ -30,10 +30,11 @@ built from it and the unit's own recovery backup. What it does, stopping at the 
 The Echo Dot 3rd gen differs in three places: it has no recovery partition, so the image goes where
 kaeru boots recovery from (swdl, which held TWRP); the image carries the unit's own stock kernel, from
 the boot slot Fire OS runs in, since TWRP's kernel is another build; and the store is on userdata, the
-cache partition being 32 MB.
+cache partition being 32 MB. The Echo Input (cupcake) is the Dot 3's board without a speaker, and installs
+exactly as the Dot 3 does, with the same release files.
 
-Prerequisites on the Dot: unlocked (amonet on the Dot 2 boards, kamakiri on the Dot 3), Fire OS 6574.1
-in its system slots, and either in TWRP or in Fire OS with adb as root. Step by step from a stock Dot:
+Prerequisites on the Dot: unlocked (amonet on the Dot 2 boards, kamakiri on the Dot 3 and the Echo Input),
+Fire OS 6574.1 in its system slots (6.5.7.5 on the Echo Input), and either in TWRP or in Fire OS with adb as root. Step by step from a stock Dot:
 https://github.com/HuskerMinion/techo5/blob/main/docs/getting-started.md
 """
 import argparse
@@ -53,7 +54,8 @@ from techo5lib import (CONSOLE_DOT, CONSOLE_TECHO5, Adb, Console, ask, ask_name,
                        console_hint, default_dir, download_checked, fail, head_is_android, interactive, md5,
                        need, new_api_key, note, pick_unit, repo_root, run_main, step, valid_api_key,
                        write_private)
-from dotimage import BOARD_TYPE_IDS, KERNEL_61_VERSIONS, DotRelease, build_boot_image, kernel_board, kernel_is_61  # noqa: E402
+from dotimage import (BOARD_NAMES, BOARD_TYPE_IDS, KERNEL_61_VERSIONS, DotRelease, board_from_product,  # noqa: E402
+                      build_boot_image, donut_partition_mismatches, donut_platform, kernel_board, kernel_is_61)
 
 # CABLE is what a backup that came over USB short or wrong usually means: the device reads the same
 # every time, and the copy breaks off part way, with the Dot dropping off USB (techo5#86).
@@ -97,7 +99,8 @@ def readable_name(raw, enc=None):
 
 
 PARTS = ['preloader', 'kb', 'dkb', 'lk_a', 'lk_b', 'tee1', 'tee2', 'expdb', 'misc', 'persist', 'boot_a', 'boot_b', 'recovery']
-# The Echo Dot 3 has no recovery partition: kaeru boots swdl as recovery, and TWRP is there.
+# The Echo Dot 3 and the Echo Input have no recovery partition: kaeru boots swdl as recovery, and TWRP
+# is there.
 PARTS_DONUT = PARTS[:-1] + ['swdl']
 # Where the store is: the cache partition on the Dot 2 boards, userdata on the Dot 3 (boot.sh binds either
 # at /store).
@@ -395,15 +398,16 @@ def main():
     product = adb.sh('getprop ro.product.device; getprop ro.build.product')
     # The Echo 2nd gen (radar) is a biscuit with a bigger speaker: the same SoC, partitions and boot chain,
     # but its own device trees, so its own Bluetooth kernel (dotimage.KERNEL_ASSETS). The Echo Dot 3rd gen
-    # (donut_puffin) is another SoC (MT8516) with its own daemon and boot scripts.
-    board = ('radar' if 'radar' in product else 'biscuit' if 'biscuit' in product
-             else 'donut' if 'donut' in product else None)
+    # (donut_puffin) is another SoC (MT8516) with its own daemon and boot scripts, and the Echo Input
+    # (cupcake) is that board without a speaker: it installs as the Dot 3 does (dotimage.DONUT_BOARDS).
+    board = board_from_product(product)
     if not board:
-        fail('%s is not an Echo Dot 2nd gen (biscuit), an Echo 2nd gen (radar) or an Echo Dot 3rd gen (donut)' % a.serial)
-    donut = board == 'donut'
+        fail('%s is not an Echo Dot 2nd gen (biscuit), an Echo 2nd gen (radar), an Echo Dot 3rd gen (donut) '
+             'or an Echo Input (cupcake)' % a.serial)
+    donut = donut_platform(board)
     if donut and (a.kernel or a.no_bluetooth_kernel):
-        fail('the Echo Dot 3 always runs its own kernel (Bluetooth comes as modules in its root filesystem); '
-             'leave out --kernel and --no-bluetooth-kernel')
+        fail('the %s always runs its own kernel (Bluetooth comes as modules in its root filesystem); '
+             'leave out --kernel and --no-bluetooth-kernel' % BOARD_NAMES[board])
     if a.linux_61 and board not in KERNEL_61_VERSIONS:
         fail('--linux-61 is for the Echo 2nd gen (radar); %s is %s' % (a.serial, board))
     if a.linux_61 and (a.kernel or a.no_bluetooth_kernel):
@@ -430,6 +434,17 @@ def main():
                     'do [ -e $d/%s ] && { echo $d; break; }; done' % target)
         if not bn:
             fail('no by-name partition links on %s' % a.serial)
+    if donut:
+        # The Dot 3's initramfs and boot script find misc, swdl, the system slots and userdata by number
+        # (dotimage.DONUT_PARTITIONS). Checked on every unit of that platform before anything is written:
+        # on one laid out otherwise, the boot would write its bootloader message into another partition.
+        links = {}
+        for p in ('misc', 'swdl', 'system_a', 'system_b', 'userdata'):
+            links[p] = adb.sh('readlink -f %s/%s 2>/dev/null' % (bn, p))
+        bad = donut_partition_mismatches(links)
+        if bad:
+            fail('%s (%s) has its partitions where the Linux image does not look for them: %s. Nothing was '
+                 'written; please open an issue with this line.' % (a.serial, BOARD_NAMES[board], '; '.join(bad)))
     if twrp:
         # TWRP runs from RAM, so writing the recovery partition under it is safe. userdata and cache are
         # mounted here if TWRP has not already, and the Fire OS release is read off the slot's system.
@@ -602,7 +617,7 @@ def main():
                 note("the name was not saved as UTF-8; it is written again as '%s'" % name)
     else:
         note('%s has no Home Assistant identity yet' % a.serial)
-        name = ask_name(a.name, 'Echo Dot')
+        name = ask_name(a.name, 'Echo Input' if board == 'cupcake' else 'Echo Dot')
         key_file = a.key_file or os.path.join(unit, 'home-assistant.key')
         if os.path.exists(key_file):
             with open(key_file) as f:

@@ -29,10 +29,56 @@ BOARD_TYPE_IDS = {
     'A3S5BH2HU6VAYF': 'biscuit',
     'A7WXQPH584YP': 'radar',
     'A32DOYMUN6DTXA': 'donut',
+    'A1JJ0KFC4ZPNJ3': 'cupcake',
 }
+# What each board is called in what the tools say.
+BOARD_NAMES = {
+    'biscuit': 'Echo Dot 2nd gen (biscuit)',
+    'radar': 'Echo 2nd gen (radar)',
+    'donut': 'Echo Dot 3rd gen (donut)',
+    'cupcake': 'Echo Input (cupcake)',
+}
+# The Echo Dot 3rd gen's platform (MT8516): the Dot 3 itself, and the Echo Input (cupcake), which is the
+# same board, kernel and partitions with a line out in place of the speaker and one LED in place of the
+# ring. Both run the Dot 3's daemon, root filesystem and boot scripts, on the unit's own kernel; the
+# daemon tells them apart at run time by the device type id.
+DONUT_BOARDS = ('donut', 'cupcake')
 # Each board's root filesystem key in a release's manifest: the Echo Dot 3rd gen (donut) has its own
-# daemon (echod built with -tags dot,donut) and boot scripts (tools/linux/rootfs-donut).
-ROOTFS_KEYS = {'biscuit': 'arm-dot', 'radar': 'arm-dot', 'donut': 'arm-donut'}
+# daemon (echod built with -tags dot,donut) and boot scripts (tools/linux/rootfs-donut), and the Echo
+# Input takes the same.
+ROOTFS_KEYS = {'biscuit': 'arm-dot', 'radar': 'arm-dot', 'donut': 'arm-donut', 'cupcake': 'arm-donut'}
+# The partitions the Dot 3's boot scripts (tools/linux/init-donut, rootfs-donut/etc/techo5/boot.sh,
+# update-boot.py) reach by number, since the initramfs has no by-name links. A unit whose partition
+# table puts any of them elsewhere must not get the image: it would write the bootloader message and the
+# try count into another partition.
+DONUT_PARTITIONS = {'misc': 8, 'swdl': 12, 'system_a': 13, 'system_b': 14, 'userdata': 16}
+
+
+def donut_platform(board):
+    """Whether board is the Echo Dot 3rd gen's platform: the Dot 3 or the Echo Input (DONUT_BOARDS)."""
+    return board in DONUT_BOARDS
+
+
+def board_from_product(product):
+    """The board Fire OS's build props name (ro.product.device, ro.build.product), or None for one this
+    installer does not know: biscuit_puffin, radar_puffin and donut_puffin, and the Echo Input's plain
+    cupcake. The Echo 2nd gen is looked for first, as it always was."""
+    for board in ('radar', 'biscuit', 'donut', 'cupcake'):
+        if board in product:
+            return board
+    return None
+
+
+def donut_partition_mismatches(links):
+    """The partitions of DONUT_PARTITIONS that links (name: the device its by-name link resolves to)
+    does not put where the Dot 3's boot scripts look, as 'name is X, not /dev/block/mmcblk0pN'."""
+    bad = []
+    for name, num in sorted(DONUT_PARTITIONS.items(), key=lambda kv: kv[1]):
+        got = links.get(name, '').strip()
+        # Only the node counts: TWRP and Fire OS may resolve it under another directory.
+        if not re.search(r'(^|/)mmcblk0p%d$' % num, got):
+            bad.append('%s is %s, not mmcblk0p%d' % (name, got or 'missing', num))
+    return bad
 # Where the Echo Dot 3's initramfs is loaded: TWRP's address. The stock header's 0x44000000 leaves under
 # 4 MB below ram_console and pstore at 0x44400000, and an initramfs this size there never boots.
 DONUT_RAMDISK_ADDR = '0x43478000'
@@ -83,14 +129,15 @@ class DotRelease:
         self.version = rel.version
         self.board = board
         self.rootfs = rel.rootfs(ROOTFS_KEYS[board])
-        self.kernel = rel.asset(KERNEL_ASSET) if board != 'donut' else None
+        donut = donut_platform(board)
+        self.kernel = rel.asset(KERNEL_ASSET) if not donut else None
         self.apks = os.path.join(rel.dir, 'apks-dot')
         tar_extract_all(rel.asset(APKS_ASSET), self.apks)
         # What the boot image needs from the root filesystem: busybox, and the Wi-Fi bring-up on the Dot
         # 2 boards (wmtup) or our wpa_supplicant on the Dot 3 (tools/linux/build-wpa-supplicant.sh).
         self.busybox = os.path.join(rel.dir, 'busybox.static')
-        self.wmtup = os.path.join(rel.dir, 'wmtup') if board != 'donut' else None
-        self.wpa_supplicant = os.path.join(rel.dir, 'wpa_supplicant-donut') if board == 'donut' else None
+        self.wmtup = os.path.join(rel.dir, 'wmtup') if not donut else None
+        self.wpa_supplicant = os.path.join(rel.dir, 'wpa_supplicant-donut') if donut else None
         wants = [('bin/busybox.static', self.busybox)]
         if self.wmtup:
             wants.append(('usr/local/bin/wmtup', self.wmtup))
@@ -115,8 +162,8 @@ class DotRelease:
             return self.rel.asset(name)
         if board == 'biscuit':
             return self.kernel
-        if board == 'donut':
-            return None  # the Echo Dot 3 runs its own kernel: the Bluetooth stack is modules in its rootfs
+        if donut_platform(board):
+            return None  # the Echo Dot 3 and the Echo Input run their own kernel: Bluetooth is modules in the rootfs
         name = KERNEL_ASSETS.get(board)
         if not name or not self.rel.signed(name):
             return None
@@ -160,7 +207,7 @@ def build_boot_image(recovery, out, alpine_tgz, busybox, wmtup, apks, kernel=Non
     on Alpine's base, and the slot, network and TWRP tools."""
     j = os.path.join
     linux = j(repo_root(), 'tools', 'linux')
-    donut = board == 'donut'
+    donut = donut_platform(board)
     mk = [sys.executable, j(linux, 'mkimage.py'), '--kernel-image', recovery, '--rootfs', alpine_tgz,
           '--init', j(linux, 'init-donut' if donut else 'init'), '--add', busybox + '=/bin/busybox.static',
           '--cmdline-drop', 'skip_initramfs', '--cmdline-drop', 'root=', '--cmdline-drop', 'dm=',

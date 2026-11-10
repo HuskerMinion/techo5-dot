@@ -1,5 +1,6 @@
 #!/bin/busybox.static sh
-# Bring the Echo Dot 3 (donut) up, once, from a rootfs slot. Run by busybox init as its sysinit.
+# Bring the Echo Dot 3 (donut) up, once, from a rootfs slot. Run by busybox init as its sysinit. The
+# Echo Input (cupcake) is the same board, partitions and kernel without a speaker, and boots here too.
 #
 # The Dot 2's boot.sh (techo5-dot) with the Dot 3's board in place of it: the store is a directory on
 # userdata, not the cache partition (32 MB here); Wi-Fi is Amazon's MT7668 SDIO modules and firmware,
@@ -126,7 +127,10 @@ if [ -d $g ]; then
 	echo 1d6b > $g/idVendor 2>/dev/null
 	echo 0104 > $g/idProduct 2>/dev/null
 	echo "TECHO5" > $g/iManufacturer 2>/dev/null
-	echo "Echo Dot 3 Linux" > $g/iProduct 2>/dev/null
+	case "$($BB tr -d '\000 ' < /proc/idme/device_type_id 2>/dev/null)" in
+	A1JJ0KFC4ZPNJ3) echo "Echo Input Linux" > $g/iProduct 2>/dev/null ;;
+	*) echo "Echo Dot 3 Linux" > $g/iProduct 2>/dev/null ;;
+	esac
 	sn=$($BB sed -n 's/.*androidboot.serialno=\([^ ]*\).*/\1/p' /proc/cmdline)
 	[ -n "$sn" ] && echo "$sn" > $g/iSerial 2>/dev/null
 	echo 1 > $g/f_acm/instances 2>/dev/null
@@ -171,9 +175,12 @@ if [ -e $MODS/wlan_mt76x8_sdio.ko ]; then
 	$BB mkdir -p /system/vendor
 	$BB ln -sfn $FW /system/vendor/firmware
 	[ -e /vendor/firmware ] || $BB ln -sfn /system/vendor /vendor
-	# Loaded by hand at about 15 s of uptime on the first tries; kept there.
+	# Loaded by hand at about 15 s of uptime on the first tries; kept there. The preallocation module
+	# goes first where the unit's Fire OS has one (the Dot 3's does); the Echo Input's driver is a build
+	# of its own, loaded alone if it comes without one.
 	while [ "$($BB cut -d. -f1 /proc/uptime)" -lt 15 ]; do $BB sleep 1; done
-	$BB insmod $MODS/wlan_mt76x8_sdio_prealloc.ko && $BB insmod $MODS/wlan_mt76x8_sdio.ko
+	{ [ ! -e $MODS/wlan_mt76x8_sdio_prealloc.ko ] || $BB insmod $MODS/wlan_mt76x8_sdio_prealloc.ko; } &&
+		$BB insmod $MODS/wlan_mt76x8_sdio.ko
 	i=0
 	while [ $i -lt 30 ] && [ ! -e /sys/class/net/wlan0 ]; do $BB sleep 1; i=$((i + 1)); done
 	say "wlan0 $([ -e /sys/class/net/wlan0 ] && echo up || echo missing) after ${i}s"

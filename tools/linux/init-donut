@@ -1,5 +1,6 @@
 #!/bin/busybox.static sh
-# TECHO5 Dot 3 (donut) initramfs init: boot a rootfs slot, or stay up as the rescue environment.
+# TECHO5 Dot 3 (donut) initramfs init: boot a rootfs slot, or stay up as the rescue environment. The
+# Echo Input (cupcake) is the same board and partitions, and boots from the same image.
 #
 # Runs as PID 1 from the initramfs in swdl, which kaeru boots as recovery. The Dot 2's init
 # (techo5-dot tools/linux/init) with the Dot 3's board: the store is a directory on userdata
@@ -175,7 +176,10 @@ usb_console() {
 	echo 1d6b > $g/idVendor 2>/dev/null
 	echo 0104 > $g/idProduct 2>/dev/null
 	echo "TECHO5" > $g/iManufacturer 2>/dev/null
-	echo "Echo Dot 3 Linux" > $g/iProduct 2>/dev/null
+	case "$($BB tr -d '\000 ' < /proc/idme/device_type_id 2>/dev/null)" in
+	A1JJ0KFC4ZPNJ3) echo "Echo Input Linux" > $g/iProduct 2>/dev/null ;;
+	*) echo "Echo Dot 3 Linux" > $g/iProduct 2>/dev/null ;;
+	esac
 	local sn=$($BB sed -n 's/.*androidboot.serialno=\([^ ]*\).*/\1/p' /proc/cmdline)
 	[ -n "$sn" ] && echo "$sn" > $g/iSerial 2>/dev/null
 	echo 1 > $g/f_acm/instances 2>/dev/null
@@ -228,8 +232,9 @@ wifi() {
 	$BB ln -sfn $fw /system/vendor/firmware
 	$BB ln -sfn /system/vendor /vendor
 	while [ "$($BB cut -d. -f1 /proc/uptime)" -lt 15 ]; do $BB sleep 1; done
-	$BB insmod $mods/wlan_mt76x8_sdio_prealloc.ko && $BB insmod $mods/wlan_mt76x8_sdio.ko ||
-		{ crumb "Wi-Fi modules would not load"; return 1; }
+	# The preallocation module only where Fire OS has one (the Echo Input's driver may come without).
+	{ [ ! -e $mods/wlan_mt76x8_sdio_prealloc.ko ] || $BB insmod $mods/wlan_mt76x8_sdio_prealloc.ko; } &&
+		$BB insmod $mods/wlan_mt76x8_sdio.ko || { crumb "Wi-Fi modules would not load"; return 1; }
 	local i=0
 	while [ $i -lt 30 ] && [ ! -e /sys/class/net/wlan0 ]; do $BB sleep 1; i=$((i + 1)); done
 	[ -e /sys/class/net/wlan0 ] || { crumb "no wlan0"; return 1; }

@@ -165,11 +165,13 @@ fi
 [ -n "$ssid" ] || { say "no network configured (wifi-set sets one)"; exit 1; }
 
 # An empty key is an open network, and says so: psk= with nothing after it is not a network at all.
+# scan_ssid=1 probes for the name by itself, which is the only way a hidden network is found (techo5-dot#47);
+# a visible one is joined the same.
 ( umask 077
   if [ -n "$psk" ]; then
-	printf 'ctrl_interface=/run/wpa\nupdate_config=0\nnetwork={\n\tssid=%s\n\tpsk=%s\n}\n' "$ssid" "$psk" > $CONF
+	printf 'ctrl_interface=/run/wpa\nupdate_config=0\nnetwork={\n\tssid=%s\n\tscan_ssid=1\n\tpsk=%s\n}\n' "$ssid" "$psk" > $CONF
   else
-	printf 'ctrl_interface=/run/wpa\nupdate_config=0\nnetwork={\n\tssid=%s\n\tkey_mgmt=NONE\n}\n' "$ssid" > $CONF
+	printf 'ctrl_interface=/run/wpa\nupdate_config=0\nnetwork={\n\tssid=%s\n\tscan_ssid=1\n\tkey_mgmt=NONE\n}\n' "$ssid" > $CONF
   fi )
 associate || exit 1
 lease

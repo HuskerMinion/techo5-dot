@@ -24,15 +24,16 @@ the Echo Show 8 `crown`); that section is this project's own, taken on a real Do
 
 ## What the daemon does today
 
-- **Mix setting** (Home Assistant select): `Center mic` (ch 6 alone, **the Dot's default**),
-  `All microphones` (average), `Delay and sum` (`beam.go`: six steered beams, interpolated
+- **Mix setting** (Home Assistant select): `Center mic` (ch 6 alone),
+  `All microphones` (average of all seven, **the Dot's default**, measured below), `Delay and sum` (`beam.go`: six steered beams, interpolated
   fractional delays, the loudest beam in high frequencies wins after 8 frames ≈160 ms), and
   `Beamformer` when Amazon's tuning is on the device.
 - **Amazon's fixed beamformer**, re-implemented from the firmware's coefficient files in
   `/vendor/etc/audio-algorithms/` (`lib/subband`). Two front ends are recognized:
   - `FilterBank_640 + FBF`: 64 bands, 6 beams, all 7 mics.
   - `FilterBank_768cvxGLow + FBFV2`: 128 bands, 8 beams, 4 of 7 mics.
-- **Echo cancellation** runs on the **center mic only** and replaces the mix while anything plays.
+- **Echo cancellation** runs on the **seven-mic average** (`CancelOnMix`; a steered mix falls back
+  to the average) and replaces the mix while anything plays.
   The built-in NLMS filter uses 1024 taps; EchoLocal measured 16.5 → 27.2 dB of cancellation from
   256 → 2048 taps. The WebRTC helper (`techo5-aec`, from the Show) is selectable, but its binary is
   built for the Show rootfs and has never run on a Dot.

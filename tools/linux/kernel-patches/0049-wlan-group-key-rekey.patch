@@ -8,7 +8,7 @@
 diff -ruN a/drivers/misc/mediatek/connectivity/conn_soc/drv_wlan/mt_wifi/wlan/os/linux/gl_cfg80211.c b/drivers/misc/mediatek/connectivity/conn_soc/drv_wlan/mt_wifi/wlan/os/linux/gl_cfg80211.c
 --- a/drivers/misc/mediatek/connectivity/conn_soc/drv_wlan/mt_wifi/wlan/os/linux/gl_cfg80211.c
 +++ b/drivers/misc/mediatek/connectivity/conn_soc/drv_wlan/mt_wifi/wlan/os/linux/gl_cfg80211.c
-@@ -167,6 +167,98 @@
+@@ -167,6 +167,102 @@
   *         others:  failure
   */
  /*----------------------------------------------------------------------------*/
@@ -62,13 +62,13 @@ diff -ruN a/drivers/misc/mediatek/connectivity/conn_soc/drv_wlan/mt_wifi/wlan/os
 +	down(&g_halt_sem);
 +	if (g_u4HaltFlag) {
 +		up(&g_halt_sem);
-+		return;
++		goto out;
 +	}
 +	up(&g_halt_sem);
 +
 +	if (!prGlueInfo || atomic_read(&rGtkKeyGeneration) != i4GtkReinstallGeneration ||
 +	    prGlueInfo->eParamMediaStateIndicated != PARAM_MEDIA_STATE_CONNECTED)
-+		return;
++		goto out;
 +
 +	/* empty the group key table as before the first install, the slot of this GTK last */
 +	for (i = 1; i <= 4; i++) {
@@ -82,7 +82,7 @@ diff -ruN a/drivers/misc/mediatek/connectivity/conn_soc/drv_wlan/mt_wifi/wlan/os
 +		if (rStatus != WLAN_STATUS_SUCCESS) {
 +			DBGLOG(RSN, WARN, "group key %u not installed again, removing key %u failed: %x\n",
 +			       ucKeyId, ucId, rStatus);
-+			return;
++			goto out;
 +		}
 +	}
 +
@@ -93,36 +93,51 @@ diff -ruN a/drivers/misc/mediatek/connectivity/conn_soc/drv_wlan/mt_wifi/wlan/os
 +		if (!fgGtkReinstallRetried) {
 +			fgGtkReinstallRetried = TRUE;
 +			schedule_delayed_work(&grGtkReinstallWork, msecs_to_jiffies(1000));
++			return;
 +		}
-+		return;
++		goto out;
 +	}
 +	DBGLOG(RSN, INFO, "group key %u installed again\n", ucKeyId);
 +
-+	if (--ucGtkReinstallLeft > 0)
++	if (--ucGtkReinstallLeft > 0) {
 +		schedule_delayed_work(&grGtkReinstallWork, msecs_to_jiffies(GTK_REINSTALL_DELAY_MS));
-+	else
-+		kalMemZero(&rGtkReinstallKey, sizeof(PARAM_KEY_T));
++		return;
++	}
++
++out:
++	kalMemZero(&rGtkReinstallKey, sizeof(PARAM_KEY_T));
 +}
 +
  int
  mtk_cfg80211_add_key(struct wiphy *wiphy,
  		     struct net_device *ndev,
-@@ -179,10 +271,14 @@
+@@ -179,6 +275,9 @@
  	UINT_32 u4BufLen = 0;
  	UINT_8 tmp1[8];
  	UINT_8 tmp2[8];
++	BOOLEAN fgGtk;
 +	BOOLEAN fgFirstGroupKey = FALSE;
 +	BOOLEAN fgRekeyGroupKey = FALSE;
  
  	prGlueInfo = (P_GLUE_INFO_T) wiphy_priv(wiphy);
  	ASSERT(prGlueInfo);
+@@ -214,6 +313,15 @@
+ 		/* rKey.u4KeyIndex |= BIT(31);//Enable BIT 31 will make tx use bc key id,should use pairwise key id 0 */
+ 	}
  
-+	mtk_cfg80211_gtk_reinstall_cancel();
++	/* Only a GTK (slot 0 to 3, TKIP or CCMP) takes part in the group rekey handling below. Any other
++	 * group key, such as an IGTK in slot 4 or 5 right after the GTK when PMF is on, neither removes
++	 * group key slots nor drops a pending second install.
++	 */
++	fgGtk = !(rKey.u4KeyIndex & BIT(31)) && key_index < 4 &&
++		(params->cipher == WLAN_CIPHER_SUITE_TKIP || params->cipher == WLAN_CIPHER_SUITE_CCMP);
++	if ((rKey.u4KeyIndex & BIT(31)) || fgGtk)
++		mtk_cfg80211_gtk_reinstall_cancel();
 +
- 	kalMemZero(&rKey, sizeof(PARAM_KEY_T));
- 
- 	rKey.u4KeyIndex = key_index;
-@@ -228,11 +324,57 @@
+ 	if (params->key) {
+ 		/* rKey.aucKeyMaterial[0] = kalMemAlloc(params->key_len, VIR_MEM_TYPE); */
+ 		kalMemCopy(rKey.aucKeyMaterial, params->key, params->key_len);
+@@ -228,11 +336,57 @@
  	rKey.u4KeyLength = params->key_len;
  	rKey.u4Length = ((ULONG)&(((P_P2P_PARAM_KEY_T) 0)->aucKeyMaterial)) + rKey.u4KeyLength;
  
@@ -133,7 +148,7 @@ diff -ruN a/drivers/misc/mediatek/connectivity/conn_soc/drv_wlan/mt_wifi/wlan/os
 +	 */
 +	if (rKey.u4KeyIndex & BIT(31)) {
 +		gucLastGroupKeyId = 0xff;
-+	} else {
++	} else if (fgGtk) {
 +		fgRekeyGroupKey = (gucLastGroupKeyId != 0xff);
 +		if (fgRekeyGroupKey) {
 +			PARAM_REMOVE_KEY_T rRemoveKey;
@@ -180,7 +195,7 @@ diff -ruN a/drivers/misc/mediatek/connectivity/conn_soc/drv_wlan/mt_wifi/wlan/os
  	return i4Rslt;
  }
  
-@@ -286,6 +428,8 @@
+@@ -286,6 +440,8 @@
  	prGlueInfo = (P_GLUE_INFO_T) wiphy_priv(wiphy);
  	ASSERT(prGlueInfo);
  

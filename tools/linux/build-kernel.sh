@@ -38,6 +38,7 @@
 # 4.x encryption-change rework and only affects Security Level 4), CVE-2020-26558/CVE-2021-0129
 # and CVE-2020-12351/CVE-2020-24490 (3.18 has no LE Secure Connections, no sk_filter in L2CAP
 # receive and no extended advertising). See docs/hardware.md (Kernels).
+# One patch is not a Bluetooth backport: 0049 is the Wi-Fi driver's group key rekey fix (#45).
 #
 # Toolchain: AOSP arm-eabi-4.8 (branch lollipop-release), the compiler Amazon's
 # build_kernel_config.sh names and the running kernel's banner reports. Cloned if missing.
@@ -142,8 +143,8 @@ if [ -z "$STOCK" ]; then
 			fi
 		done
 	done
-	# Security fixes backported onto that Bluetooth code, in order; any patch that does not apply
-	# exactly (offsets allowed, no fuzz) stops the build.
+	# Security fixes backported onto that Bluetooth code, and the Wi-Fi rekey fix (0049), in order;
+	# any patch that does not apply exactly (offsets allowed, no fuzz) stops the build.
 	n=0
 	for p in "$HERE"/kernel-patches/[0-9][0-9][0-9][0-9]-*.patch; do
 		[ -f "$p" ] || { echo "no patches found in $HERE/kernel-patches" >&2; exit 1; }
@@ -154,7 +155,7 @@ if [ -z "$STOCK" ]; then
 		tr -d '\r' < "$p" | patch -d "$SRC" -p1 -F0 -N -s --no-backup-if-mismatch
 		n=$((n + 1))
 	done
-	echo "applied $n Bluetooth patches from kernel-patches/"
+	echo "applied $n kernel patches from kernel-patches/"
 fi
 
 SUFFIX=-bt

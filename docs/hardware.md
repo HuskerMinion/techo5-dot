@@ -233,6 +233,9 @@ filter banks). There's no hardware beamformed channel. See [microphones.md](micr
   lease script. Compare TECHO5 on cronos: 2.11 fails and 2.9 works on MT7668. The supplicant
   version is a per-chip question.
 - No SAE, so no WPA3. PMF is possible (BIP-CMAC-128 advertised).
+- Group key rekeys: some leave the chip dropping every group frame, since it keeps the old key's
+  replay counter. `tools/linux/kernel-patches/0049` installs a rekey GTK again 10 s and 20 s later,
+  and sends the multicast filter again after a (re)association (#45, #49).
 - Device nodes: `/dev/stpwmt` 190:0, `/dev/stpbt` 192:0, `/dev/wmtWifi` 153:0,
   `/dev/wmtdetect` 154:0. Firmware: `WMT_SOC.cfg`, `WIFI_RAM_CODE`, `ROMv2_lm_patch*`.
 - Cold boot to network: about 32 s.

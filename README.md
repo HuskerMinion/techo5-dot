@@ -114,6 +114,7 @@ Echo Show 5. Both run the same daemon source, built per device.
 | Routines and smart home control | Alexa | Whatever Home Assistant does ✅ |
 | Updates | Amazon, automatic | Signed releases from this repo, offered in Home Assistant, A/B slots with automatic rollback ✅ |
 | Remote access | None | SSH, keys only, behind a Home Assistant switch that starts off ✅ |
+| Something of your own at boot | No | An executable `/data/techo5-linux/rc.local` starts at the end of every boot, in the background, with its output in `rc.local.log`. Nothing runs unless you put it there. [Details](https://github.com/HuskerMinion/techo5/blob/main/docs/setup.md#running-something-of-your-own-at-boot) |
 | Network exposure | Amazon's | Firewall: inbound only the Home Assistant API, mDNS, SSH, Sendspin, the setup page, DLNA discovery (SSDP), DHCP replies and ping, and on Wi-Fi AirPlay and Spotify Connect (nothing listens there unless they are on) ✅ |
 | Changing Wi-Fi | Alexa app | `wifi-set` on the Dot, or `tools/set-wifi.py` from a computer over USB ✅ |
 | If it won't boot | Factory reset | Rescue mode (USB console, SSH, firewall) after five bad boots. Fire OS and TWRP are still on the device, one command away ✅ |

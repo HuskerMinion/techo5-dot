@@ -241,6 +241,11 @@ As built, differing from the original plan:
 - **Logs:** `techo5-logs` (init respawn) checks every ten minutes. It copies any log in
   `/data/techo5-linux` over 1 MB to `.1` and empties the original in place. Every writer appends,
   so this is safe, and each log stays at about 2 MB whatever the uptime.
+- **An owner's script at boot:** an executable `/data/techo5-linux/rc.local` is started once at the
+  end of `boot.sh`, in the background, after the daemon has been let start and the health check is
+  under way, as on TECHO5's images. Its output goes to `rc.local.log` beside it, the previous boot's
+  to `rc.local.log.1`, and `techo5-logs` keeps it to about 2 MB like the others. How to use it is in
+  TECHO5's [docs/setup.md](https://github.com/HuskerMinion/techo5/blob/main/docs/setup.md#running-something-of-your-own-at-boot).
 - **TWRP without a PC:** the installer keeps the unit's own TWRP backup and its Linux image in the
   store.
   - `to-twrp --yes` writes TWRP to recovery, checks it, and reboots into it.

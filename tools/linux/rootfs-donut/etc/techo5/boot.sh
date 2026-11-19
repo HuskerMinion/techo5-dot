@@ -296,3 +296,16 @@ say "ready at $($BB date)"
 		esac
 	fi
 ) &
+
+# Anything of the owner's, as on TECHO5's images, kept on userdata because the root filesystem is
+# replaced by an update: a helper that has to be running all the time, a mount, a tunnel. Executable,
+# or it is not started, and in the background with its output captured, so a script that fails cannot
+# hold up the daemon or hide why. Last, after the daemon has been let start and the health check is
+# under way, so neither waits on it. One previous boot's output is kept, so a helper that chatters
+# cannot grow the file forever; and appended to, like every log here, so techo5-logs can empty it in
+# place during a long boot.
+if [ -x /data/techo5-linux/rc.local ]; then
+	$BB mv -f /data/techo5-linux/rc.local.log /data/techo5-linux/rc.local.log.1 2>/dev/null
+	(/data/techo5-linux/rc.local >> /data/techo5-linux/rc.local.log 2>&1) &
+	say "rc.local started"
+fi

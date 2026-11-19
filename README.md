@@ -159,6 +159,9 @@ Starting from a stock Dot? [Getting started](https://github.com/HuskerMinion/tec
 walks through it in order: updating Fire OS, the amonet unlock (linked), this installer, and Home
 Assistant.
 
+In German: [chr-braun's guide for the Echo Dot 2](https://github.com/chr-braun/techo5-dot-de), a
+community guide kept by its author. Where it and the English docs differ, the English docs are right.
+
 ```
 git clone https://github.com/HuskerMinion/techo5-dot
 cd techo5-dot

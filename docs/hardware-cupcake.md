@@ -1,11 +1,11 @@
 # Echo Input (2018) — `cupcake`
 
-> **Experimental: not yet tried on a unit.** Everything below is from the Echo Dot 3rd gen's port
+> **Working on one unit.** The port was worked out from the Echo Dot 3rd gen's
 > ([hardware-donut.md](hardware-donut.md)), from Amazon's GPL kernel source for the Echo Input
 > (Echo_Input_src-6.5.4.7, which the Dot 3's Bluetooth modules are already built from), and from
 > [echo-dot-assist](https://github.com/Gamer92000/echo-dot-assist)'s notes on the Echo Input's firmware
 > (Gamer92000, MIT: `docs/re-cupcake.md` and `devices/cupcake/` there), where it runs on Fire OS.
-> [What to check on the first unit](#what-to-check-on-the-first-unit) lists what none of those settle.
+> [The first unit](#the-first-unit) has what a real one showed.
 
 The Echo Input is the Echo Dot 3rd gen's board without a speaker. TECHO5 runs it on the Dot 3's
 release as it is: the same installer, boot image, root filesystem and daemon build (`-tags dot,donut`),
@@ -17,8 +17,8 @@ on the unit's own stock kernel. The installer and the daemon tell the two apart 
 |---|---|
 | Model (on the label) | C1125P (2018) |
 | Fire OS `ro.product.device` / `ro.product.model` | `cupcake` (no `_puffin` suffix) / `AEOCK` |
-| `/proc/idme/device_type_id` | `A1JJ0KFC4ZPNJ3`, Amazon's device type for the Echo Input (what the installer, `update-boot.py`, the boot scripts and the daemon go by). **To be confirmed on a unit** |
-| Firmware echo-dot-assist worked from | Fire OS 6.5.7.5 (`NS6575/8338`) |
+| `/proc/idme/device_type_id` | `A1JJ0KFC4ZPNJ3`, Amazon's device type for the Echo Input (what the installer, `update-boot.py`, the boot scripts and the daemon go by), confirmed on a unit |
+| Firmware | Fire OS 6.5.7.5 (`NS6575/8338`), what echo-dot-assist worked from. **Update to it before installing**: on 6.5.3 the Wi-Fi firmware crashes (below) |
 | USB | the micro-USB socket carries data and power. TECHO5's console is `1d6b:0104`, "Echo Input Linux" |
 
 If idme says something else, the installer stops before writing anything ("says cupcake in its build
@@ -45,7 +45,7 @@ props but device type id … in idme"): please open an issue with the id.
 | Light | **one RGB LED**, a TI LP5562 at i2c 0-0030, as three LED class devices (`/sys/bus/i2c/devices/0-0030/leds/{R,G,B}`) | The ring's twelve segments are drawn as on a Dot and mixed into one color: each channel at its brightest segment, scaled to that channel's `max_brightness`. What spins on a ring holds still |
 | Buttons | action (`gpio-keys`, `KEY_HELP` 138) and mute (`gpio-privacy`, `KEY_MUTE` 113); **no volume keys** | Only action and mute are listed in Home Assistant. Holding the action button for 5 s still starts Bluetooth pairing. The action + volume down factory reset isn't available |
 | Volume | — | Home Assistant, the setup page, or a phone over Bluetooth. The line out takes the Dot 3 jack's volume curve |
-| Wi-Fi preallocation module | not known whether Fire OS ships `wlan_mt76x8_sdio_prealloc.ko` here | The boot scripts load it first where it's there, and the main driver alone otherwise |
+| Wi-Fi preallocation module | Fire OS ships `wlan_mt76x8_sdio_prealloc.ko` here, as on the Dot 3 | The boot scripts load it first where it's there, and the main driver alone otherwise |
 
 ## Partitions and boot
 
@@ -72,19 +72,25 @@ can close the hole the unlock uses.
 The PC's USB port powers the Echo Input until the install is done (USB 2 gives 0.5 A, less than its own
 adapter). If it restarts or drops off USB, put a powered USB hub in between.
 
-## What to check on the first unit
+## The first unit
 
-- [ ] `/proc/idme/device_type_id` is `A1JJ0KFC4ZPNJ3`.
-- [ ] The installer's partition check passes (misc p8, swdl p12, system p13/p14, userdata p16).
-- [ ] Wi-Fi comes up: which modules Fire OS has in `/system/lib/modules`, and whether the firmware is
-      `WIFI_RAM_CODE_MT7668.bin` as on the Dot 3. The Dot 3's patched wpa_supplicant completes the
-      handshake.
-- [ ] The line out plays, and on which of the codec's outputs (`HPOUT Mux` or `LINEOUT Mux`): then
-      the other can be left closed. Whether `HP Ext Amp Switch` or `LINEOUT Ext Amp Switch` needs to be
-      on. `tinymix` or `amixer -c 0 contents` on the unit lists the controls.
-- [ ] The four microphones capture (`TDM_Capture`, hw:0,1) and the echo reference (`DL1_AWB_Record`,
-      hw:0,7) follows the line out.
-- [ ] The LED: `ls /sys/bus/i2c/devices/0-0030/leds/` shows `R`, `G` and `B`, and the states show.
-- [ ] The action and mute buttons; mute's latch.
-- [ ] Bluetooth: `/dev/stpbt`, `hci0`, a phone playing to it, the Home Assistant Bluetooth proxy.
+A used unit from eBay, unlocked with kamakiri-cupcake v1.0.0 and installed with dot-v1.0.73:
+
+- [x] `/proc/idme/device_type_id` is `A1JJ0KFC4ZPNJ3`.
+- [x] The installer's partition check passes (misc p8, swdl p12, system p13/p14, userdata p16).
+- [x] Wi-Fi comes up: Fire OS has the prealloc, main and `btmtksdio` modules in `/system/lib/modules`,
+      and the firmware is `WIFI_RAM_CODE_MT7668.bin`, as on the Dot 3.
+- [x] **Fire OS 6.5.3 crashes the Wi-Fi.** The unit came with 6.5.3.7 and 6.5.3.6 in its slots. On
+      6.5.3.7's firmware the MT7668 halts about two minutes after boot (`wlan is halt`, then a reset),
+      `wlan0` is recreated and the unit loses its address. With Fire OS 6.5.7.5 sideloaded in TWRP and
+      TECHO5 installed again, two boots had no crash and Bluetooth came up in under a second (it took
+      97 s before).
+- [x] The line out plays, clean on a powered speaker. Wake word, a voice turn and the reply work.
+- [x] The four microphones capture.
+- [x] The LED: `ls /sys/bus/i2c/devices/0-0030/leds/` shows `R`, `G` and `B`.
+- [x] The action button starts a turn; a mute tap mutes and unmutes. Holding mute offers Improv,
+      but afterwards the unit stays muted until the next tap, since only the button can unmute.
+- [x] Bluetooth: `hci0` comes up.
+- [ ] The LED's colors for each state.
+- [ ] Bluetooth pairing (hold action 5 s) and a phone playing to it; the Home Assistant Bluetooth proxy.
 - [ ] An update from Home Assistant's update card.

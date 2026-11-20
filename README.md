@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="images/biscuit.png" alt="BISCUIT" width="120">&nbsp;&nbsp;<img src="images/radar.png" alt="RADAR" width="120">&nbsp;&nbsp;<img src="images/donut.png" alt="DONUT" width="120">
+  <img src="images/biscuit.png" alt="BISCUIT" width="120">&nbsp;&nbsp;<img src="images/radar.png" alt="RADAR" width="120">&nbsp;&nbsp;<img src="images/donut.png" alt="DONUT" width="120">&nbsp;&nbsp;<img src="images/cupcake.png" alt="CUPCAKE" width="120">
 </p>
 
 <h1 align="center">TECHO5 Dot</h1>
@@ -35,8 +35,8 @@
 
 TECHO5 Dot replaces Fire OS on the Amazon Echo Dot 2nd generation (codename `biscuit`), the Echo
 2nd generation (2017, codename `radar`) and the Echo Dot 3rd generation (2018, codename `donut`) with a
-small Alpine Linux image and one daemon. The Echo Input (2018, codename `cupcake`) is supported
-experimentally, on the Echo Dot 3rd gen's image. The Dot becomes a Home Assistant voice satellite: it hears the
+small Alpine Linux image and one daemon. The Echo Input (2018, codename `cupcake`) runs on the
+Echo Dot 3rd gen's image. The Dot becomes a Home Assistant voice satellite: it hears the
 wake word on the device, talks to Home Assistant over its encrypted native API, and sends nothing to
 Amazon. It still uses the internet for what you'd expect: checking this repo for signed updates and
 setting its clock.
@@ -64,9 +64,9 @@ Echo Show 5. Both run the same daemon source, built per device.
 
 > **Status: in daily use on three units.** Everything marked ✅ below was verified on a bench Dot
 > that came from Fire OS 6574.1, and the installer and updates on two more. Expect rough edges, and
-> keep your backups. The Echo 2nd gen and the Echo Dot 3rd gen are supported too, each tested on
-> one unit so far; see [Echo 2nd gen](#echo-2nd-gen) and [Echo Dot 3rd gen](#echo-dot-3rd-gen). The
-> Echo Input is **experimental and not yet tried on a unit**; see [Echo Input](#echo-input).
+> keep your backups. The Echo 2nd gen, the Echo Dot 3rd gen and the Echo Input are supported too, each
+> tested on one unit so far; see [Echo 2nd gen](#echo-2nd-gen), [Echo Dot 3rd gen](#echo-dot-3rd-gen)
+> and [Echo Input](#echo-input).
 
 ## What happened to the Dot
 
@@ -317,6 +317,8 @@ device (`1d6b:0104`).
 
 ### Echo Input
 
+<img src="images/cupcake.png" alt="CUPCAKE" width="90" align="right">
+
 The Echo Input (2018, model C1125P, `cupcake`) is the Echo Dot 3rd gen's board without a speaker: the
 same MediaTek MT8516, kernel, partitions, four microphones and MT7668 Wi-Fi and Bluetooth, with a
 3.5 mm line out for a speaker of your own, one RGB LED in place of the ring, and only the action and
@@ -324,11 +326,15 @@ mute buttons. So it runs the Echo Dot 3rd gen's release as it is: the same insta
 daemon build and update channel. The installer and the daemon tell the two apart by the device type id
 in idme. Details are in [docs/hardware-cupcake.md](docs/hardware-cupcake.md).
 
-> **Experimental: not yet tried on a unit.** This port was worked out from the Echo Dot 3rd gen's,
-> from [echo-dot-assist](https://github.com/Gamer92000/echo-dot-assist)'s notes on the Echo Input's
-> firmware (Gamer92000, MIT), where it runs on Fire OS, and from the Echo Input's GPL kernel source that
-> the Dot 3's Bluetooth modules are already built from. Keep the installer's backups, and please open an
+> **Working on one unit.** Update Fire OS to 6.5.7.5 (`NS6575/8338`) before installing, by sideloading
+> it in TWRP if the unit came on something older: on 6.5.3 the Wi-Fi firmware crashes about two minutes
+> after boot and the Echo Input drops off the network. Keep the installer's backups, and please open an
 > issue with what worked and what didn't.
+
+This port was worked out from the Echo Dot 3rd gen's, from
+[echo-dot-assist](https://github.com/Gamer92000/echo-dot-assist)'s notes on the Echo Input's firmware
+(Gamer92000, MIT), where it runs on Fire OS, and from the Echo Input's GPL kernel source that the Dot 3's
+Bluetooth modules are already built from.
 
 What differs from the Dot 3, in short:
 - **Sound comes from the line out** (or a Bluetooth speaker). There's no speaker, so there's no Audio
@@ -392,6 +398,9 @@ See [NOTICE](NOTICE) for the full list.
   [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Nssl0026_-_Flickr_-_NOAA_Photo_Library.jpg).
   DONUT is a chocolate-glazed doughnut with sprinkles, photo by Kiran Foster,
   [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Chocolate-glazed_doughnut_with_sprinkles_(7429937320).jpg),
+  [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/). CUPCAKE is a hazelnut cupcake with nougat
+  frosting, photo by F_A from Ostwestfalen, Germany,
+  [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Hazel_cupcakes_with_nugat_frosting,_January_2013_(8409970387).jpg),
   [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/).
 - [EchoLocal](https://github.com/ygelfand/echolocal) (MIT, Yuri Gelfand): the Echo Dot 2 daemon this
   project is built on (see above).

@@ -471,12 +471,17 @@ def main():
     wifi = adb.sh('sed -n "s/^[ \\t]*ssid=//p" /data/misc/wifi/wpa_supplicant.conf 2>/dev/null | head -1')
     own_wifi = adb.sh('test -s /data/techo5-linux/wifi.conf && echo yes') == 'yes'
     wifi_conf = None
+    if wifi and not own_wifi and not a.wifi_ssid and not a.for_someone_else and interactive():
+        # A unit bought used still has its last owner's network saved in Fire OS, and joining it by
+        # itself would leave the unit on a network that is not here. So it is named and asked about.
+        if input("   Fire OS has the Wi-Fi network %s saved. Join it? [Y/n]: " % wifi).strip().lower() in ('n', 'no'):
+            wifi = ''
     if a.for_someone_else:
         note('gift install: no Wi-Fi network is asked for or written; the new owner sets it up')
     elif a.wifi_ssid or (not wifi and not own_wifi):
         ssid = a.wifi_ssid
         if not ssid:
-            note('%s has no saved Wi-Fi network' % a.serial)
+            note('%s has no saved Wi-Fi network to use' % a.serial)
             if not interactive():
                 fail('%s has no saved Wi-Fi network: pass --wifi (the passphrase is asked for, or read from --wifi-passphrase-file)' % a.serial)
             ssid = ask('Wi-Fi network name')
@@ -491,7 +496,7 @@ def main():
     elif own_wifi:
         note('Wi-Fi network set on the unit before (wifi-set); keeping it')
     else:
-        note('saved Wi-Fi network %s' % wifi)
+        note('saved Wi-Fi network %s (the one Fire OS saved; --wifi joins another)' % wifi)
     ip = None
     if not twrp:
         ip = adb.sh('ifconfig wlan0 2>/dev/null | sed -n "s/.*inet addr:\\([0-9.]*\\).*/\\1/p" | head -1') or adb.sh('getprop dhcp.wlan0.ipaddress') or None

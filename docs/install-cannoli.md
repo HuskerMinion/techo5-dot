@@ -27,7 +27,11 @@ the slot-B image on your computer from the backup it takes of the unit it runs o
   x86-64 Linux host (WSL is fine) with
   [cannoli-os-builder](https://github.com/Gamer92000/cannoli-os-builder) and the
   [TWRP builder](https://github.com/Gamer92000/twrp_device_amazon_cannoli). Their READMEs have the
-  commands. The installer looks for it in `<unit>/bundle` (`--bundle` points elsewhere).
+  commands. The installer looks for it in `<unit>/bundle` (`--bundle` points elsewhere). Its
+  `bundle.json` has to say `"adb": "keyless"`: a bundle from a cannoli-os-builder before `74903ad` baked
+  the build host's adb key into slot A, and firebreak refuses it. The installer checks this before it asks
+  anything or starts firebreak. If it stops there, rebuild the bundle with cannoli-os-builder, without
+  `--adb-key` and into a fresh `--output`.
 - A firebreak checkout with the cannoli route next to this one (`../firebreak`, or `--firebreak`), with
   [uv](https://docs.astral.sh/uv/). Run the installer from **Windows' own Python** when it has to unlock:
   firebreak catches the unit's preloader from native Windows, not from WSL, where the USB window is shorter
@@ -100,6 +104,33 @@ isn't rooted yet, it stops after the checks and prints the firebreak commands it
 8. **The first boot.** Unplug the power, hold Volume-Up, plug it back in and keep holding about 5 s. The
    installer waits on the unit's USB console (`1d6b:0104`, "Echo Dot 5 Linux") until a slot has booted
    and its `boot.sh` has counted it healthy. Home Assistant then discovers it as an ESPHome device.
+
+## Setting it up over Bluetooth (`--for-someone-else`)
+
+```
+python3 tools/install-cannoli.py --serial <serial> --for-someone-else
+```
+
+This is for a Dot you're giving away, and for one you'd rather set up from Home Assistant than from
+this computer, for example after a factory reset. It works as `install-dot.py --for-someone-else` does:
+
+- It asks for no Wi-Fi network, name or Home Assistant key, and writes none. A unit with no network
+  saved in Fire OS, such as one that was just factory-reset, is fine.
+- It clears any name, key and network an earlier install left. It writes a supplicant configuration with
+  no network, so Linux doesn't fall back to the network Fire OS saved, and the first-run marker
+  (`/data/misc/echolocal/firstrun`).
+- On its first slot-B boot the Dot starts its own setup. About 45 seconds after it starts, its ring
+  breathes and it offers Improv over Bluetooth. Give it a network from Home Assistant (or
+  [improv-wifi.com](https://www.improv-wifi.com)), and that Home Assistant then adds it with nothing typed.
+
+The backups, the build and the writes are the same as without it. It can't be used with `--name`,
+`--wifi`, `--wifi-passphrase-file`, `--key-file` or `--ssh-key`, or with `--rescue-only` (the rescue
+environment has no setup of its own).
+
+**No SSH key with it.** The first time the daemon sees the first-run marker, it wipes what a giver left
+in its state directory, `ssh/` (the allowed SSH keys) included. So a key written alongside the marker
+would be gone before the first login, and the installer refuses `--ssh-key` with it. For a unit you're
+developing on, install without `--for-someone-else` and pass `--wifi` and `--ssh-key`.
 
 ## Rehearsing without a unit
 

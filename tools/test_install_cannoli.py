@@ -212,11 +212,18 @@ class Simulated(unittest.TestCase):
         self.assertRegex(os.path.basename(files['boot_b']), r'^u_8-\d{8}-\d{6}\.bin$')
         self.assertTrue(os.path.exists(os.path.join(out, 'u_8.bin')))
 
-    def run_installer(self, state, *extra, build='NS6575/8349'):
+    def bundle(self, **over):
+        bundle = os.path.join(self.d, 'unit', 'bundle')
+        os.makedirs(bundle, exist_ok=True)
+        m = dict({'product': 'cannoli', 'serial': SERIAL, 'build': 'NS6575/8349', 'adb': 'keyless'}, **over)
+        with open(os.path.join(bundle, 'bundle.json'), 'w') as f:
+            json.dump({k: v for k, v in m.items() if v is not None}, f)
+
+    def run_installer(self, state, *extra, build='NS6575/8349', name='Test'):
         env = dict(self.env, TECHO5_SIM_STATE=state, TECHO5_SIM_BUILD=build)
         r = subprocess.run([sys.executable, os.path.join(HERE, 'install-cannoli.py'), '--adb', SIM, '--serial', SERIAL,
                             '--unit', os.path.join(self.d, 'unit'), '--inputs', self.inputs, '--firebreak', self.d,
-                            '--name', 'Test', '--dry-run'] + list(extra),
+                            '--dry-run'] + (['--name', name] if name else []) + list(extra),
                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
         return r.returncode, r.stdout.decode('utf-8', 'replace')
 
@@ -228,10 +235,7 @@ class Simulated(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.d, 'backups')), out)
 
     def test_stock_unit_is_unlocked_by_firebreak(self):
-        bundle = os.path.join(self.d, 'unit', 'bundle')
-        os.makedirs(bundle)
-        with open(os.path.join(bundle, 'bundle.json'), 'w') as f:
-            json.dump({'product': 'cannoli', 'serial': SERIAL, 'build': 'NS6575/8349', 'adb': 'keyless'}, f)
+        self.bundle()
         code, out = self.run_installer('stock')
         self.assertEqual(code, 0, out)
         self.assertIn('stock Fire OS', out)
@@ -239,6 +243,7 @@ class Simulated(unittest.TestCase):
         self.assertIn('Nothing was written', out)
 
     def test_older_build_names_the_efuse(self):
+        self.bundle()
         code, out = self.run_installer('stock', build='NS6575/8344')
         self.assertEqual(code, 1, out)  # no unpacked 8349 OTA in the made-up unit
         self.assertIn('stock-8349-parts', out)
@@ -250,6 +255,77 @@ class Simulated(unittest.TestCase):
         self.assertEqual(code, 1, out)
         self.assertIn("protected volumes are not 8349", out)
         self.assertFalse(os.path.exists(os.path.join(self.d, 'backups')), out)
+
+    def test_bundle_from_before_keyless_adb_is_refused_up_front(self):
+        self.bundle(adb=None)
+        code, out = self.run_installer('stock')
+        self.assertEqual(code, 1, out)
+        self.assertIn('Rebuild the bundle with cannoli-os-builder (no --adb-key', out)
+        self.assertNotIn('firebreak: ', out)  # said before firebreak is ever started
+
+    def test_gift_on_a_stock_unit_with_no_saved_network(self):
+        # A factory-reset unit: stock Fire OS in setup mode, no network saved, nothing named.
+        self.bundle()
+        code, out = self.run_installer('stock', '--for-someone-else', name=None)
+        self.assertEqual(code, 0, out)
+        self.assertIn('firebreak unlock --device cannoli', out)
+        self.assertNotIn('--wifi', out)
+
+    def test_gift_cannot_be_combined_with_name_wifi_or_key(self):
+        for extra in (['--name', 'Kitchen'], ['--wifi', 'Net'], ['--wifi-passphrase-file', 'p.txt'],
+                      ['--key-file', 'k.key'], ['--ssh-key', 'k.pub']):
+            code, out = self.run_installer('stock', '--for-someone-else', *extra, name=None)
+            self.assertEqual(code, 1, (extra, out))
+            self.assertIn('--for-someone-else', out, extra)
+            self.assertIn(extra[0], out, extra)
+
+    def test_gift_needs_the_root_filesystem(self):
+        code, out = self.run_installer('stock', '--for-someone-else', '--rescue-only', name=None)
+        self.assertEqual(code, 1, out)
+        self.assertIn('needs the root filesystem', out)
+
+
+class FakeAdb:
+    """What identity() asks the unit: here, a factory-reset one with no network saved and no name."""
+
+    def __init__(self):
+        self.asked = []
+
+    def sh(self, command):
+        self.asked.append(command)
+        return ''
+
+
+class Gift(unittest.TestCase):
+    def args(self, **kw):
+        import argparse
+        d = dict(for_someone_else=False, wifi_ssid=None, wifi_passphrase_file=None, key_file=None, name=None,
+                 serial=SERIAL)
+        d.update(kw)
+        return argparse.Namespace(**d)
+
+    def test_gift_asks_and_writes_nothing(self):
+        adb = FakeAdb()
+        self.assertEqual(ic.identity(self.args(for_someone_else=True), adb, tempfile.gettempdir()),
+                         (None, None, None, None, None))
+        self.assertEqual(adb.asked, [])
+
+    def test_no_saved_network_without_a_person_names_the_ways_out(self):
+        os.environ['TECHO5_NO_PROMPT'] = '1'
+        self.addCleanup(os.environ.pop, 'TECHO5_NO_PROMPT')
+        with self.assertRaises(techo5lib.Fail) as e:
+            ic.identity(self.args(), FakeAdb(), tempfile.gettempdir())
+        self.assertIn('--wifi', str(e.exception))
+        self.assertIn('--for-someone-else', str(e.exception))
+
+    def test_marker_and_clearing(self):
+        self.assertEqual(ic.FIRSTRUN_MARKER, '/data/misc/echolocal/firstrun')
+        self.assertNotIn('network', ic.EMPTY_WIFI_CONF)
+        with open(os.path.join(HERE, 'install-cannoli.py'), encoding='utf-8') as f:
+            src = f.read()
+        self.assertIn("push_text('', FIRSTRUN_MARKER)", src)
+        self.assertIn("push_text(EMPTY_WIFI_CONF, LINUX_DIR + '/wpa_supplicant.conf')", src)
+        self.assertIn("rm -f %s/name %s/psk %s/wifi.conf", src)
 
 
 if __name__ == '__main__':

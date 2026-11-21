@@ -46,7 +46,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from techo5lib import (CONSOLE_TECHO5, Adb, Console, Fastboot, ask, ask_name, ask_wifi, confirm,  # noqa: E402
+from techo5lib import (CONSOLE_TECHO5, Adb, Console, Fastboot, ask, ask_name, ask_wifi, check_gift, confirm,  # noqa: E402
                        default_dir, download_checked, fail, hash_file, interactive, need, new_api_key, note,
                        repo_root, run_main, step, valid_api_key, write_private)
 from techo5lib import wifi_conf as techo5_wifi_conf  # noqa: E402
@@ -121,6 +121,9 @@ STORE = '/data/techo5-store/techo5'
 LINUX_DIR = '/data/techo5-linux'
 STATE = '/data/misc/echolocal'
 END = 'T5-END'
+# A gift install's: the marker that starts first run, and a supplicant configuration with no network.
+FIRSTRUN_MARKER = dot.FIRSTRUN_MARKER
+EMPTY_WIFI_CONF = dot.EMPTY_WIFI_CONF
 
 # After slot a is unpacked: what init-cannoli needs to boot it is there, and the store says to boot it
 # (slotctl's layout: good, since it was checked here, and active). The count of slot boots that never
@@ -445,8 +448,10 @@ def check_bundle(bundle, serial):
         fail('%s is for %s %s on %s, not this cannoli %s on %s' % (path, m.get('product'), m.get('serial'), m.get('build'),
                                                                       serial, TARGET_NAME))
     if m.get('adb') != 'keyless':
-        note("%s has no \"adb\": \"keyless\": firebreak refuses a bundle from an OS builder before 74903ad; "
-             'rebuild it if it does' % path)
+        # firebreak refuses it before it writes anything, but only after the power prompts: said here first.
+        fail('%s has no "adb": "keyless": it comes from a cannoli-os-builder before 74903ad, which baked the build '
+             "host's adb key into slot A, and firebreak refuses it. Rebuild the bundle with cannoli-os-builder (no "
+             '--adb-key, a fresh --output; docs/install-cannoli.md), then run this again. Nothing was written.' % path)
     return m
 
 
@@ -571,6 +576,9 @@ def main():
     ap.add_argument('--wifi-passphrase-file', help='a file holding the --wifi passphrase')
     ap.add_argument('--ssh-key', help='an SSH public key allowed to log in as root')
     ap.add_argument('--wake-words', default='okay_nabu,hey_jarvis,hey_mycroft,alexa,' + ','.join(dot.EXTRA_MODELS))
+    ap.add_argument('--for-someone-else', action='store_true',
+                    help='a gift install: no Wi-Fi, name or key is asked for or written; the Dot starts its own setup '
+                    '(Improv over Bluetooth) when it first boots slot B')
     ap.add_argument('--dry-run', action='store_true', help='checks, backups and builds; write nothing to the unit')
     ap.add_argument('--backups', default=default_dir('TECHO5_BACKUPS', 'backups'))
     ap.add_argument('--work', default=default_dir('TECHO5_WORK', 'build'))
@@ -578,6 +586,12 @@ def main():
     ap.add_argument('--adb', default='adb')
     ap.add_argument('--fastboot', default='fastboot')
     a = ap.parse_args()
+    # --ssh-key is refused here too: the daemon's first run wipes the state directory's ssh/ the first time
+    # it sees the marker, so a key written with it would be gone by the first SSH login.
+    check_gift(a, **{'--name': a.name, '--wifi': a.wifi_ssid, '--wifi-passphrase-file': a.wifi_passphrase_file,
+                     '--key-file': a.key_file, '--ssh-key': a.ssh_key})
+    if a.for_someone_else and a.rescue_only:
+        fail("--for-someone-else needs the root filesystem: the rescue environment has no setup of its own")
     need(a.adb, 'install the Android platform tools (adb)')
     if not os.path.isdir(a.firebreak or ''):
         a.firebreak = None
@@ -655,6 +669,9 @@ def main():
              'unit off Wi-Fi so it takes no further update.' % (a.serial, TARGET_NAME))
     if verdict == 'unknown':
         fail('the Fire OS build of %s cannot be read (%s); nothing was written' % (a.serial, props))
+    if state == 'stock' or verdict == 'upgrade':
+        # firebreak needs the bundle for the unlock: a wrong or old one is said now, before any question.
+        check_bundle(bundle, a.serial)
     if verdict == 'upgrade':
         check_ota(a.ota)
         check_ota_parts(ota_parts)
@@ -802,50 +819,7 @@ def main():
 
     # ---------------------------------------------------------------------------------------- 6
     step('Wi-Fi and Home Assistant identity')
-    wifi_conf = None
-    saved = adb.sh('sed -n "s/^[ \\t]*ssid=//p" /data/misc/wifi/wpa_supplicant.conf 2>/dev/null | head -1')
-    own_wifi = adb.sh('test -s %s/wifi.conf && echo yes' % LINUX_DIR) == 'yes'
-    if saved and not own_wifi and not a.wifi_ssid and interactive():
-        if input('   Fire OS has the Wi-Fi network %s saved. Join it? [Y/n]: ' % saved).strip().lower() in ('n', 'no'):
-            saved = ''
-    if a.wifi_ssid or (not saved and not own_wifi):
-        ssid = a.wifi_ssid
-        if not ssid:
-            if not interactive():
-                fail('%s has no saved Wi-Fi network: pass --wifi' % a.serial)
-            ssid = ask('Wi-Fi network name')
-        if a.wifi_passphrase_file:
-            with open(a.wifi_passphrase_file, encoding='utf-8-sig') as f:
-                wifi_conf = techo5_wifi_conf(ssid, f.read().rstrip('\r\n'))
-        else:
-            wifi_conf = ask_wifi(ssid)
-        note("will join '%s'" % ssid)
-    elif own_wifi:
-        note('Wi-Fi network set on the unit before; keeping it')
-    else:
-        note('saved Wi-Fi network %s (the one Fire OS saved)' % saved)
-    have_name = adb.sh('cat %s/name 2>/dev/null' % STATE)
-    have_key = adb.sh('cat %s/psk 2>/dev/null' % STATE)
-    key_file = a.key_file or os.path.join(root, 'home-assistant.key')
-    name, psk = None, None
-    if have_name and valid_api_key(have_key):
-        note("keeping '%s' and its key: Home Assistant sees the same device" % have_name)
-        if not os.path.exists(key_file):
-            write_private(key_file, have_key)
-        shown = (have_name, have_key)
-    else:
-        name = ask_name(a.name, 'Echo Dot 5')
-        if os.path.exists(key_file):
-            with open(key_file) as f:
-                psk = f.read().strip()
-            if not valid_api_key(psk):
-                fail('the key in %s is not 32 bytes of base64' % key_file)
-        else:
-            psk = new_api_key()
-            write_private(key_file, psk)
-            note('new key written to %s' % key_file)
-        note("will provision '%s'" % name)
-        shown = (name, psk)
+    wifi_conf, name, psk, shown, key_file = identity(a, adb, root)
     models = None
     have_models = int(adb.sh('ls %s/models/*.tflite 2>/dev/null | wc -l' % STATE) or 0)
     if have_models == 0:
@@ -933,6 +907,15 @@ def main():
         push_text(name, STATE + '/name')
         push_text(psk, STATE + '/psk')
         note("provisioned '%s'" % name)
+    if a.for_someone_else:
+        # An empty file in the state directory (echod's layout.StateDir): the Dot starts its own setup
+        # (first run) and wipes what a giver left the first time it sees it. Nothing of the giver's stays:
+        # techo5-net uses a kept wpa_supplicant.conf as it is and falls back to the network Fire OS saved
+        # only when there is none, so a configuration with no network goes in.
+        adb.sh('rm -f %s/name %s/psk %s/wifi.conf' % (STATE, STATE, LINUX_DIR))
+        push_text('', FIRSTRUN_MARKER)
+        push_text(EMPTY_WIFI_CONF, LINUX_DIR + '/wpa_supplicant.conf')
+        note('first-run marker written; the name, key and any saved network are cleared')
     if models:
         adb.sh('mkdir -p %s/models' % STATE)
         for m in sorted(os.listdir(models)):
@@ -953,6 +936,62 @@ def main():
     print('   Unplug the Dot\'s power, hold Volume-Up, plug it back in and keep holding about 5 s. Any power-on')
     print('   without Volume-Up starts Fire OS from slot A, as before.')
     wait_healthy(a, shown, key_file, rootfs is not None)
+
+
+def identity(a, adb, root):
+    """Step 6: the Wi-Fi network and the Home Assistant name and key, as install-dot.py has them. Returns
+    (wifi_conf, name, psk, shown, key_file): what to write (None for nothing), and the name and key to
+    print at the end. A gift install (--for-someone-else) asks for none of it and writes none of it."""
+    if a.for_someone_else:
+        note('gift install: no Wi-Fi network, name or Home Assistant key is asked for or written; the new '
+             'owner gives it a network over Bluetooth (Improv) and their Home Assistant adds it')
+        return None, None, None, None, None
+    wifi_conf = None
+    saved = adb.sh('sed -n "s/^[ \\t]*ssid=//p" /data/misc/wifi/wpa_supplicant.conf 2>/dev/null | head -1')
+    own_wifi = adb.sh('test -s %s/wifi.conf && echo yes' % LINUX_DIR) == 'yes'
+    if saved and not own_wifi and not a.wifi_ssid and interactive():
+        if input('   Fire OS has the Wi-Fi network %s saved. Join it? [Y/n]: ' % saved).strip().lower() in ('n', 'no'):
+            saved = ''
+    if a.wifi_ssid or (not saved and not own_wifi):
+        ssid = a.wifi_ssid
+        if not ssid:
+            if not interactive():
+                fail('%s has no saved Wi-Fi network: pass --wifi, or --for-someone-else to leave the network to '
+                     'Improv over Bluetooth' % a.serial)
+            ssid = ask('Wi-Fi network name')
+        if a.wifi_passphrase_file:
+            with open(a.wifi_passphrase_file, encoding='utf-8-sig') as f:
+                wifi_conf = techo5_wifi_conf(ssid, f.read().rstrip('\r\n'))
+        else:
+            wifi_conf = ask_wifi(ssid)
+        note("will join '%s'" % ssid)
+    elif own_wifi:
+        note('Wi-Fi network set on the unit before; keeping it')
+    else:
+        note('saved Wi-Fi network %s (the one Fire OS saved)' % saved)
+    have_name = adb.sh('cat %s/name 2>/dev/null' % STATE)
+    have_key = adb.sh('cat %s/psk 2>/dev/null' % STATE)
+    key_file = a.key_file or os.path.join(root, 'home-assistant.key')
+    name, psk = None, None
+    if have_name and valid_api_key(have_key):
+        note("keeping '%s' and its key: Home Assistant sees the same device" % have_name)
+        if not os.path.exists(key_file):
+            write_private(key_file, have_key)
+        shown = (have_name, have_key)
+    else:
+        name = ask_name(a.name, 'Echo Dot 5')
+        if os.path.exists(key_file):
+            with open(key_file) as f:
+                psk = f.read().strip()
+            if not valid_api_key(psk):
+                fail('the key in %s is not 32 bytes of base64' % key_file)
+        else:
+            psk = new_api_key()
+            write_private(key_file, psk)
+            note('new key written to %s' % key_file)
+        note("will provision '%s'" % name)
+        shown = (name, psk)
+    return wifi_conf, name, psk, shown, key_file
 
 
 def write_bytes(path, data):
@@ -1047,7 +1086,13 @@ def wait_healthy(a, shown, key_file, with_rootfs):
     if shown:
         print("Home Assistant will discover '%s' as an ESPHome device. When it asks for the encryption key, paste:\n\n"
               "    %s\n\n(also saved in %s)\n" % (shown[0], shown[1], key_file))
-    if verdict == 'healthy' and with_rootfs:
+    if a.for_someone_else and verdict == 'healthy':
+        print('Done: %s runs TECHO5 Linux from slot B (slot %s), healthy, and starts its own setup: about 45 s'
+              % (a.serial, kv.get('slot')))
+        print('after it starts, its ring breathes and it offers Improv over Bluetooth. Give it a network from Home')
+        print("Assistant (or improv-wifi.com); its owner's Home Assistant then adds it with nothing typed. Every")
+        print('power-on with Volume-Up held boots it; without, Fire OS starts from slot A.')
+    elif verdict == 'healthy' and with_rootfs:
         print('Done: %s runs TECHO5 Linux from slot B (slot %s), healthy%s.' % (
             a.serial, kv.get('slot'), ", and Home Assistant's API port answers at %s:6053" % ip if up else ''))
         print('Every power-on with Volume-Up held boots it; without, Fire OS starts from slot A.')

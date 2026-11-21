@@ -151,6 +151,27 @@ On a Dot already running TECHO5 (SSH switched on in Home Assistant, with a key):
   `/run`, root's alone and not capped, rather than `/tmp`, which is bounded at 32 MB, less than a daemon,
   and which anyone on the device can write to.
 
+## The Echo Dot 5th gen's first Linux boot (bring-up)
+
+The Echo Dot 5th gen (2022, `cannoli`) is not installable yet. Its first Linux image is a rescue
+environment in slot B, beside Fire OS in slot A. It has a root shell on the UART (921600 8N1) and over
+USB (a COM port), a log on userdata, Wi-Fi on the network Fire OS saved, and SSH with an
+`authorized_keys` on userdata.
+
+It is built from the unit's own folder: `bundle/` (the OS bundle cannoli-os-builder made for it) and
+`m0/` (its backup, for the Wi-Fi driver and firmware). With the inputs of step 2:
+
+```
+python3 tools/linux/build-cannoli-image.py --unit ../cannoli-<serial>
+```
+
+The image is the unit's stock FIT with only the ramdisk replaced. The kernel and device tree are
+signed and the ramdisk is not, so the signature still holds. The script checks that everything else is
+the stock FIT byte for byte, and that the image fits within what the unit's U-Boot reads of `boot_b`.
+It is the unit's own kernel and driver, so it is never redistributable. The script prints how to
+write it to slot B and how to get TWRP back (`bundle/boot_b.img`). Holding Volume-Up at power-on boots
+it; any other power-on boots Fire OS.
+
 ## Package versions
 
 The package lists name exact Alpine versions. Alpine keeps only the newest build of each package, so an

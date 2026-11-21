@@ -36,6 +36,14 @@ the slot-B image on your computer from the backup it takes of the unit it runs o
   the build host's adb key into slot A, and firebreak refuses it. The installer checks this before it asks
   anything or starts firebreak. If it stops there, rebuild the bundle with cannoli-os-builder, without
   `--adb-key` and into a fresh `--output`.
+
+  **Build it without `--port`.** cannoli-os-builder's `--port` bakes the Echo Dot Assist port (hassmic)
+  into slot A's `system_a`, and firebreak's unlock writes the bundle's slot A as it is. TECHO5 only needs
+  rooted stock Fire OS there. With the port in, hassmic runs on every ordinary power-on and holds the
+  speaker and microphones. Restoring a clean firebreak backup doesn't help: the next unlock with that
+  bundle puts hassmic back. `ls /system/hassmic` from adb shows which one a unit has. If it's there,
+  rebuild the bundle without `--port`, run `firebreak unlock` with it again, and remove the port's data
+  with `rm -rf /data/local/hassmic`.
 - A firebreak checkout with the cannoli route next to this one (`../firebreak`, or `--firebreak`), with
   [uv](https://docs.astral.sh/uv/). Run the installer from **Windows' own Python** when it has to unlock:
   firebreak catches the unit's preloader from native Windows, not from WSL, where the USB window is shorter

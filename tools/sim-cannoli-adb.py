@@ -84,7 +84,10 @@ def shell(cmd):
                 out.append('ubi0_%d %s %d' % (n, name, size))
     elif cmd == 'cat /proc/mtd':
         out.append('dev:    size   erasesize  name')
-        out += ['mtd%d: 00040000 00020000 "brhgptlk_%d"' % (n, n) for n in range(4)]
+        for n in range(4):
+            p = os.path.join(M0, 'brhgptlk_%d.bin' % n)
+            size = os.path.getsize(p) if os.path.exists(p) else 0x40000
+            out.append('mtd%d: %08x 00020000 "brhgptlk_%d"' % (n, size, n))
     elif cmd.startswith('for d in /dev/mtd'):
         m = re.search(r'/dev/mtd(\d)', cmd)
         out.append('/dev/mtd' + m.group(1))

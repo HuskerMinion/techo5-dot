@@ -166,10 +166,11 @@ def build_text(build, number):
         return 'an unknown build'
     if build is None:
         return 'build number %d' % number
-    name = 'NS6575/%d' % build if build == TARGET_BUILD else '%d' % build
+    if build == TARGET_BUILD:
+        return 'Fire OS 6.5.7.5 (%s)' % TARGET_NAME
     if build in OLDER_BUILDS:
-        name = 'Fire OS %s (%d)' % (OLDER_BUILDS[build], build)
-    return name
+        return 'Fire OS %s (%d)' % (OLDER_BUILDS[build], build)
+    return 'build %d' % build
 
 
 def classify(adb_state, props, uid, port_installed):
@@ -438,7 +439,8 @@ def check_bundle(bundle, serial):
 def check_ota_parts(parts):
     if not parts or not os.path.isdir(parts):
         fail('the 8349 upgrade needs the unpacked 8349 OTA (%s, MD5 %s, from %s), unpacked with payload_dump.py '
-             'into a folder of %s. Pass it with --ota-parts.' % (OTA_NAME, OTA_MD5, OTA_PAGE, ', '.join(UPGRADE_PARTS)))
+             'into a folder of %s; there is none at %s. Pass it with --ota-parts.'
+             % (OTA_NAME, OTA_MD5, OTA_PAGE, ', '.join(UPGRADE_PARTS), parts))
     missing = [p for p in UPGRADE_PARTS if not os.path.exists(os.path.join(parts, p))]
     if missing:
         fail('%s lacks %s' % (parts, ', '.join(missing)))
@@ -626,7 +628,7 @@ def main():
     else:
         build, number = build_of(props)
         verdict = gate(build, number)
-        note('Fire OS %s, slot %s' % (build_text(build, number), props.get('ro.boot.slot_suffix') or '?'))
+        note('%s, slot %s' % (build_text(build, number), props.get('ro.boot.slot_suffix') or '?'))
         if state == 'rooted':
             unit.setup_busybox(busybox)
             pre = prerequisites_8349(unit)

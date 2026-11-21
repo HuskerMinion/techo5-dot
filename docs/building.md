@@ -159,11 +159,17 @@ USB (a COM port), a log on userdata, Wi-Fi on the network Fire OS saved, and SSH
 `authorized_keys` on userdata.
 
 It is built from the unit's own folder: `bundle/` (the OS bundle cannoli-os-builder made for it) and
-`m0/` (its backup, for the Wi-Fi driver and firmware). With the inputs of step 2:
+`m0/` (its backup, for the Wi-Fi driver and firmware). With the inputs of step 2, first build
+`cannoli_hwfixup.ko` in WSL (see Kernel modules below), then the image:
 
 ```
+FILL=<6.5.5.5 drop>/kernel/mediatek/5.4 \
+  tools/linux/build-cannoli-hwfixup.sh <6.5.7.1 drop>/platform.tar <unit>/stock-8349-parts/boot.img <unit>/m0/modules/*.ko
 python3 tools/linux/build-cannoli-image.py --unit ../cannoli-<serial>
 ```
+
+U-Boot leaves the ring, the amplifier and the microphone converter disabled on a slot-B boot, and the
+module creates their devices from the device tree.
 
 The image is the unit's stock FIT with only the ramdisk replaced. The kernel and device tree are
 signed and the ramdisk is not, so the signature still holds. The script checks that everything else is

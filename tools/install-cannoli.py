@@ -1003,7 +1003,7 @@ def unpack_rootfs(unit, rootfs, work, stage):
     # An earlier slot a goes first: the room is short.
     unit.checked('mkdir -p %s/slots && rm -rf %s/slots/a %s/slots/a.old %s/incoming-*.tar.gz && mkdir %s/slots/a'
                  % ((S,) * 5), 'the slot')
-    free = unit.checked("%s df -k /data | %s tail -n 1 | %s awk '{print $4}'" % (unit.bb, unit.bb, unit.bb), 'free space')
+    free = unit.checked("%s df -Pk /data | %s tail -n 1 | %s awk '{print $4}'" % (unit.bb, unit.bb, unit.bb), 'free space')
     if not free.isdigit():
         fail('could not read the free space on userdata (%r)' % free)
     free = int(free) * 1024

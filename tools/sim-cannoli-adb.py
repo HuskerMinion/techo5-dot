@@ -140,7 +140,7 @@ def shell(cmd):
             # A volume update replaces the whole volume with the image.
             m = re.search(r'ubiupdatevol\)? /dev/ubi0_(\d+) (\S+)', cmd)
             shutil.copyfile(local(m.group(2)), os.path.join(DIR, 'ubi0_%s.bin' % m.group(1)))
-        elif re.search(r' df -k /data ', cmd):
+        elif re.search(r' df -Pk /data ', cmd):
             out.append(os.environ.get('TECHO5_SIM_FREE_KB', '160000'))
         elif re.match(r'\S+ tar xzf (\S+) -C \S+/slots/a 2>', cmd):
             out += untar(re.match(r'\S+ tar xzf (\S+)', cmd).group(1))

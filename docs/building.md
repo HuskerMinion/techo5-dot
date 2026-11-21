@@ -178,6 +178,44 @@ It is the unit's own kernel and driver, so it is never redistributable. The scri
 write it to slot B and how to get TWRP back (`bundle/boot_b.img`). Holding Volume-Up at power-on boots
 it; any other power-on boots Fire OS.
 
+### Bluetooth
+
+The stock kernel is built without a Bluetooth stack, and BlueZ does not fit in the ramdisk. So
+Bluetooth is a payload on userdata, `/data/techo5-linux/bt.tar.gz`, that the init unpacks and starts
+after Wi-Fi. Build the stack's modules in WSL, then the payload:
+
+```
+FILL=<6.5.5.5 drop>/kernel/mediatek/5.4 \
+  tools/linux/build-cannoli-bt-modules.sh <6.5.7.1 drop>/platform.tar <unit>/stock-8349-parts/boot.img <unit>/m0/modules/*.ko
+GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -trimpath -o ../techo5-dot/build/btbridge/btbridge ./cmd/btbridge   # in TECHO5
+python3 tools/linux/build-cannoli-bt-payload.py --unit ../cannoli-<serial>
+```
+
+The radio driver stays the unit's own `btmtksdio.ko`: it makes `/dev/stpbt` without any stack, and
+`btbridge` puts it behind `hci0` through `hci_vhci`, as on the Echo Dot 3rd gen.
+
+### Kernel modules
+
+The kernel has `MODVERSIONS` on: it refuses a module whose imported CRCs differ from its own. Both
+module scripts share `tools/linux/cannoli-kernel.sh`, which builds the whole GPL tree once (about 8
+minutes; the second script then takes seconds). It uses the shipped kernel's own config, read out of
+the stock `boot.img`, and compares every CRC our modules import with the shipped kernel's, read by
+echo-dot-assist's `tools/kcrc.py`. A CRC that differs means a struct differs between the GPL tree and
+the shipped kernel, and the build stops.
+
+Use Amazon's 6.5.7.1 drop (`Echo_Dot_5th_Gen_src-6.5.7.1-20251027`). With it every CRC matches
+(Bluetooth's 265, the hwfixup's 16), while the 6.5.5.5 tree differs in half of them. The 6.5.7.1 drop is
+trimmed to what Amazon compiled and has no Bluetooth sources or `scripts/config`, so `FILL` adds the
+files it lacks from the full 6.5.5.5 drop, never replacing one. Plain GCC works: the script hides the
+attributes Amazon's GCC 4.9 didn't have, since genksyms hashes them too.
+
+Copy the payload over SSH from slot-B Linux and start it (or reboot into slot B):
+
+```
+cmd /c "ssh root@<address> ""cat > /data/techo5-linux/bt.tar.gz"" < techo5-cannoli-bt.tar.gz"
+ssh root@<address> /sbin/techo5-bt-up
+```
+
 ## Package versions
 
 The package lists name exact Alpine versions. Alpine keeps only the newest build of each package, so an

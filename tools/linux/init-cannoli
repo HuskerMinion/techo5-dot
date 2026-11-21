@@ -201,6 +201,45 @@ if [ -n "$DATA_UP" ] && wifi; then
 	fi
 fi
 
+# --- Bluetooth: too big for this ramdisk, so it comes from userdata, /data/techo5-linux/bt.tar.gz
+# (build-cannoli-bt-payload.py): the unit's btmtksdio.ko (MediaTek's vendor driver with WMT inside; it
+# makes /dev/stpbt, raw H4, and needs no Bluetooth stack), the stack the stock kernel lacks as modules
+# built for it (build-cannoli-bt-modules.sh), btbridge, BlueZ, dbus and bluez-alsa. btbridge puts
+# /dev/stpbt behind hci0 through /dev/vhci and techo5-bt starts BlueZ on it, as on the Echo Dot 3rd gen.
+# After Wi-Fi, as Fire OS loads the driver: the two share the chip. /sbin/techo5-bt-up runs it again by
+# hand, after a new payload was copied over.
+cat > /sbin/techo5-bt-up <<'EOF'
+#!/bin/busybox.static sh
+BB=/bin/busybox.static
+PAYLOAD=/data/techo5-linux/bt.tar.gz
+MODS=/lib/modules/techo5/bt
+say() { echo "techo5-cannoli: $*" > /dev/kmsg; echo "$*"; }
+[ -s $PAYLOAD ] || { say "bluetooth: no $PAYLOAD"; exit 0; }
+[ -e /sys/class/net/wlan0 ] || say "bluetooth: no wlan0; trying anyway"
+$BB tar -xzf $PAYLOAD -C / 2>/tmp/bt-tar.err || { say "bluetooth: unpacking: $($BB cat /tmp/bt-tar.err)"; exit 1; }
+if [ ! -e /dev/stpbt ]; then
+	$BB insmod $MODS/btmtksdio.ko 2>/tmp/insmod.err || $BB grep -q 'File exists' /tmp/insmod.err ||
+		{ say "bluetooth: insmod btmtksdio: $($BB cat /tmp/insmod.err)"; exit 1; }
+	i=0
+	while [ $i -lt 15 ] && [ ! -e /dev/stpbt ]; do $BB mdev -s; $BB sleep 1; i=$((i + 1)); done
+fi
+[ -e /dev/stpbt ] || { say "bluetooth: btmtksdio loaded but no /dev/stpbt"; exit 1; }
+for m in $($BB cat $MODS/load-order); do
+	$BB insmod $MODS/$m.ko 2>/tmp/insmod.err || $BB grep -q 'File exists' /tmp/insmod.err ||
+		{ say "bluetooth: insmod $m: $($BB cat /tmp/insmod.err) ($($BB dmesg | $BB tail -3 | $BB tr '\n' ' '))"; exit 1; }
+done
+$BB mdev -s
+[ -e /dev/vhci ] || { say "bluetooth: no /dev/vhci"; exit 1; }
+$BB mkdir -p /run/techo5 /data/techo5-linux/bluetooth
+pidof btbridge > /dev/null && { say "bluetooth: btbridge already running"; exit 0; }
+/usr/local/sbin/techo5-bt > /dev/null 2>&1 &
+i=0
+while [ $i -lt 30 ] && [ ! -d /sys/class/bluetooth/hci0 ]; do $BB sleep 1; i=$((i + 1)); done
+say "bluetooth: $([ -d /sys/class/bluetooth/hci0 ] && echo "hci0 $($BB cat /sys/class/bluetooth/hci0/address 2>/dev/null)" || echo "no hci0 after 30 s (see /data/techo5-linux/btbridge.log)")"
+EOF
+$BB chmod 755 /sbin/techo5-bt-up
+[ -n "$DATA_UP" ] && /sbin/techo5-bt-up >> $LOGDIR/bluetooth.log 2>&1 &
+
 snapshot
 say "rescue ready: UART and USB consoles, SSH once on the network; /sbin/to-fireos goes back"
 

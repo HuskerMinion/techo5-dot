@@ -7,7 +7,9 @@ plan.
 
 --unit is the unit's working folder: bundle/ (the OS bundle cannoli-os-builder made for it: boot_a.img is
 Fire OS's stock FIT, uboot_b.img the U-Boot that boots slot B) and m0/ (the backup: modules/ and
-firmware/ from its system). The inputs are techo5-dot's usual ones (docs/building.md): the Alpine armv7
+firmware/ from its system). --boot and --uboot take those two from elsewhere instead, such as the unit's
+own boot_a and uboot_b volumes as tools/install-cannoli.py backs them up: a whole volume is cut to its
+FIT, rounded up to 4 KiB as the bundle's images are. The inputs are techo5-dot's usual ones (docs/building.md): the Alpine armv7
 minirootfs, busybox.static and apks-dot/ in TECHO5_INPUTS (default inputs/).
 
 How the image is made. The FIT's configurations sign the kernel and the device tree (sign-images = fdt,
@@ -238,6 +240,15 @@ def initramfs(a, unit_m0):
     return lzma.compress(raw, format=lzma.FORMAT_ALONE, preset=9 | lzma.PRESET_EXTREME), len(names), len(raw)
 
 
+def fit_image(data):
+    """A FIT as an image file: a whole UBI volume read from the unit carries its FIT and then the volume's
+    unused bytes, so it is cut at the FIT's own length, rounded up to 4 KiB as the bundle's images are."""
+    if data[:4] != b"\xd0\x0d\xfe\xed":
+        return data
+    total = struct.unpack_from(">I", data, 4)[0]
+    return data[:total + (-total % 4096)]
+
+
 def uboot_read_length(uboot):
     m = re.search(rb"ubi read 41000000 boot_b ([0-9a-f]+);", uboot)
     if not m:
@@ -249,6 +260,8 @@ def main():
     j = os.path.join
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--unit", required=True, help="the unit's folder, with bundle/ and m0/")
+    ap.add_argument("--boot", help="Fire OS 8349's stock boot FIT (default <unit>/bundle/boot_a.img)")
+    ap.add_argument("--uboot", help="the U-Boot that boots slot B (default <unit>/bundle/uboot_b.img)")
     ap.add_argument("--inputs", default=os.environ.get("TECHO5_INPUTS") or j(REPO, "inputs"))
     ap.add_argument("--release", default="first", help="what /etc/techo5-release says")
     ap.add_argument("--hwfixup", default=j(REPO, "build", "cannoli-hwfixup", "cannoli_hwfixup.ko"),
@@ -259,10 +272,11 @@ def main():
     a = ap.parse_args()
 
     bundle, m0 = j(a.unit, "bundle"), j(a.unit, "m0")
-    stock = read(j(bundle, "boot_a.img"))
+    boot = a.boot or j(bundle, "boot_a.img")
+    stock = fit_image(read(boot))
     if hashlib.sha256(stock).hexdigest() != STOCK_BOOT_SHA256:
-        sys.exit("%s is not Fire OS 8349's boot.img" % j(bundle, "boot_a.img"))
-    limit = uboot_read_length(read(j(bundle, "uboot_b.img")))
+        sys.exit("%s is not Fire OS 8349's boot.img" % boot)
+    limit = uboot_read_length(read(a.uboot or j(bundle, "uboot_b.img")))
 
     ramdisk, entries, raw_size = initramfs(a, m0)
 

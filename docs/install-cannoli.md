@@ -256,8 +256,10 @@ What changes once TECHO5 is the default:
   gets out of it into Fire OS.
 - If slot A's U-Boot itself fails to start, only firebreak's BL2 route over the soldered pads gets
   the unit back. The probe and the readback are there to make that unlikely.
-- `install-cannoli.py`'s first boot (step 8) still says to hold Volume-Up. On a unit that boots TECHO5 by
-  default, hold no button there, and hold Volume-Up wherever it asks for Fire OS.
+- `install-cannoli.py` reads uboot_a's hash before its backups and says which button boots what: on a unit
+  that boots TECHO5 by default, its first boot (step 8) takes no button, and Fire OS takes Volume-Up. A
+  uboot_a that is neither image is taken as firebreak's. A reboot from TWRP that comes back in TWRP tells it
+  the same, and it asks for Volume-Up to reach Fire OS.
 
 ## Going back
 

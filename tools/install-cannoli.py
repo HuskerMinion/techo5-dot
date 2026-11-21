@@ -4,7 +4,8 @@
     python3 tools/install-cannoli.py --serial <serial> --unit ../cannoli-<serial> --dry-run
     python3 tools/install-cannoli.py --serial <serial> --unit ../cannoli-<serial> --name Kitchen
 
-The Dot 5 keeps Fire OS in slot A and boots slot B when Volume-Up is held at power-on. firebreak's cannoli
+The Dot 5 keeps Fire OS in slot A and boots slot B when Volume-Up is held at power-on, or the other way round
+once tools/cannoli-boot-default.py has made TECHO5 the default (the installer reads which). firebreak's cannoli
 route (`firebreak unlock --device cannoli`) roots Fire OS in slot A and puts TWRP in slot B; this installer
 then puts TECHO5's own boot image in slot B, built here from the unit's own kernel, drivers and firmware
 (Amazon's, so never redistributed: every image is built on the host from the unit it runs on).
@@ -25,7 +26,8 @@ What it does, stopping at the first thing not right:
   6. asks for the name, Wi-Fi and Home Assistant key as install-dot.py does
   7. writes any brhgptlk copies from TWRP, then boot_b from Fire OS, each read back, and unpacks the root
      filesystem and the Bluetooth payload onto userdata
-  8. has the unit powered on with Volume-Up held and waits on its USB console for a healthy boot
+  8. has the unit powered on into slot B (Volume-Up held, or no button where TECHO5 is the default) and waits
+     on its USB console for a healthy boot
 
 --dry-run does 1, 2, 4, 5 and 6 and writes nothing to the unit (firebreak's commands are printed, not
 run). The unit's folder (--unit) is the one the cannoli-os-builder and TWRP-builder work in: bundle/
@@ -658,10 +660,62 @@ def prompt(text):
     input('   %s, then press Enter: ' % text)
 
 
+# BOOT is what a power-on with no button starts: 'fireos', as firebreak installs slot A's U-Boot, or
+# 'techo5' once tools/cannoli-boot-default.py has turned the Volume-Up hook round (read_boot_default).
+BOOT = {'default': 'fireos'}
+
+
+def boot_default_tool():
+    """tools/cannoli-boot-default.py as a module, for the hashes its uboot_a images are pinned to."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cannoli-boot-default.py')
+    spec = importlib.util.spec_from_file_location('cannoli_boot_default', path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def read_boot_default(unit):
+    """Which slot a power-on with no button starts, from uboot_a's hash: firebreak's root-a boots Fire OS,
+    cannoli-boot-default.py's image boots TECHO5. Anything else is said and taken as firebreak's."""
+    tool = boot_default_tool()
+    vols = {name: n for n, name, _ in unit.volumes()}
+    if 'uboot_a' not in vols:
+        return BOOT['default']
+    h = unit.sha256('/dev/ubi0_%d' % vols['uboot_a'], tool.IMAGE_SIZE)
+    if h == tool.TECHO5_SHA256:
+        BOOT['default'] = 'techo5'
+        note('a power-on with no button boots TECHO5, one with Volume-Up held boots Fire OS (cannoli-boot-default.py)')
+    else:
+        BOOT['default'] = 'fireos'
+        if h != tool.ROOT_A_SHA256:
+            note("uboot_a is neither firebreak's root-a nor cannoli-boot-default.py's image (sha256 %s); "
+                 'taking it as booting Fire OS without a button' % h)
+    return BOOT['default']
+
+
+def slot_b_power_on():
+    """How to power the unit on into slot B (TECHO5, or TWRP while slot B holds it)."""
+    if BOOT['default'] == 'techo5':
+        return "Unplug the Dot's power and plug it back in with no button held"
+    return "Unplug the Dot's power, hold Volume-Up, plug it back in and keep holding about 5 s"
+
+
+def slot_b_button():
+    """The button a power-on into slot B takes, for a sentence."""
+    return 'with no button' if BOOT['default'] == 'techo5' else 'with Volume-Up held'
+
+
+def fireos_power_on():
+    """How a power-on reaches Fire OS in slot A."""
+    if BOOT['default'] == 'techo5':
+        return 'a power-on with Volume-Up held (about 5 s) starts Fire OS from slot A'
+    return 'a power-on without Volume-Up starts Fire OS from slot A, as before'
+
+
 def to_twrp(adb):
     if adb.state() == 'recovery':
         return
-    prompt('Unplug the Dot\'s power, hold Volume-Up, plug the power back in and keep holding about 5 s (TWRP, slot B)')
+    prompt('%s (TWRP, slot B)' % slot_b_power_on())
     wait_state(adb, ('recovery',), 120, 'TWRP on adb')
 
 
@@ -670,7 +724,16 @@ def to_fireos(adb):
         return
     adb.reboot()
     note('rebooting into Fire OS (slot A)')
-    wait_state(adb, ('device',), 240, 'Fire OS on adb')
+    # TWRP stays on adb for a moment after the reboot was asked for: wait for it to go first.
+    gone = time.time() + 60
+    while adb.state() == 'recovery' and time.time() < gone:
+        time.sleep(2)
+    if wait_state(adb, ('device', 'recovery'), 240, 'Fire OS on adb') == 'recovery':
+        # A unit whose U-Boot boots slot B without a button comes back to TWRP from a plain reboot.
+        BOOT['default'] = 'techo5'
+        prompt("It came back in TWRP: this unit boots slot B without a button. Unplug the Dot's power, hold "
+               'Volume-Up, plug it back in and keep holding about 5 s (Fire OS)')
+        wait_state(adb, ('device',), 240, 'Fire OS on adb')
     adb.root()
 
 
@@ -972,6 +1035,7 @@ def main():
     root = os.path.join(a.backups, a.serial)
     m0 = os.path.join(root, 'm0')
     step('backups to %s' % m0)
+    read_boot_default(unit)
     files = back_up(unit, m0, True)
     for name in ('boot_a', 'uboot_b', 'boot_b'):
         if name not in files:
@@ -1159,8 +1223,7 @@ def main():
 
     # ---------------------------------------------------------------------------------------- 8
     step('first boot of slot B')
-    print('   Unplug the Dot\'s power, hold Volume-Up, plug it back in and keep holding about 5 s. Any power-on')
-    print('   without Volume-Up starts Fire OS from slot A, as before.')
+    print('   %s. Afterwards %s.' % (slot_b_power_on(), fireos_power_on()))
     wait_healthy(a, shown, key_file, rootfs is not None)
 
 
@@ -1485,21 +1548,21 @@ def wait_healthy(a, shown, key_file, with_rootfs):
               % (a.serial, kv.get('slot')))
         print('after it starts, its ring breathes and it offers Improv over Bluetooth. Give it a network from Home')
         print("Assistant (or improv-wifi.com); its owner's Home Assistant then adds it with nothing typed. Every")
-        print('power-on with Volume-Up held boots it; without, Fire OS starts from slot A.')
+        print('power-on %s boots it; %s.' % (slot_b_button(), fireos_power_on()))
     elif verdict == 'healthy' and with_rootfs:
         print('Done: %s runs TECHO5 Linux from slot B (slot %s), healthy%s.' % (
             a.serial, kv.get('slot'), ", and Home Assistant's API port answers at %s:6053" % ip if up else ''))
-        print('Every power-on with Volume-Up held boots it; without, Fire OS starts from slot A.')
+        print('Every power-on %s boots it; %s.' % (slot_b_button(), fireos_power_on()))
     elif verdict == 'healthy':
         print('Done: %s runs the TECHO5 rescue environment from slot B at %s (SSH with your key).' % (a.serial, ip))
     elif kv:
         print('%s booted slot B but is not confirmed healthy (%s). /data/techo5-linux/first-boot.log says what the '
-              'ramdisk did; techo5-retry on the console tries the slots again. A power-on without Volume-Up goes back '
-              'to Fire OS.' % (a.serial, verdict))
+              'ramdisk did; techo5-retry on the console tries the slots again. Otherwise %s.'
+              % (a.serial, verdict, fireos_power_on()))
         sys.exit(1)
     else:
-        print("This PC never saw the unit's USB console. Check that Volume-Up was held at power-on (the console comes "
-              'up within a minute); a power-on without it starts Fire OS.')
+        print("This PC never saw the unit's USB console. Check that it was powered on %s (the console comes "
+              'up within a minute); %s.' % (slot_b_button(), fireos_power_on()))
         sys.exit(1)
 
 

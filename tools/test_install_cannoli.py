@@ -752,5 +752,42 @@ class Gift(unittest.TestCase):
         self.assertIn("rm -f %s/name %s/psk %s/wifi.conf", src)
 
 
+
+class BootDefault(unittest.TestCase):
+    """The installer says which button boots what from uboot_a's hash: firebreak's root-a boots Fire OS
+    without a button, cannoli-boot-default.py's image boots TECHO5."""
+
+    class FakeUnit:
+        def __init__(self, h):
+            self.h = h
+
+        def volumes(self):
+            return [(0, 'uboot_a', 1032192), (8, 'boot_b', 13676544)]
+
+        def sha256(self, path, length=None):
+            assert path == '/dev/ubi0_0' and length == 1032192, (path, length)
+            return self.h
+
+    def tearDown(self):
+        ic.BOOT['default'] = 'fireos'
+
+    def test_root_a_boots_fireos_without_a_button(self):
+        tool = ic.boot_default_tool()
+        self.assertEqual(ic.read_boot_default(self.FakeUnit(tool.ROOT_A_SHA256)), 'fireos')
+        self.assertIn('hold Volume-Up', ic.slot_b_power_on())
+        self.assertIn('without Volume-Up', ic.fireos_power_on())
+
+    def test_the_turned_hook_boots_techo5_without_a_button(self):
+        tool = ic.boot_default_tool()
+        self.assertEqual(ic.read_boot_default(self.FakeUnit(tool.TECHO5_SHA256)), 'techo5')
+        self.assertIn('no button', ic.slot_b_power_on())
+        self.assertNotIn('Volume-Up', ic.slot_b_power_on())
+        self.assertIn('with Volume-Up held', ic.fireos_power_on())
+        self.assertEqual(ic.slot_b_button(), 'with no button')
+
+    def test_an_unknown_uboot_a_is_taken_as_firebreaks(self):
+        self.assertEqual(ic.read_boot_default(self.FakeUnit('0' * 64)), 'fireos')
+
+
 if __name__ == '__main__':
     unittest.main()

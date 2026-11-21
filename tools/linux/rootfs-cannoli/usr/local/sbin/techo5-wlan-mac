@@ -1,0 +1,42 @@
+#!/bin/busybox.static sh
+# techo5-wlan-mac: give wlan0 the same address on every boot of the Echo Dot 5th gen (cannoli).
+#
+# On Fire OS, MediaTek's nvram_daemon writes the unit's address into the NVRAM file the Wi-Fi driver
+# reads (init.mt8519.rc). Linux in slot B runs no nvram_daemon, so the driver makes up an address at
+# every load and DHCP hands out a new lease each time. The address is the factory one from idme when the
+# unit has it there, and otherwise a locally administered one made once and kept on userdata
+# (/data/techo5-linux/wlan-mac), so both slots and the rescue ramdisk agree on it.
+#
+# Run after wlan0 appears and before wpa_supplicant (techo5-net) starts: the interface goes down for it.
+# Used by the rescue ramdisk (init-cannoli) and by the root filesystem (etc/techo5/boot.sh) alike.
+BB=/bin/busybox.static
+KEPT=/data/techo5-linux/wlan-mac
+say() { echo "techo5-wlan-mac: $*" > /dev/kmsg; echo "$*"; }
+
+[ -e /sys/class/net/wlan0 ] || { say "no wlan0"; exit 1; }
+a= from=
+for f in mac_addr wifi_mac_addr wifi_mac; do
+	a=$($BB tr -d '\000 :\n' < /proc/idme/$f 2>/dev/null | $BB tr 'A-F' 'a-f' | $BB grep -E '^[0-9a-f]{12}$')
+	case "$a" in 000000000000 | ffffffffffff) a= ;; esac
+	[ -n "$a" ] && { from="idme $f"; break; }
+done
+if [ -z "$a" ] && [ -d /data/techo5-linux ]; then
+	a=$($BB tr -d ':\n' < $KEPT 2>/dev/null | $BB tr 'A-F' 'a-f' | $BB grep -E '^[0-9a-f]{12}$')
+	from="kept in $KEPT"
+	if [ -z "$a" ]; then
+		# 02: locally administered, unicast.
+		a=02$($BB od -An -N5 -tx1 /dev/urandom | $BB tr -d ' \n')
+		echo "$a" > $KEPT.tmp && $BB mv -f $KEPT.tmp $KEPT && $BB sync
+		from="made now, kept in $KEPT"
+	fi
+fi
+[ -n "$a" ] || { say "no stable address (no idme, no userdata); keeping the driver's"; exit 0; }
+a=$(echo "$a" | $BB sed 's/../&:/g; s/:$//')
+[ "$($BB cat /sys/class/net/wlan0/address)" = "$a" ] && { say "wlan0 already $a ($from)"; exit 0; }
+$BB ip link set wlan0 down 2>/dev/null
+if $BB ip link set wlan0 address "$a" 2>/tmp/mac.err; then
+	say "wlan0 address $a ($from)"
+else
+	say "wlan0: setting $a failed: $($BB cat /tmp/mac.err)"
+	exit 1
+fi

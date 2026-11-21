@@ -399,6 +399,8 @@ firebreak's per-unit bundle) and every step.
   boot image, Wi-Fi, audio and Bluetooth modules.
 - [docs/hardware-cupcake.md](docs/hardware-cupcake.md): the Echo Input: what it shares with the Echo
   Dot 3rd gen, what differs, and what is still to be checked on a unit.
+- [docs/hardware-cannoli.md](docs/hardware-cannoli.md): the Echo Dot 5th gen: its board, why it is
+  pinned to Fire OS 8349, and the other projects and sources it depends on.
 - [docs/microphones.md](docs/microphones.md): the array measurements, echo cancellation, and the
   LED whine that turned out to be Fire OS's.
 - `tools/`: the installer, the Wi-Fi tool, the boot image updater, and `tools/linux/` (initramfs,

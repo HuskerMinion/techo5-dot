@@ -4,6 +4,10 @@
 stock or rooted Fire OS to TECHO5 Linux in one run. It works on one unit so far.
 Keep its backups, and please open an issue with what worked and what didn't.
 
+[hardware-cannoli.md](hardware-cannoli.md) has the board, why the unit is pinned to Fire OS 8349, and which
+other projects and sources the install depends on. The device's exploration is in TECHO5's discussion
+[#610](https://github.com/HuskerMinion/techo5/discussions/610).
+
 The Dot 5 has two boot slots and keeps both:
 
 - **Slot A** is Fire OS, rooted by [firebreak](https://github.com/Gamer92000/firebreak)'s cannoli route.

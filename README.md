@@ -27,6 +27,7 @@
   <a href="#echo-2nd-gen">Echo 2nd gen</a> ·
   <a href="#echo-dot-3rd-gen">Echo Dot 3rd gen</a> ·
   <a href="#echo-input">Echo Input</a> ·
+  <a href="#echo-dot-5th-gen">Echo Dot 5th gen</a> ·
   <a href="#credits">Credits</a> ·
   <a href="https://github.com/HuskerMinion/techo5">TECHO5 for the Echo Show 5</a>
 </p>
@@ -364,6 +365,27 @@ As on the Dot 3 it backs up every boot partition (`swdl` with TWRP in it too), b
 unit's own kernel and puts the root filesystem on userdata. Before it writes anything it checks that
 `misc`, `swdl`, the system slots and userdata are where the Dot 3's boot scripts look for them, and
 stops if they aren't. The console shows up as "Echo Input Linux" (`1d6b:0104`).
+
+### Echo Dot 5th gen
+
+The Echo Dot 5th gen (2022, `cannoli`) is a different machine: a MediaTek MT8519 with NAND under UBI and
+two boot slots. Fire OS stays in slot A, rooted by [firebreak](https://github.com/Gamer92000/firebreak)'s
+cannoli route, and starts on every ordinary power-on. TECHO5 Linux goes in slot B and starts when
+Volume-Up is held at power-on. Its image is the unit's own signed kernel with TECHO5's ramdisk, built on
+your computer from that unit's backup.
+
+> **Working on one unit.** It needs Fire OS NS6575/8349. The installer upgrades an older unit to it,
+> one-way, after asking, and stops on anything newer. Keep the unit off Wi-Fi until it's installed.
+
+```
+python3 tools/install-cannoli.py --serial <serial> --dry-run
+python3 tools/install-cannoli.py --serial <serial>
+```
+
+It detects whether the unit is stock, rooted or in TWRP, unlocks it with firebreak when needed, backs up
+every UBI volume and the BL2 copies, builds and writes slot B, and waits for a healthy first boot.
+[docs/install-cannoli.md](docs/install-cannoli.md) has what you need first (USB soldered to the test pads,
+firebreak's per-unit bundle) and every step.
 
 ## Where things are
 

@@ -153,7 +153,8 @@ On a Dot already running TECHO5 (SSH switched on in Home Assistant, with a key):
 
 ## The Echo Dot 5th gen's first Linux boot (bring-up)
 
-The Echo Dot 5th gen (2022, `cannoli`) is not installable by the installer yet. Its Linux image goes in
+The Echo Dot 5th gen (2022, `cannoli`) installs with `tools/install-cannoli.py`
+([install-cannoli.md](install-cannoli.md)), which runs the steps below for you. Its Linux image goes in
 slot B, beside Fire OS in slot A. The image's ramdisk boots a root filesystem from a store on userdata
 (see Root filesystem below). When there is none, or it is broken, the ramdisk stays up as a rescue
 environment. The rescue has a root shell on the UART (921600 8N1) and over USB (a COM port), a log on

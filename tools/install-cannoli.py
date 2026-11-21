@@ -122,7 +122,21 @@ LINUX_DIR = '/data/techo5-linux'
 STATE = '/data/misc/echolocal'
 END = 'T5-END'
 
-STATES = ('stock', 'rooted', 'twrp', 'fastboot', 'none')
+# After slot a is unpacked: what init-cannoli needs to boot it is there, and the store says to boot it
+# (slotctl's layout: good, since it was checked here, and active). The count of slot boots that never
+# became healthy starts again from zero, so a unit that gave up on an older slot tries this one.
+SLOT_DONE = r'''S=$1
+for f in sbin/init bin/busybox.static etc/techo5/boot.sh usr/local/bin/echod; do
+	[ -e $S/slots/a/$f ] || { echo "slot a has no /$f"; exit 1; }
+done
+: > $S/.techo5-store
+echo good > $S/slots/a.state
+echo a > $S/active
+echo "0 install" > $S/tries
+rm -f $S/rescue
+sync
+echo "slot a: $(cat $S/slots/a/etc/techo5-release)"
+'''
 
 
 def build_of(props):
@@ -869,23 +883,24 @@ def main():
 
     step('userdata: root filesystem, Bluetooth, identity')
     adb.sh('mkdir -p %s %s %s; chmod 700 %s' % (STORE, LINUX_DIR, STATE, STATE))
-    if os.path.exists(twrp_copy):
-        adb.push(twrp_copy, STORE + '/twrp-boot_b.img')
     if rootfs:
-        note('pushing the root filesystem: a minute or two over USB, with no output until done')
-        adb.push(rootfs, stage + '/rootfs.tar.gz')
+        # Unpacked as it arrives: Fire OS's userdata has about 80 MB free, the slot takes some 36 and the
+        # tarball would take 32 more. An earlier slot a goes first for the same reason.
+        unit.checked('mkdir -p %s/slots && rm -rf %s/slots/a %s/slots/a.old && mkdir %s/slots/a' % ((STORE,) * 4), 'the slot')
+        note('unpacking the root filesystem into slot a as it arrives: a minute or two, with no output until done')
+        with open(rootfs, 'rb') as f:
+            r = subprocess.run(adb.cmd + ['exec-in', '%s tar xzf - -C %s/slots/a' % (unit.bb, STORE)], stdin=f,
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         script = os.path.join(a.work, 'techo5-cannoli-slot.sh')
         with open(script, 'w', newline='\n') as f:
-            f.write(dot.SLOT_SCRIPT)
-        adb.push(script, stage + '/slot.sh')
+            f.write(SLOT_DONE)
+        adb.push(script, stage + '/slot-done.sh')
         os.remove(script)
-        result = adb.sh('sh %s/slot.sh %s %s 2>&1' % (stage, stage, STORE))
-        if 'slot a: ' not in result:
-            fail('unpacking the root filesystem failed: %s\nboot_b is written; run the installer again.' % result)
+        result = adb.sh('sh %s/slot-done.sh %s 2>&1' % (stage, STORE))
+        if not result.startswith('slot a: '):
+            fail('unpacking the root filesystem failed: %s %s\nboot_b is written; run the installer again.'
+                 % (r.stdout.decode('utf-8', 'replace').strip(), result))
         note(result)
-        # init-cannoli's count of slot boots that never became healthy starts again from zero, so a unit
-        # that gave up on an older slot tries this one (push-cannoli-rootfs.py does the same).
-        adb.sh('echo "0 install" > %s/tries; rm -f %s/rescue %s/rootfs.tar.gz %s/slot.sh; sync' % (STORE, STORE, stage, stage))
     if bt:
         adb.push(bt, LINUX_DIR + '/bt.tar.gz')
         if unit.sha256(LINUX_DIR + '/bt.tar.gz') != hash_file(bt):

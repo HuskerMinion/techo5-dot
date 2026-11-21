@@ -94,8 +94,9 @@ isn't rooted yet, it stops after the checks and prints the firebreak commands it
    ones a unit already has.
 7. **The writes**, from Fire OS in slot A: `boot_b` with `ubiupdatevol`, read back over the image's
    length. Then the root filesystem into the store's slot a (`/data/techo5-store/techo5`, slotctl's
-   layout), the Bluetooth payload, the TWRP copy, and the name, key, Wi-Fi and wake words on userdata.
-   Fire OS's own files on userdata are left as they are.
+   layout), unpacked as it arrives over `adb exec-in`, since Fire OS's userdata (about 80 MB free) has no
+   room for the tarball beside the slot. Then the Bluetooth payload and the name, key, Wi-Fi and wake
+   words. Fire OS's own files on userdata are left as they are.
 8. **The first boot.** Unplug the power, hold Volume-Up, plug it back in and keep holding about 5 s. The
    installer waits on the unit's USB console (`1d6b:0104`, "Echo Dot 5 Linux") until a slot has booted
    and its `boot.sh` has counted it healthy. Home Assistant then discovers it as an ESPHome device.
@@ -116,6 +117,7 @@ TECHO5_SIM_M0=../cannoli-<serial>/m0 TECHO5_SIM_SERIAL=<serial> \
 ## Going back
 
 - **To Fire OS:** power on without Volume-Up. Slot A is never written by this installer.
-- **To TWRP in slot B:** from Fire OS, `ubiupdatevol /dev/ubi0_<boot_b> twrp-boot_b.img`. A copy is in
-  the store (`/data/techo5-store/techo5/twrp-boot_b.img`) and in `backups/<serial>/`.
+- **To TWRP in slot B:** from Fire OS, push `backups/<serial>/twrp-boot_b.img` to `/data/local/tmp/` and
+  run `ubiupdatevol /dev/ubi0_<boot_b> /data/local/tmp/twrp-boot_b.img` (`boot_b` is volume 8 on the
+  first unit; `cat /sys/class/ubi/ubi0_8/name` says).
 - **To stock slot A:** `firebreak restore` with the backup firebreak made (its cannoli guide).

@@ -110,8 +110,9 @@ def shell(cmd):
             # A volume update replaces the whole volume with the image.
             m = re.search(r'ubiupdatevol\)? /dev/ubi0_(\d+) (\S+)', cmd)
             shutil.copyfile(local(m.group(2)), os.path.join(DIR, 'ubi0_%s.bin' % m.group(1)))
-        elif re.fullmatch(r'sh \S+/slot\.sh \S+ \S+ 2>&1', cmd):
-            out.append('slot a: simulated, 0 commands in /bin')
+        elif re.fullmatch(r'sh \S+/slot-done\.sh \S+ 2>&1', cmd):
+            unpacked = os.path.join(DIR, 'slot-a.tar.gz')
+            out.append('slot a: simulated' if os.path.exists(unpacked) else 'slot a has no /sbin/init')
         elif cmd.startswith('[ -e /data/local/hassmic ]'):
             out.append('yes' if STATE == 'rooted' else '')
     if marked:
@@ -151,6 +152,12 @@ def main():
             return 1
         with open(local(m.group(1)), 'rb') as f:
             shutil.copyfileobj(f, sys.stdout.buffer, 1 << 20)
+    elif verb == 'exec-in':
+        # The root filesystem, unpacked as it arrives on the unit: kept here as it came.
+        if not re.fullmatch(r'\S+ tar xzf - -C \S+/slots/a', ' '.join(args[1:])):
+            return 1
+        with open(os.path.join(DIR, 'slot-a.tar.gz'), 'wb') as f:
+            shutil.copyfileobj(sys.stdin.buffer, f, 1 << 20)
     elif verb == 'push':
         shutil.copyfile(args[1], local(args[2]))
         print('%s: 1 file pushed.' % args[1])

@@ -1,7 +1,7 @@
 # Installing on the Echo Dot 5th gen (cannoli)
 
 `tools/install-cannoli.py` takes an Echo Dot 5th gen (2022, `cannoli`, MT8519, NAND with UBI) from
-stock or rooted Fire OS to TECHO5 Linux in one run. It works on one unit so far
+stock or rooted Fire OS to TECHO5 Linux in one run. It works on one unit so far.
 Keep its backups, and please open an issue with what worked and what didn't.
 
 The Dot 5 has two boot slots and keeps both:

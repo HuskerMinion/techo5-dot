@@ -35,6 +35,11 @@ done
 # up with the firmware's default and every pairing is lost at the next boot.
 if [ ! -s $STATE/bdaddr ]; then
 	a=$(sed -n 's/^Address = \([0-9a-fA-F:]\{17\}\)$/\1/p' /data/misc/bluedroid/bt_config.conf 2>/dev/null | head -1)
+	# No bluedroid (the Echo Dot 5th gen's Fire OS has btmanagerd): the factory address from idme.
+	if [ -z "$a" ]; then
+		a=$(tr -d '\000 \n' < /proc/idme/bt_mac_addr 2>/dev/null | grep -E '^[0-9a-fA-F]{12}$')
+		[ "$a" = 000000000000 ] && a=
+	fi
 	if [ -z "$a" ]; then
 		# No Fire OS record: a locally administered address from the Wi-Fi one, stable across boots.
 		w=$(cat /sys/class/net/wlan0/address 2>/dev/null)

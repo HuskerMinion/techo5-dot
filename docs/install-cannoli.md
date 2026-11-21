@@ -59,6 +59,7 @@ isn't rooted yet, it stops after the checks and prints the firebreak commands it
    | adb / fastboot shows | the unit runs | the installer |
    |---|---|---|
    | `device`, adb not root, orange ring | stock Fire OS, setup mode | unlocks it with firebreak |
+   | `unauthorized` or `offline` | stock Fire OS whose secure adb has no screen to accept the key (a factory-reset unit) | unlocks it with firebreak, whose BL2 and fastboot path needs no adb, and reads the build from the rooted slot A afterwards |
    | `device`, root adb | firebreak's rooted Fire OS in slot A | goes on |
    | `recovery` | TWRP in slot B (Volume-Up held) | checks 8349's volumes, then boots Fire OS |
    | `fastboot` | the RAM fastboot (action button held) | stops: the build can't be read there |

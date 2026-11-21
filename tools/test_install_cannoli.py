@@ -279,6 +279,24 @@ class Simulated(unittest.TestCase):
             self.assertIn('--for-someone-else', out, extra)
             self.assertIn(extra[0], out, extra)
 
+    def test_unauthorized_stock_unit_goes_to_the_unlock(self):
+        # A factory-reset unit: stock adb is secure and nothing can accept this computer's key.
+        self.bundle()
+        for state in ('unauthorized', 'offline'):
+            code, out = self.run_installer(state)
+            self.assertEqual(code, 0, (state, out))
+            self.assertIn('adb lists it as %s' % state, out)
+            self.assertIn('cannot be read over adb', out)
+            self.assertRegex(out, r'firebreak: uv run --project \S+ firebreak unlock --device cannoli')
+            self.assertNotIn('adb does not see', out)
+            self.assertIn('Nothing was written', out)
+
+    def test_unauthorized_unit_needs_its_bundle_first(self):
+        code, out = self.run_installer('unauthorized')
+        self.assertEqual(code, 1, out)
+        self.assertIn('no firebreak bundle', out)
+        self.assertNotIn('firebreak: ', out)
+
     def test_gift_needs_the_root_filesystem(self):
         code, out = self.run_installer('stock', '--for-someone-else', '--rescue-only', name=None)
         self.assertEqual(code, 1, out)

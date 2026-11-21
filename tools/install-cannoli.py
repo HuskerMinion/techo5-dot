@@ -46,7 +46,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from techo5lib import (CONSOLE_TECHO5, Adb, Console, Fastboot, ask, ask_name, ask_wifi, check_gift, confirm,  # noqa: E402
+from techo5lib import (CONSOLE_TECHO5, Adb, Console, Fastboot, adb_devices, ask, ask_name, ask_wifi, check_gift, confirm,  # noqa: E402
                        default_dir, download_checked, fail, hash_file, interactive, need, new_api_key, note,
                        repo_root, run_main, step, valid_api_key, write_private)
 from techo5lib import wifi_conf as techo5_wifi_conf  # noqa: E402
@@ -609,8 +609,7 @@ def main():
 
     # ---------------------------------------------------------------------------------------- 1
     if not a.serial:
-        from techo5lib import adb_devices
-        units = [u for u in adb_devices(a.adb) if u[1] in ('device', 'recovery')]
+        units = [u for u in adb_devices(a.adb) if u[1] in ('device', 'recovery', 'unauthorized', 'offline')]
         if len(units) != 1:
             fail('pass --serial: %s' % ('no unit is on adb' if not units else 'several are: ' + ', '.join(u[0] for u in units)))
         a.serial = units[0][0]
@@ -620,7 +619,15 @@ def main():
     adb = Adb(a.serial, a.adb)
     step('device %s' % a.serial)
     adb_state = adb.state()
-    if adb_state not in ('device', 'recovery'):
+    # Stock Fire OS's adb is secure, and with no screen there is no accepting this computer's key: a stock
+    # unit in setup mode lists as unauthorized (or offline, while it decides), and get-state says nothing.
+    listed = dict((u[0], u[1]) for u in adb_devices(a.adb)).get(a.serial, '')
+    locked = adb_state not in ('device', 'recovery') and listed in ('unauthorized', 'offline')
+    if locked:
+        note('adb lists it as %s: stock Fire OS, whose adb takes no key without a screen to accept it. Its build '
+             'cannot be read over adb, so firebreak unlocks it first (its BL2 and fastboot path needs no adb) and the '
+             'build is read from the rooted slot A afterwards.' % listed)
+    elif adb_state not in ('device', 'recovery'):
         fb = Fastboot(a.serial, a.fastboot)
         if os.path.exists(a.fastboot) or __import__('shutil').which(a.fastboot):
             if fb.present():
@@ -631,16 +638,19 @@ def main():
              'or rooted unit shows on adb; none at all means the solder joints, or the preloader fallback (Volume-Up '
              'and action held for about 30 s).' % (a.serial, adb_state))
     twrp = adb_state == 'recovery'
-    if not twrp:
-        root_shell(adb)
-    uid = adb.sh('id -u')
     stage = '/tmp/techo5' if twrp else '/data/local/tmp/techo5'
     unit = Unit(adb, stage)
-    props = unit.props()
-    if 'cannoli' not in (props.get('ro.product.device', ''), props.get('ro.build.product', '')):
-        fail('%s is %r, not an Echo Dot 5th gen (cannoli)' % (a.serial, props.get('ro.product.device')))
-    port = adb.sh('[ -e /data/local/hassmic ] && echo yes') == 'yes'
-    state = classify(adb_state, props, uid, port)
+    if locked:
+        props, state = {}, 'stock'
+    else:
+        if not twrp:
+            root_shell(adb)
+        uid = adb.sh('id -u')
+        props = unit.props()
+        if 'cannoli' not in (props.get('ro.product.device', ''), props.get('ro.build.product', '')):
+            fail('%s is %r, not an Echo Dot 5th gen (cannoli)' % (a.serial, props.get('ro.product.device')))
+        port = adb.sh('[ -e /data/local/hassmic ] && echo yes') == 'yes'
+        state = classify(adb_state, props, uid, port)
     if state == 'rooted-keyed':
         fail('%s runs the rooted port, but adb is not root: its bundle is from before keyless adb. Rebuild the bundle '
              '(cannoli-os-builder, no --adb-key) and run `firebreak unlock --device cannoli` again.' % a.serial)
@@ -648,7 +658,10 @@ def main():
           'twrp': 'TWRP in slot B'}[state])
 
     # ---------------------------------------------------------------------------------------- 2
-    if state == 'twrp':
+    if locked:
+        # 'unread': gated after the unlock, from slot A, where firebreak's own pins have held it to 8349.
+        verdict = 'unread'
+    elif state == 'twrp':
         unit.setup_busybox(busybox)
         pre = prerequisites_8349(unit)
         verdict = 'ok' if all(pre.values()) else 'upgrade'
@@ -697,6 +710,14 @@ def main():
         if verdict == 'upgrade' and state == 'stock':
             # The unlock puts TWRP in slot B, then refuses the launch firmware's volumes: expected here.
             run_firebreak(a, unlock, a.dry_run, expect_fail='Unsupported firmware prerequisite')
+        elif verdict == 'unread':
+            # A launch-firmware unit shows itself only here: the unlock puts TWRP in slot B and then refuses
+            # its volumes. From TWRP the installer reads them and takes the 8349 upgrade, after asking.
+            code, out = run_firebreak(a, unlock, a.dry_run, expect_fail='Unsupported firmware prerequisite')
+            if code != 0:
+                fail('%s still runs launch firmware older than %s: firebreak put TWRP in slot B and stopped. Run the '
+                     'installer again with the unit in TWRP (power on holding Volume-Up); it reads the volumes there and '
+                     'takes the one-way 8349 upgrade, after asking.' % (a.serial, TARGET_NAME))
         elif state == 'stock':
             run_firebreak(a, unlock, a.dry_run)
         if a.dry_run:

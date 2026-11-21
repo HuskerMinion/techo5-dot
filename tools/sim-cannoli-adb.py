@@ -7,7 +7,7 @@ dry run checks, backs up and builds exactly as it would on that unit.
         python3 tools/install-cannoli.py --adb tools/sim-cannoli-adb.py --serial <serial> --dry-run
 
 TECHO5_SIM_STATE is the unit's state: rooted (default; Fire OS 8349 in slot A, root adb), stock (not
-rooted), recovery (TWRP), or none. TECHO5_SIM_BUILD sets ro.build.display.id (default NS6575/8349) and
+rooted), unauthorized or offline (stock adb with no key accepted), recovery (TWRP), or none. TECHO5_SIM_BUILD sets ro.build.display.id (default NS6575/8349) and
 TECHO5_SIM_NUMBER ro.build.version.number. TECHO5_SIM_DIR is where pushed files land (default a folder
 in the system's temp directory). It only reads the backup; it writes nothing but its own folder.
 
@@ -132,11 +132,21 @@ def main():
     if verb == 'devices':
         print('List of devices attached')
         if STATE != 'none':
-            print('%s\t%s product:cannoli model:Echo_Dot device:cannoli' % (
-                SERIAL, 'recovery' if STATE == 'recovery' else 'device'))
+            if STATE in ('unauthorized', 'offline'):
+                # Stock adb with no key accepted: listed, and nothing more.
+                print('%s\t%s transport_id:1' % (SERIAL, STATE))
+            else:
+                print('%s\t%s product:cannoli model:Echo_Dot device:cannoli' % (
+                    SERIAL, 'recovery' if STATE == 'recovery' else 'device'))
         return 0
     if STATE == 'none':
         sys.stderr.write("error: device '%s' not found\n" % SERIAL)
+        return 1
+    if STATE == 'unauthorized':
+        sys.stderr.write("error: device unauthorized.\nThis adb server's $ADB_VENDOR_KEYS is not set\n")
+        return 1
+    if STATE == 'offline':
+        sys.stderr.write('error: device offline\n')
         return 1
     if verb == 'get-state':
         print('recovery' if STATE == 'recovery' else 'device')

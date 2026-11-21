@@ -5,7 +5,7 @@
 # The kernel has MODVERSIONS: every symbol a module imports carries a CRC, and the kernel refuses one that
 # is not its own. The CRCs hash the types behind each symbol, so the whole tree is built (vmlinux and
 # modules), and every CRC a module of ours imports is compared with the shipped kernel's, read out of the
-# stock boot.img by echo-dot-assist's tools/kcrc.py (KCRC; checked against the stock modules given). One
+# stock boot.img by tools/linux/kcrc.py (KCRC, from echo-dot-assist; checked against the stock modules given). One
 # that differs is a struct that differs between the GPL tree and the shipped kernel: the build stops there
 # rather than leave a module that the kernel refuses, or worse, takes.
 #
@@ -24,14 +24,14 @@
 #   cannoli_init; cannoli_tree; cannoli_config; cannoli_build
 #   cannoli_check_imports <dir of our .ko>; cannoli_check_vermagic <dir of our .ko>
 # Environment: WORK (default ~/cannoli-kernel-6571), FILL, CONFIG, KCRC (default
-# ../echo-dot-assist-main/tools/kcrc.py beside techo5-dot), CROSS_COMPILE.
+# tools/linux/kcrc.py beside this script), CROSS_COMPILE.
 
 RELEASE=-ab0013323246848
 
 cannoli_init() {
 	LIBHERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 	WORK=${WORK:-$HOME/cannoli-kernel-6571}
-	KCRC=${KCRC:-$(cd "$LIBHERE/../../.." && pwd)/echo-dot-assist-main/tools/kcrc.py}
+	KCRC=${KCRC:-$LIBHERE/kcrc.py}
 	CROSS_COMPILE=${CROSS_COMPILE:-$HOME/wpa-build/toolchain/bin/armv7l-linux-musleabihf-}
 	CONFIG=${CONFIG:-}
 	export ARCH=arm CROSS_COMPILE

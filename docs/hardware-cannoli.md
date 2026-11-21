@@ -60,8 +60,12 @@ and every image that holds Amazon's kernel or drivers is built on your computer 
 | [firebreak](https://github.com/Gamer92000/firebreak) | Gamer92000 | The unlock, the 8349 upgrade (`cannoli-upgrade`) and `restore` of slot A |
 | [cannoli-os-builder](https://github.com/Gamer92000/cannoli-os-builder) | Gamer92000 | firebreak's per-unit bundle: rooted Fire OS for slot A, the loaders, the patched U-Boot with the Volume-Up hook. Needs a bundle with `"adb": "keyless"` |
 | [twrp_device_amazon_cannoli](https://github.com/Gamer92000/twrp_device_amazon_cannoli) | Gamer92000 | The headless TWRP that firebreak puts in slot B, packed for your serial |
-| [echo-dot-assist](https://github.com/Gamer92000/echo-dot-assist) | Gamer92000 | `tools/kcrc.py`, which reads the stock kernel's CRCs; its cannoli notes (BL2, lux, the first exploration) |
 | [TECHO5](https://github.com/HuskerMinion/techo5) | HuskerMinion | `echod` (`-tags dot,cannoli`) and `btbridge` |
 | Amazon's GPL kernel source | [amazon.com/echonotices](https://amazon.com/echonotices) | The kernel tree the modules build against: `Echo_Dot_5th_Gen_src-6.5.7.1-20251027` (every CRC matches), with the full `6.5.5.5-20221208` drop for the files the newer one lacks |
 | The 8349 OTA | [FTVDB's record](https://ftvdb.com/echo/firmware/com.amazon.cannoli.android.os/0bf96b3cd8fca30fdd12f61208e44d76-13323246980-fire-os-6-5-7-5-ns6575-8349-2026-10-27/) (`update-kindle-cannoli-NS6575_user_8349_0013323246980.bin`, MD5 `0bf96b3cd8fca30fdd12f61208e44d76`) | The parts for `cannoli-upgrade` and the `brhgptlk` copies, unpacked with `payload_dump.py` |
 | Alpine Linux armv7 | Alpine's mirrors, pinned in `tools/linux/packages-*.txt` | The rescue ramdisk and the root filesystem, BlueZ and bluez-alsa |
+
+`tools/linux/kcrc.py`, which reads the stock kernel's CRCs out of `boot.img`, comes from
+[echo-dot-assist](https://github.com/Gamer92000/echo-dot-assist) and is carried here under its MIT
+license (NOTICE), so no checkout of it is needed. Its cannoli notes (the BL2 copies, the lux calibration)
+were the first exploration of this unit.

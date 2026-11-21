@@ -202,7 +202,7 @@ The kernel has `MODVERSIONS` on: it refuses a module whose imported CRCs differ 
 module scripts share `tools/linux/cannoli-kernel.sh`, which builds the whole GPL tree once (about 8
 minutes; the second script then takes seconds). It uses the shipped kernel's own config, read out of
 the stock `boot.img`, and compares every CRC our modules import with the shipped kernel's, read by
-echo-dot-assist's `tools/kcrc.py`. A CRC that differs means a struct differs between the GPL tree and
+`tools/linux/kcrc.py` (from echo-dot-assist, MIT; see NOTICE). A CRC that differs means a struct differs between the GPL tree and
 the shipped kernel, and the build stops.
 
 Use Amazon's 6.5.7.1 drop (`Echo_Dot_5th_Gen_src-6.5.7.1-20251027`). With it every CRC matches

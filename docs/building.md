@@ -153,10 +153,11 @@ On a Dot already running TECHO5 (SSH switched on in Home Assistant, with a key):
 
 ## The Echo Dot 5th gen's first Linux boot (bring-up)
 
-The Echo Dot 5th gen (2022, `cannoli`) is not installable yet. Its first Linux image is a rescue
-environment in slot B, beside Fire OS in slot A. It has a root shell on the UART (921600 8N1) and over
-USB (a COM port), a log on userdata, Wi-Fi on the network Fire OS saved, and SSH with an
-`authorized_keys` on userdata.
+The Echo Dot 5th gen (2022, `cannoli`) is not installable by the installer yet. Its Linux image goes in
+slot B, beside Fire OS in slot A. The image's ramdisk boots a root filesystem from a store on userdata
+(see Root filesystem below). When there is none, or it is broken, the ramdisk stays up as a rescue
+environment. The rescue has a root shell on the UART (921600 8N1) and over USB (a COM port), a log on
+userdata, Wi-Fi on the network Fire OS saved, and SSH with an `authorized_keys` on userdata.
 
 It is built from the unit's own folder: `bundle/` (the OS bundle cannoli-os-builder made for it) and
 `m0/` (its backup, for the Wi-Fi driver and firmware). With the inputs of step 2, first build
@@ -215,6 +216,52 @@ Copy the payload over SSH from slot-B Linux and start it (or reboot into slot B)
 cmd /c "ssh root@<address> ""cat > /data/techo5-linux/bt.tar.gz"" < techo5-cannoli-bt.tar.gz"
 ssh root@<address> /sbin/techo5-bt-up
 ```
+
+The payload is only for the rescue environment now: the root filesystem below carries BlueZ,
+bluez-alsa, btbridge and the stack's modules itself.
+
+### Root filesystem
+
+The root filesystem is the Echo Dot 3rd gen's layout: a store on userdata,
+`/data/techo5-store/techo5`, with slots `a` and `b` that `slotctl` manages
+(`tools/linux/rootfs/usr/local/sbin/slotctl`). The slot-B ramdisk (`tools/linux/init-cannoli`) picks
+the slot and `switch_root`s into it. Its `boot.sh` (`tools/linux/rootfs-cannoli`) brings up USB, Wi-Fi,
+Bluetooth and the network, then echod starts. With `build/echod-cannoli` built in TECHO5
+(`-tags dot,cannoli`, see TECHO5's building.md), and the Bluetooth modules and btbridge from above:
+
+```
+python3 tools/linux/build-dot-rootfs.py --board cannoli --daemon build/echod-cannoli --release v0.0.0-cannoli --out build/techo5-cannoli-rootfs.tar.gz
+python3 tools/linux/push-cannoli-rootfs.py --host <address> build/techo5-cannoli-rootfs.tar.gz
+```
+
+The push copies the tarball over SSH to a unit running slot-B Linux (rescue or a slot). It unpacks it
+into the slot that isn't running, on trial, and makes that slot the next to boot. Then power on holding
+Volume-Up. Without the patched wpa_supplicant (`build-wpa-supplicant.sh`) the build stops: Alpine's
+does not join on this driver. bluez-alsa is `build-bluealsa.sh`'s when built, else Alpine's.
+
+Nothing of the unit's own is in the tarball. The Wi-Fi and Bluetooth driver and firmware are in the
+slot-B ramdisk, built from the unit's backup. On every slot boot the ramdisk copies whatever differs
+into the store's `modules/` and `firmware/`, where both slots find them. The Bluetooth stack's
+modules are built from Amazon's GPL drop for the stock kernel, so they are in the tarball.
+
+The ramdisk stays in rescue when:
+
+- there is no store or no slot to boot, or the slot lacks `/sbin/init`, `boot.sh` or echod;
+- `slotctl rescue` was run (for one boot);
+- five slot boots in a row never became healthy (`boot.sh` counts a boot healthy once echod has stayed
+  up, and resets the count in the store's `tries`). `/sbin/techo5-retry` in the rescue clears it.
+
+A slot whose echod does not stay up starts dropbear itself, so it can still be looked at over SSH.
+Its trial runs out after two boots, and `slotctl next` then falls back to the other slot if that one is
+good. `to-fireos` reboots, which is Fire OS unless Volume-Up is held.
+
+### Wi-Fi address
+
+Linux in slot B has no MediaTek `nvram_daemon`, so the Wi-Fi driver makes up a new address at every
+load, and DHCP hands out a new lease each boot. Before wpa_supplicant starts, the rescue (`wifi_mac` in
+`init-cannoli`) and the root filesystem (`techo5-wlan-mac`) both set `wlan0` to a stable address. They
+use the factory one from idme (`/proc/idme/mac_addr`) when the unit has it. Otherwise they make a
+locally administered one once and keep it in `/data/techo5-linux/wlan-mac`, which both read.
 
 ## Package versions
 

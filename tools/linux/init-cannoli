@@ -167,6 +167,40 @@ wifi() {
 	while [ $i -lt 30 ] && [ ! -e /sys/class/net/wlan0 ]; do $BB sleep 1; i=$((i + 1)); done
 	[ -e /sys/class/net/wlan0 ] || { say "no wlan0"; return 1; }
 	say "wlan0 after ${i}s"
+	wifi_mac
+}
+
+# wifi_mac gives wlan0 the same address on every boot. On Fire OS, MediaTek's nvram_daemon writes the
+# unit's address into the NVRAM file the driver reads (init.mt8519.rc); this boot runs no nvram_daemon,
+# so the driver picks a random address each time and DHCP hands out a new lease. The address is the
+# factory one from idme when the unit has it, and otherwise a locally administered one made once and
+# kept on userdata, /data/techo5-linux/wlan-mac. Set while the interface is down, before techo5-net.
+wifi_mac() {
+	local f a= from= kept=/data/techo5-linux/wlan-mac
+	for f in mac_addr wifi_mac_addr wifi_mac; do
+		a=$($BB tr -d '\000 :\n' < /proc/idme/$f 2>/dev/null | $BB tr 'A-F' 'a-f' | $BB grep -E '^[0-9a-f]{12}$')
+		[ "$a" = 000000000000 ] || [ "$a" = ffffffffffff ] && a=
+		[ -n "$a" ] && { from="idme $f"; break; }
+	done
+	if [ -z "$a" ] && [ -n "$DATA_UP" ]; then
+		a=$($BB tr -d ':\n' < $kept 2>/dev/null | $BB grep -E '^[0-9a-f]{12}$')
+		from="kept in $kept"
+		if [ -z "$a" ]; then
+			from="made now, kept in $kept"
+			# 02: locally administered, unicast.
+			a=02$($BB od -An -N5 -tx1 /dev/urandom | $BB tr -d ' \n')
+			echo "$a" > $kept && $BB sync
+		fi
+	fi
+	[ -n "$a" ] || { say "wlan0: no stable address, keeping the driver's"; return 0; }
+	a=$(echo "$a" | $BB sed 's/../&:/g; s/:$//')
+	[ "$($BB cat /sys/class/net/wlan0/address)" = "$a" ] && return 0
+	$BB ip link set wlan0 down 2>/dev/null
+	if $BB ip link set wlan0 address "$a" 2>/tmp/mac.err; then
+		say "wlan0 address $a ($from)"
+	else
+		say "wlan0: setting $a failed: $($BB cat /tmp/mac.err)"
+	fi
 }
 
 # SSH: dropbear with keys only, from userdata. authorized_keys is TECHO5's usual place

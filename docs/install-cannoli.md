@@ -17,9 +17,10 @@ The Dot 5 has two boot slots and keeps both:
 - **Slot B** is TECHO5 Linux. It starts when **Volume-Up is held at power-on**. Its boot image is the
   unit's own signed kernel and device tree with TECHO5's ramdisk. The ramdisk boots the root filesystem
   from a store on userdata, or stays up as a rescue environment when there is none.
-- **A reboot from Linux lands in Fire OS, for now.** Slot B is only chosen by Volume-Up at power-on, so
-  `reboot`, a restart from Home Assistant, or an update's restart starts slot A. To come back to Linux,
-  unplug the power and plug it back in holding Volume-Up.
+- **A reboot from Linux lands in Fire OS** as firebreak installs the unit. Slot B is only chosen by
+  Volume-Up at power-on, so `reboot`, a restart from Home Assistant, or an update's restart starts slot A.
+  To come back to Linux, unplug the power and plug it back in holding Volume-Up. To have reboots stay in
+  Linux, make TECHO5 the default ([below](#booting-techo5-by-default-optional)).
 
 Amazon's kernel, drivers and firmware are never downloaded from here or published. The installer builds
 the slot-B image on your computer from the backup it takes of the unit it runs on.
@@ -206,9 +207,62 @@ TECHO5_SIM_M0=../cannoli-<serial>/m0 TECHO5_SIM_SERIAL=<serial> \
 `TECHO5_SIM_STATE` (`rooted`, `stock`, `recovery`, `none`) and `TECHO5_SIM_BUILD` try the other paths.
 `tools/test_install_cannoli.py` runs them.
 
+## Booting TECHO5 by default (optional)
+
+Once TECHO5 runs from slot B, `tools/cannoli-boot-default.py` can turn the button round. A power-on with no
+button held then boots TECHO5, and holding Volume-Up at power-on boots Fire OS:
+
+```
+python3 tools/cannoli-boot-default.py --serial <serial> probe     # RAM test, twice: no button, then Volume-Up
+python3 tools/cannoli-boot-default.py --serial <serial> techo5    # from rooted Fire OS
+python3 tools/cannoli-boot-default.py --serial <serial> fireos    # back to Fire OS by default
+```
+
+Why it works this way, and not by selecting slot B:
+
+- **The Volume-Up hook is in slot A's U-Boot only.** It is firebreak's root-a, and its source is
+  cannoli-os-builder's `cannoli_os/uboot_buttons.S`. It reads the CPLD (i2c 4-0008, register 0xf0) twice, 20 ms apart.
+  When Volume-Up is held on both reads, it sets `mtk_boot` to load `boot_b` and boots that. It never
+  changes the slot.
+- **Slot B's U-Boot has no hook.** firebreak's recovery-b always boots `boot_b`, with TWRP's fixed load length
+  and the recovery configuration. If slot B were selected (firebreak's `select-b` loader writes
+  `bcb write 14 7 1 15 7 0` into `misc`), no button would get back to Fire OS. B is also left unsuccessful
+  with 7 tries. A `misc` read in TWRP after one boot showed 6, so U-Boot counts the tries down. What
+  happens at 0 is not known.
+
+So the tool leaves `misc` on slot A and changes two branch instructions in slot A's U-Boot. After the change, only Volume-Up held
+on both reads takes the stock (Fire OS) path, and everything else loads `boot_b`. A failed CPLD read and
+U-Boot's own boot request (fastboot or recovery) still go the stock way. The image is made on your
+computer from the unit's `bundle/uboot_a.img`. It changes the two instructions and the payload's
+`hash-1` value, which the FIT signature does not cover (the same CVE-2026-46728 route firebreak uses).
+The input and every output are pinned by sha256.
+
+- **`probe`** loads a test U-Boot into RAM through BL2 with firebreak's listener (`--firebreak`, the
+  soldered USB pads). It writes nothing. It reports only what the hook decided:
+  `fastboot getvar product` reads `cannoli-keys-<read1>-<read2>-<U|N>`, where U means TECHO5 and N means
+  Fire OS. On the first unit, no button gave `cannoli-keys-1e-1e-U` and Volume-Up gave
+  `cannoli-keys-1a-1a-N`. Run it before the first write. Unplug the power afterwards to leave the RAM
+  fastboot.
+- **`techo5` / `fireos`** run from rooted Fire OS or TWRP. The tool reads uboot_a's sha1 and refuses
+  anything that is neither image. It pushes the new image, checks it on the unit, writes it with
+  `ubiupdatevol` and reads it back. If the readback differs, it puts the previous image back and checks
+  that too, before anything reboots. `--reboot` waits for the new default to come up.
+
+What changes once TECHO5 is the default:
+
+- A `reboot` from Fire OS lands in TECHO5, and so does a reboot from Linux (`reboot`, a restart from Home
+  Assistant, an update's restart). To reach Fire OS, hold Volume-Up at power-on (about 5 s).
+- A `boot_b` that doesn't boot means a reboot loop (`bootm` fails, then `reset`). Volume-Up at power-on
+  gets out of it into Fire OS.
+- If slot A's U-Boot itself fails to start, only firebreak's BL2 route over the soldered pads gets
+  the unit back. The probe and the readback are there to make that unlikely.
+- `install-cannoli.py`'s first boot (step 8) still says to hold Volume-Up. On a unit that boots TECHO5 by
+  default, hold no button there, and hold Volume-Up wherever it asks for Fire OS.
+
 ## Going back
 
-- **To Fire OS:** power on without Volume-Up. Slot A is never written by this installer.
+- **To Fire OS:** power on without Volume-Up. Slot A is never written by this installer. If you made
+  TECHO5 the default, hold Volume-Up at power-on instead, or run `cannoli-boot-default.py fireos`.
 - **To TWRP in slot B:** from Fire OS, push `backups/<serial>/twrp-boot_b.img` to `/data/local/tmp/` and
   run `ubiupdatevol /dev/ubi0_<boot_b> /data/local/tmp/twrp-boot_b.img` (`boot_b` is volume 8 on the
   first unit; `cat /sys/class/ubi/ubi0_8/name` says).

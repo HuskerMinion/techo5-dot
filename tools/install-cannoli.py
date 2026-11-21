@@ -847,8 +847,11 @@ def main():
         note("will provision '%s'" % name)
         shown = (name, psk)
     models = None
-    if int(adb.sh('ls %s/models/*.tflite 2>/dev/null | wc -l' % STATE) or 0) == 0:
+    have_models = int(adb.sh('ls %s/models/*.tflite 2>/dev/null | wc -l' % STATE) or 0)
+    if have_models == 0:
         models = fetch_models(a.work, a.wake_words)
+    else:
+        note('%d wake word models already on the unit' % have_models)
 
     if a.dry_run:
         print('\nDry run: checks, backups and builds done; nothing written to %s.' % a.serial)

@@ -28,7 +28,7 @@ DIR = os.environ.get('TECHO5_SIM_DIR') or os.path.join(tempfile.gettempdir(), 't
 END = 'T5-END'
 
 # The unit's UBI volumes by number, as an Echo Dot 5 lays them out (ubi0_11 and ubi0_12 are not in m0/).
-NAMES = {0: 'uboot_a', 1: 'uboot_b', 2: 'tee1', 3: 'tee2', 4: 'misc', 5: 'persist', 6: 'reserve', 7: 'boot_a',
+NAMES = {0: 'uboot_a', 1: 'uboot_b', 2: 'tee1', 3: 'tee2', 4: 'idme_nand', 5: 'persist', 6: 'misc', 7: 'boot_a',
          8: 'boot_b', 9: 'system_a', 10: 'system_b', 11: 'cache', 12: 'userdata', 13: 'mcupm_a', 14: 'mcupm_b',
          15: 'scp_a', 16: 'scp_b'}
 SIZES = {11: 5160960, 12: 204193792}

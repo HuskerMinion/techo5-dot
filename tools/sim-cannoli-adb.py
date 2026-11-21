@@ -48,7 +48,8 @@ def local(path):
     """Where a path on the unit is in the backup, or in the pushed files."""
     m = re.fullmatch(r'/dev/ubi0_(\d+)', path)
     if m:
-        return os.path.join(M0, 'u_%s.bin' % m.group(1))
+        written = os.path.join(DIR, 'ubi0_%s.bin' % m.group(1))
+        return written if os.path.exists(written) else os.path.join(M0, 'u_%s.bin' % m.group(1))
     m = re.fullmatch(r'/dev/mtd(?:/mtd)?(\d)', path)
     if m:
         return os.path.join(M0, 'brhgptlk_%s.bin' % m.group(1))
@@ -102,6 +103,12 @@ def shell(cmd):
             out.append('%s  %s' % (hashlib.sha256(read(h.group(1))).hexdigest(), h.group(1)))
         elif cmd.startswith('ls ') and 'wc -l' in cmd:
             out.append('0')
+        elif re.search(r'ubiupdatevol\)? /dev/ubi0_\d+ ', cmd):
+            # A volume update replaces the whole volume with the image.
+            m = re.search(r'ubiupdatevol\)? /dev/ubi0_(\d+) (\S+)', cmd)
+            shutil.copyfile(local(m.group(2)), os.path.join(DIR, 'ubi0_%s.bin' % m.group(1)))
+        elif re.fullmatch(r'sh \S+/slot\.sh \S+ \S+ 2>&1', cmd):
+            out.append('slot a: simulated, 0 commands in /bin')
         elif cmd.startswith('[ -e /data/local/hassmic ]'):
             out.append('yes' if STATE == 'rooted' else '')
     if marked:

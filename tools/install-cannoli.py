@@ -545,7 +545,7 @@ def main():
     ap.add_argument('--ota-parts', help='the unpacked 8349 OTA, for a unit on an older build (default <unit>/stock-8349-parts)')
     ap.add_argument('--ota', help='the 8349 OTA itself (%s), to check its MD5' % OTA_NAME)
     ap.add_argument('--accept-efuse', action='store_true', help="answer the one-way 8349 upgrade's question with yes")
-    ap.add_argument('--rootfs', help="the cannoli root filesystem (default build/cannoli-rootfs.tar.gz)")
+    ap.add_argument('--rootfs', help="build-dot-rootfs.py --board cannoli's tarball (default build/techo5-cannoli-rootfs.tar.gz)")
     ap.add_argument('--rescue-only', action='store_true', help='no root filesystem: slot B boots the rescue environment')
     ap.add_argument('--hwfixup', help='cannoli_hwfixup.ko (default build/cannoli-hwfixup/, else <unit>/builds/)')
     ap.add_argument('--no-bluetooth', action='store_true', help='leave out the Bluetooth payload')
@@ -775,7 +775,7 @@ def main():
                       '--inputs', a.inputs, '-o', bt], 'the Bluetooth payload')
     rootfs = None
     if not a.rescue_only:
-        rootfs = os.path.abspath(a.rootfs or os.path.join(a.work, 'cannoli-rootfs.tar.gz'))
+        rootfs = os.path.abspath(a.rootfs or os.path.join(a.work, 'techo5-cannoli-rootfs.tar.gz'))
         if not os.path.exists(rootfs):
             if not a.dry_run:
                 fail('no root filesystem at %s; build it, pass --rootfs, or --rescue-only for the rescue environment' % rootfs)
@@ -856,7 +856,7 @@ def main():
     adb.push(image, remote)
     if unit.sha256(remote) != want:
         fail('the image pushed to the unit differs; nothing written')
-    unit.checked('ubi=$(command -v ubiupdatevol || echo /system/vendor/bin/ubiupdatevol); $ubi /dev/ubi0_%d %s'
+    unit.checked('$(command -v ubiupdatevol || echo /system/vendor/bin/ubiupdatevol) /dev/ubi0_%d %s'
                  % (vols['boot_b'], remote), 'ubiupdatevol')
     back = unit.sha256('/dev/ubi0_%d' % vols['boot_b'], size)
     adb.sh('rm -f %s' % remote)
@@ -881,7 +881,9 @@ def main():
         if 'slot a: ' not in result:
             fail('unpacking the root filesystem failed: %s\nboot_b is written; run the installer again.' % result)
         note(result)
-        adb.sh('rm -f %s/rootfs.tar.gz %s/slot.sh' % (stage, stage))
+        # init-cannoli's count of slot boots that never became healthy starts again from zero, so a unit
+        # that gave up on an older slot tries this one (push-cannoli-rootfs.py does the same).
+        adb.sh('echo "0 install" > %s/tries; rm -f %s/rescue %s/rootfs.tar.gz %s/slot.sh; sync' % (STORE, STORE, stage, stage))
     if bt:
         adb.push(bt, LINUX_DIR + '/bt.tar.gz')
         if unit.sha256(LINUX_DIR + '/bt.tar.gz') != hash_file(bt):
@@ -978,23 +980,39 @@ def fetch_models(work, wake_words):
     return models
 
 
+def boot_verdict(kv, with_rootfs):
+    """What the console's answers say: 'healthy' (a slot booted and its boot.sh reset the try count to
+    "0 healthy" once echod stayed up), 'rescue' (the ramdisk, no slot), 'booting', or '' for no answer.
+    Without a root filesystem, the rescue with an address is as far as it goes."""
+    if not kv:
+        return ''
+    slot = kv.get('slot', '').strip()
+    if slot:
+        return 'healthy' if kv.get('tries', '').strip().startswith('0 healthy') else 'booting'
+    if not with_rootfs and kv.get('ip', '').strip():
+        return 'healthy'
+    return 'rescue' if 'rescue' in kv.get('release', '') else 'booting'
+
+
 def wait_healthy(a, shown, key_file, with_rootfs):
-    """The unit on its USB console (init-cannoli's ACM gadget, by its serial): up, on Wi-Fi, and with a
-    root filesystem, echod running and Home Assistant's API port answering."""
+    """The unit on its USB console (the ACM gadget init-cannoli and the slot's boot.sh both make, under
+    its serial): a slot booted and healthy, on Wi-Fi, and Home Assistant's API port answering."""
     console = Console(a.serial, CONSOLE_TECHO5)
-    query = ('echo release=$(cat /etc/techo5-release 2>/dev/null); echo echod=$(pidof echod); '
+    query = ('echo slot=$(cat /run/techo5/slot 2>/dev/null); echo release=$(cat /etc/techo5-release 2>/dev/null); '
+             'echo echod=$(pidof echod); echo tries=$(cat /store/techo5/tries /data/techo5-store/techo5/tries 2>/dev/null | head -1); '
              "echo ip=$(ip -4 addr show wlan0 2>/dev/null | sed -n 's/.*inet \\([0-9.]*\\).*/\\1/p' | head -1)")
-    start, said, kv = time.time(), '', {}
-    while time.time() < start + 8 * 60:
+    start, said, kv, verdict = time.time(), '', {}, ''
+    while time.time() < start + 10 * 60:
         out = console.run(query, 8)
         if out:
             kv = dict(re.findall(r'^(\w+)=(.*)$', out, re.M))
-            now = '%s, address %s, echod %s' % (kv.get('release'), kv.get('ip') or 'none yet',
-                                                 'running' if kv.get('echod') else 'not running')
+            verdict = boot_verdict(kv, with_rootfs)
+            now = '%s, slot %s, address %s, echod %s' % (kv.get('release'), kv.get('slot') or 'none',
+                                                         kv.get('ip') or 'none yet', 'running' if kv.get('echod') else 'not running')
             if now != said:
                 note(now)
                 said = now
-            if kv.get('ip') and (kv.get('echod') or not with_rootfs):
+            if verdict == 'healthy':
                 break
         elif time.time() - start > 60 and int(time.time() - start) % 30 < 5:
             h = console.waiting_hint()
@@ -1009,17 +1027,20 @@ def wait_healthy(a, shown, key_file, with_rootfs):
     if shown:
         print("Home Assistant will discover '%s' as an ESPHome device. When it asks for the encryption key, paste:\n\n"
               "    %s\n\n(also saved in %s)\n" % (shown[0], shown[1], key_file))
-    if up:
-        print('Done: %s runs TECHO5 Linux from slot B, and Home Assistant\'s API port answers at %s:6053.' % (a.serial, ip))
-    elif ip and not with_rootfs:
+    if verdict == 'healthy' and with_rootfs:
+        print('Done: %s runs TECHO5 Linux from slot B (slot %s), healthy%s.' % (
+            a.serial, kv.get('slot'), ", and Home Assistant's API port answers at %s:6053" % ip if up else ''))
+        print('Every power-on with Volume-Up held boots it; without, Fire OS starts from slot A.')
+    elif verdict == 'healthy':
         print('Done: %s runs the TECHO5 rescue environment from slot B at %s (SSH with your key).' % (a.serial, ip))
     elif kv:
-        print('%s booted slot B (%s) but is not confirmed healthy yet. /data/techo5-linux/first-boot.log on the unit '
-              'says what it did; a power-on without Volume-Up goes back to Fire OS.' % (a.serial, kv.get('release')))
+        print('%s booted slot B but is not confirmed healthy (%s). /data/techo5-linux/first-boot.log says what the '
+              'ramdisk did; techo5-retry on the console tries the slots again. A power-on without Volume-Up goes back '
+              'to Fire OS.' % (a.serial, verdict))
         sys.exit(1)
     else:
-        print("This PC never saw the unit's USB console. Check that Volume-Up was held at power-on (the ring and the "
-              'console come up within a minute); a power-on without it starts Fire OS.')
+        print("This PC never saw the unit's USB console. Check that Volume-Up was held at power-on (the console comes "
+              'up within a minute); a power-on without it starts Fire OS.')
         sys.exit(1)
 
 

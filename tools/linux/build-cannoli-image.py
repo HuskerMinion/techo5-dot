@@ -46,13 +46,17 @@ STOCK_BOOT_SHA256 = "548dd73848cfcc76cb921ec5d8c68438c95886f4fc7187da9fa5f4b7efb
 CONFIG = "cannoli-pvt-aluminum-recovery"
 
 # The unit's Wi-Fi: the modules in the order Fire OS loads them (init.connectivity.rc, then the driver)
-# and the MT7663's firmware. Nothing of the DSP or Bluetooth goes in: the ramdisk is small.
-WIFI_MODULES = ["compat", "cfg80211", "mac80211", "wlan_mt76x3_sdio_prealloc", "wlan_mt76x3_sdio"]
+# and the MT7663's firmware, then its Bluetooth side's driver and settings (btmtksdio.ko, bt.cfg; the
+# patch is the Wi-Fi one). Nothing of the DSP goes in: the ramdisk is small. A slot boot adopts all of
+# them into the store on userdata (init-cannoli), so the root filesystem, which is published, carries
+# none of the unit's own.
+WIFI_MODULES = ["compat", "cfg80211", "mac80211", "wlan_mt76x3_sdio_prealloc", "wlan_mt76x3_sdio", "btmtksdio"]
 WIFI_FIRMWARE = ["WIFI_RAM_CODE_MT7663.bin", "mt7663_patch_e2_hdr.bin", "EEPROM_MT7663.bin",
-                 "TxPwrLimit_MT76x3.dat", "wifi.cfg", "regulatory.db"]
+                 "TxPwrLimit_MT76x3.dat", "wifi.cfg", "regulatory.db", "bt.cfg"]
 
-# The scripts of the Dot's root filesystem the rescue environment uses.
-SCRIPTS = ["techo5-net", "techo5-firewall", "wifi-set"]
+# The scripts of the Dot's root filesystem the rescue environment uses (slotctl: init-cannoli picks the
+# slot with it).
+SCRIPTS = ["techo5-net", "techo5-firewall", "wifi-set", "slotctl"]
 
 FDT_BEGIN_NODE, FDT_END_NODE, FDT_PROP, FDT_NOP, FDT_END = 1, 2, 3, 4, 9
 

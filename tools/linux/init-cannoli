@@ -1,7 +1,9 @@
 #!/bin/busybox.static sh
-# TECHO5 Echo Dot 5th gen (cannoli) initramfs init: the first Linux boot, a rescue environment (M2/M3 of
-# the cannoli porting plan). It boots no root filesystem yet; it stays up with a root shell on the UART
-# and over USB, a log on userdata, Wi-Fi on the network Fire OS saved, and SSH with the keys on userdata.
+# TECHO5 Echo Dot 5th gen (cannoli) initramfs init: boot a root filesystem slot from the store on
+# userdata (rootfs-cannoli, the Dot 3's layout), or stay up as the rescue environment: a root shell on
+# the UART and over USB, a log on userdata, Wi-Fi on the network Fire OS saved, and SSH with the keys on
+# userdata. Rescue is what it does when there is no store or slot, a slot is broken, five slot boots in
+# a row never became healthy, or `slotctl rescue` asked for it.
 #
 # Runs as PID 1 from the ramdisk of the FIT in boot_b (UBI volume 8), which the unit's patched U-Boot
 # boots when Volume-Up is held at power-on. The kernel, its device tree and its command line are the
@@ -72,6 +74,107 @@ ubivol() {
 	return 1
 }
 
+# --- userdata: Fire OS's own UBIFS volume, mounted read-write for a directory of ours beside its files.
+DATA_UP=
+if vol=$(ubivol userdata) && $BB mount -t ubifs -o noatime ubi0:userdata /data 2>/tmp/data.err; then
+	DATA_UP=1
+	$BB mkdir -p /data/techo5-linux
+	$BB cat /tmp/first-boot.log >> /data/techo5-linux/first-boot.log 2>/dev/null
+	LOGDIR=/data/techo5-linux
+	say "userdata ($vol) mounted"
+else
+	say "userdata would not mount: $($BB cat /tmp/data.err 2>/dev/null)"
+fi
+
+# --- The root filesystem: a slot of the store on userdata, as on the Echo Dot 3rd gen (init-donut), and
+# this ramdisk is the rescue environment when there is none to boot.
+#
+#   /data/techo5-store/techo5/   the store (tools/linux/rootfs/usr/local/sbin/slotctl has its layout):
+#     slots/a, slots/b           the root filesystems, plain directories
+#     modules/, firmware/        the unit's Wi-Fi and Bluetooth driver and firmware, adopted from this
+#                                ramdisk at every slot boot (it is built from the unit's backup)
+#     tries                      boots of a slot in a row that never became healthy; the slot's boot.sh
+#                                puts it back to 0 once echod has stayed up. Five, and this ramdisk stays
+#                                in rescue until techo5-retry. A file here, since misc is the
+#                                bootloader's and nothing of ours is written to it.
+#     rescue                     present: the next boot stays here (slotctl rescue), then removed
+#
+# The ring, amplifier and microphones are up already (cannoli_hwfixup, above) and stay up across the
+# switch; Wi-Fi and Bluetooth are left to the slot, which loads them from the store.
+STOREDIR=/data/techo5-store
+S=$STOREDIR/techo5
+TRIES_MAX=5
+
+cat > /sbin/techo5-retry <<EOF
+#!/bin/busybox.static sh
+echo "0 retry" > $S/tries
+/bin/busybox.static sync
+echo "try count cleared; the next boot of slot B (power on holding Volume-Up) tries the slots again"
+EOF
+$BB chmod 755 /sbin/techo5-retry
+
+# adopt: the unit's own modules and firmware from this ramdisk into the store, where the slots find them.
+# Only what differs is copied, so an ordinary boot writes nothing.
+adopt() {
+	local f d n=0
+	$BB mkdir -p $S/modules $S/firmware || return 1
+	for f in /lib/modules/techo5/*.ko /lib/firmware/*; do
+		[ -f "$f" ] || continue
+		case "$f" in /lib/modules/*) d=$S/modules ;; *) d=$S/firmware ;; esac
+		$BB cmp -s "$f" "$d/${f##*/}" && continue
+		$BB cp "$f" "$d/${f##*/}.tmp" && $BB mv -f "$d/${f##*/}.tmp" "$d/${f##*/}" && n=$((n + 1))
+	done
+	[ $n -gt 0 ] && { $BB sync; say "adopted $n module and firmware files into the store"; }
+	return 0
+}
+
+boot_slot() {
+	[ -n "$DATA_UP" ] || return 1
+	[ -e $S/.techo5-store ] || { say "no store on userdata ($S): rescue"; return 1; }
+	if [ -e $S/rescue ]; then
+		$BB rm -f $S/rescue
+		$BB sync
+		say "rescue marker found: staying in the ramdisk this boot"
+		return 1
+	fi
+	local tries slot root f m
+	tries=$($BB sed -n '1s/^\([0-9][0-9]*\).*/\1/p' $S/tries 2>/dev/null)
+	tries=${tries:-0}
+	if [ "$tries" -ge $TRIES_MAX ]; then
+		say "$tries slot boots in a row never became healthy: staying in rescue (techo5-retry tries them again)"
+		return 1
+	fi
+	echo "$((tries + 1))" > $S/tries.tmp && $BB mv -f $S/tries.tmp $S/tries
+	slot=$(STORE=$S /usr/local/sbin/slotctl next 2>/tmp/slotctl.err)
+	say "boot try $((tries + 1)) of $TRIES_MAX; slotctl: $($BB tr '\n' ' ' < /tmp/slotctl.err)-> ${slot:-none}"
+	[ -n "$slot" ] || return 1
+	root=$S/slots/$slot
+	for f in sbin/init bin/busybox.static etc/techo5/boot.sh usr/local/bin/echod; do
+		[ -e $root/$f ] || { say "slot $slot has no /$f"; return 1; }
+	done
+	adopt || { say "the store will not take the modules"; return 1; }
+
+	$BB mkdir -p /newroot
+	$BB mount --bind $root /newroot || { say "bind of slot $slot failed"; return 1; }
+	$BB mkdir -p /newroot/run/techo5 /newroot/store /newroot/data /newroot/dev /newroot/sys /newroot/proc /newroot/config
+	echo "$slot" > /newroot/run/techo5/slot
+	$BB mount --bind $STOREDIR /newroot/store || { say "bind of the store failed"; $BB umount /newroot; return 1; }
+	say "switching into slot $slot ($($BB cat $root/etc/techo5-release 2>/dev/null))"
+	$BB sync
+	# userdata moves in whole (the slot's boot.sh finds it mounted), and so do the kernel's filesystems;
+	# the slot makes its own /run and /tmp. /proc last: the others are looked up in it.
+	$BB umount /run /tmp 2>/dev/null
+	for m in dev sys config data proc; do
+		$BB grep -q " /$m " /proc/mounts && $BB mount --move /$m /newroot/$m
+	done
+	exec $BB switch_root /newroot /sbin/init
+	echo "techo5-cannoli: switch_root failed" > /newroot/dev/kmsg
+	return 1
+}
+
+boot_slot
+say "rescue mode: no slot booted"
+
 # --- Consoles: a root shell on the UART (ttyS0, 921600 8N1 from the bootloader) and, once the gadget
 # is up, on USB.
 # Alpine's static busybox has no cttyhack: the shell gets the tty as its controlling terminal by opening
@@ -114,18 +217,6 @@ usb_console() {
 	say "usb acm up on $udc"
 }
 usb_console && { console /dev/ttyGS0 & say "root shell on ttyGS0"; }
-
-# --- userdata: Fire OS's own UBIFS volume, mounted read-write for a directory of ours beside its files.
-DATA_UP=
-if vol=$(ubivol userdata) && $BB mount -t ubifs -o noatime ubi0:userdata /data 2>/tmp/data.err; then
-	DATA_UP=1
-	$BB mkdir -p /data/techo5-linux
-	$BB cat /tmp/first-boot.log >> /data/techo5-linux/first-boot.log 2>/dev/null
-	LOGDIR=/data/techo5-linux
-	say "userdata ($vol) mounted"
-else
-	say "userdata would not mount: $($BB cat /tmp/data.err 2>/dev/null)"
-fi
 
 snapshot() {
 	{

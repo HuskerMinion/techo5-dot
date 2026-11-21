@@ -303,6 +303,105 @@ class Simulated(unittest.TestCase):
         self.assertIn('needs the root filesystem', out)
 
 
+class Rootfs(unittest.TestCase):
+    """The root filesystem onto the unit, in parts that fit, each checked: a copy cut short over USB, a
+    tar that stops early and a slot without its symlinks are each caught (the first unit's exec-in stream
+    lost its tail, and busybox's tar, which makes symlinks last, left 334 of 455 out)."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.d)
+        self.env = dict(TECHO5_SIM_SERIAL=SERIAL, TECHO5_SIM_DIR=os.path.join(self.d, 'sim'), TECHO5_SIM_M0=self.d)
+        old = dict(os.environ)
+        os.environ.update(self.env)
+        self.addCleanup(lambda: (os.environ.clear(), os.environ.update(old)))
+        self.work = os.path.join(self.d, 'work')
+        os.makedirs(self.work)
+        self.unit = ic.Unit(techo5lib.Adb(SERIAL, SIM), '/data/local/tmp/techo5')
+
+    def tarball(self, links=True, blobs=3):
+        import io
+        import tarfile
+        path = os.path.join(self.d, 'rootfs.tar.gz')
+        with tarfile.open(path, 'w:gz') as t:
+            def add(name, data=b'', kind=None, target=''):
+                m = tarfile.TarInfo(name)
+                if kind:
+                    m.type, m.linkname = kind, target
+                    t.addfile(m)
+                else:
+                    m.size = len(data)
+                    t.addfile(m, io.BytesIO(data))
+            for d in ('bin', 'sbin', 'etc', 'etc/techo5', 'usr', 'usr/local', 'usr/local/bin', 'big'):
+                add(d, kind=tarfile.DIRTYPE)
+            add('bin/busybox.static', b'bb')
+            add('etc/techo5/boot.sh', b'#!/bin/sh\n')
+            add('usr/local/bin/echod', b'echod')
+            add('etc/techo5-release', b'techo5-cannoli test\n')
+            for i in range(blobs):
+                add('big/blob%d' % i, os.urandom(1 << 20))  # incompressible, so the parts are real
+            if links:
+                add('bin/sh', kind=tarfile.SYMTYPE, target='/bin/busybox')
+                add('sbin/init', kind=tarfile.SYMTYPE, target='/bin/busybox')
+            else:
+                add('sbin/init', b'init')
+        return path
+
+    def free_kb(self, rootfs, extra):
+        names, size = ic.rootfs_names(rootfs)
+        return str((size + 4096 * len(names) + ic.SPARE + extra) // 1024)
+
+    def test_whole_tarball_when_it_fits(self):
+        rootfs = self.tarball()
+        ic.unpack_rootfs(self.unit, rootfs, self.work, '/data/local/tmp/techo5')
+
+    def test_parts_when_room_is_short(self):
+        rootfs = self.tarball()
+        os.environ['TECHO5_SIM_FREE_KB'] = self.free_kb(rootfs, ic.MIN_PART + (512 << 10))
+        ic.unpack_rootfs(self.unit, rootfs, self.work, '/data/local/tmp/techo5')
+
+    def test_split_keeps_every_path_in_order(self):
+        import tarfile
+        rootfs = self.tarball()
+        parts = ic.split_rootfs(rootfs, os.path.join(self.d, 'parts'), 1 << 20)
+        self.assertGreater(len(parts), 2)
+        got = []
+        for p in parts:
+            with tarfile.open(p, 'r:gz') as t:
+                got += [m.name for m in t]
+        with tarfile.open(rootfs, 'r:gz') as t:
+            self.assertEqual(got, [m.name for m in t])
+
+    def test_a_copy_cut_short_is_caught_before_tar(self):
+        os.environ['TECHO5_SIM_TRUNCATE'] = '1'
+        with self.assertRaises(techo5lib.Fail) as e:
+            ic.unpack_rootfs(self.unit, self.tarball(), self.work, '/data/local/tmp/techo5')
+        self.assertIn('cut short', str(e.exception))
+
+    def test_tar_failing_is_said_with_its_errors(self):
+        os.environ['TECHO5_SIM_TAR_FAIL'] = '1'
+        with self.assertRaises(techo5lib.Fail) as e:
+            ic.unpack_rootfs(self.unit, self.tarball(), self.work, '/data/local/tmp/techo5')
+        self.assertIn('rc=1', str(e.exception))
+        self.assertIn('tar: short read', str(e.exception))
+
+    def test_a_slot_without_its_symlinks_is_not_made_active(self):
+        with self.assertRaises(techo5lib.Fail) as e:
+            ic.unpack_rootfs(self.unit, self.tarball(links=False), self.work, '/data/local/tmp/techo5')
+        self.assertIn('/bin/sh link', str(e.exception))
+
+    def test_too_little_room_writes_nothing(self):
+        rootfs = self.tarball()
+        os.environ['TECHO5_SIM_FREE_KB'] = self.free_kb(rootfs, 0)
+        with self.assertRaises(techo5lib.Fail) as e:
+            ic.unpack_rootfs(self.unit, rootfs, self.work, '/data/local/tmp/techo5')
+        self.assertIn('Nothing of the root filesystem was written', str(e.exception))
+
+    def test_slot_done_checks_count_and_links(self):
+        self.assertIn('[ -L $S/slots/a/bin/sh ]', ic.SLOT_DONE)
+        self.assertIn('"$HAVE" -ge "$WANT"', ic.SLOT_DONE)
+
+
 class FakeAdb:
     """What identity() asks the unit: here, a factory-reset one with no network saved and no name."""
 

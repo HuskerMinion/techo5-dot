@@ -67,12 +67,42 @@ def read(path, length=None):
         return f.read() if length is None else f.read(length)
 
 
+SLOT = os.path.join(DIR, 'slot-a.names')
+
+
+def slot_names():
+    """What slot a holds: the paths the simulated tar made, one per line."""
+    if not os.path.exists(SLOT):
+        return set()
+    with open(SLOT, encoding='utf-8') as f:
+        return set(f.read().split('\n')) - {''}
+
+
+def untar(path):
+    """busybox tar xzf into slot a: the part's paths are recorded, and its exit status and errors said, as
+    the installer reads them. TECHO5_SIM_TAR_FAIL makes it fail as a tar cut short does."""
+    import tarfile
+    if os.environ.get('TECHO5_SIM_TAR_FAIL'):
+        return ['rc=1', 'tar: short read']
+    try:
+        with tarfile.open(local(path), 'r:gz') as t:
+            names = [m.name[2:] if m.name.startswith('./') else m.name for m in t]
+    except (tarfile.TarError, EOFError, OSError) as e:
+        return ['rc=1', 'tar: %s' % e]
+    with open(SLOT, 'a', encoding='utf-8') as f:
+        f.write(''.join(n.rstrip('/') + '\n' for n in names if n.rstrip('/') not in ('', '.')))
+    return ['rc=0']
+
+
 def shell(cmd):
     out = []
     marked = cmd.endswith('; echo %s' % END)
     if marked:
         cmd = cmd[:-len('; echo %s' % END)]
-    if cmd == 'id -u' or cmd == 'id':
+    if re.search(r'rm -rf \S+/slots/a ', cmd):
+        if os.path.exists(SLOT):
+            os.remove(SLOT)
+    elif cmd == 'id -u' or cmd == 'id':
         out.append('0' if STATE in ('rooted', 'recovery') else '2000')
     elif cmd.startswith('for p in ') and 'getprop' in cmd:
         out += ['%s=%s' % kv for kv in PROPS.items()]
@@ -110,9 +140,21 @@ def shell(cmd):
             # A volume update replaces the whole volume with the image.
             m = re.search(r'ubiupdatevol\)? /dev/ubi0_(\d+) (\S+)', cmd)
             shutil.copyfile(local(m.group(2)), os.path.join(DIR, 'ubi0_%s.bin' % m.group(1)))
-        elif re.fullmatch(r'sh \S+/slot-done\.sh \S+ 2>&1', cmd):
-            unpacked = os.path.join(DIR, 'slot-a.tar.gz')
-            out.append('slot a: simulated' if os.path.exists(unpacked) else 'slot a has no /sbin/init')
+        elif re.search(r' df -k /data ', cmd):
+            out.append(os.environ.get('TECHO5_SIM_FREE_KB', '160000'))
+        elif re.match(r'\S+ tar xzf (\S+) -C \S+/slots/a 2>', cmd):
+            out += untar(re.match(r'\S+ tar xzf (\S+)', cmd).group(1))
+        elif re.fullmatch(r'sh \S+/slot-done\.sh \S+ (\d+) \S+ 2>&1', cmd):
+            want = int(re.search(r' (\d+) \S+ 2>&1$', cmd).group(1))
+            have = slot_names()
+            if 'sbin/init' not in have:
+                out.append('slot a has no /sbin/init')
+            elif 'bin/sh' not in have:
+                out.append('slot a has no /bin/sh link: its symlinks were not made')
+            elif len(have) < want:
+                out.append("slot a has %d of the tarball's %d paths" % (len(have), want))
+            else:
+                out.append('slot a: simulated')
         elif cmd.startswith('[ -e /data/local/hassmic ]'):
             out.append('yes' if STATE == 'rooted' else '')
     if marked:
@@ -162,14 +204,12 @@ def main():
             return 1
         with open(local(m.group(1)), 'rb') as f:
             shutil.copyfileobj(f, sys.stdout.buffer, 1 << 20)
-    elif verb == 'exec-in':
-        # The root filesystem, unpacked as it arrives on the unit: kept here as it came.
-        if not re.fullmatch(r'\S+ tar xzf - -C \S+/slots/a', ' '.join(args[1:])):
-            return 1
-        with open(os.path.join(DIR, 'slot-a.tar.gz'), 'wb') as f:
-            shutil.copyfileobj(sys.stdin.buffer, f, 1 << 20)
     elif verb == 'push':
         shutil.copyfile(args[1], local(args[2]))
+        if os.environ.get('TECHO5_SIM_TRUNCATE') and re.search(r'/incoming-\d+\.tar\.gz$', args[2]):
+            # A copy cut short over USB, as the unit's exec-in stream once was.
+            with open(local(args[2]), 'r+b') as f:
+                f.truncate(os.path.getsize(args[1]) // 2)
         print('%s: 1 file pushed.' % args[1])
     else:
         sys.stderr.write('sim-cannoli-adb: %s is not simulated\n' % verb)

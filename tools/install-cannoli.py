@@ -43,6 +43,7 @@ import os
 import re
 import subprocess
 import sys
+import tarfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -121,6 +122,10 @@ STORE = '/data/techo5-store/techo5'
 LINUX_DIR = '/data/techo5-linux'
 STATE = '/data/misc/echolocal'
 END = 'T5-END'
+# Room left on userdata once the slot is in (the Bluetooth payload, the wake words, Fire OS's own), and
+# the smallest part of the root filesystem worth pushing.
+SPARE = 16 << 20
+MIN_PART = 2 << 20
 # A gift install's: the marker that starts first run, and a supplicant configuration with no network.
 FIRSTRUN_MARKER = dot.FIRSTRUN_MARKER
 EMPTY_WIFI_CONF = dot.EMPTY_WIFI_CONF
@@ -129,9 +134,14 @@ EMPTY_WIFI_CONF = dot.EMPTY_WIFI_CONF
 # (slotctl's layout: good, since it was checked here, and active). The count of slot boots that never
 # became healthy starts again from zero, so a unit that gave up on an older slot tries this one.
 SLOT_DONE = r'''S=$1
+WANT=$2
+BB=$3
 for f in sbin/init bin/busybox.static etc/techo5/boot.sh usr/local/bin/echod; do
 	[ -e $S/slots/a/$f ] || { echo "slot a has no /$f"; exit 1; }
 done
+[ -L $S/slots/a/bin/sh ] || { echo "slot a has no /bin/sh link: its symlinks were not made"; exit 1; }
+HAVE=$(($($BB find $S/slots/a | $BB wc -l) - 1))
+[ "$HAVE" -ge "$WANT" ] || { echo "slot a has $HAVE of the tarball's $WANT paths"; exit 1; }
 : > $S/.techo5-store
 echo good > $S/slots/a.state
 echo a > $S/active
@@ -882,23 +892,7 @@ def main():
     step('userdata: root filesystem, Bluetooth, identity')
     adb.sh('mkdir -p %s %s %s; chmod 700 %s' % (STORE, LINUX_DIR, STATE, STATE))
     if rootfs:
-        # Unpacked as it arrives: Fire OS's userdata has about 80 MB free, the slot takes some 36 and the
-        # tarball would take 32 more. An earlier slot a goes first for the same reason.
-        unit.checked('mkdir -p %s/slots && rm -rf %s/slots/a %s/slots/a.old && mkdir %s/slots/a' % ((STORE,) * 4), 'the slot')
-        note('unpacking the root filesystem into slot a as it arrives: a minute or two, with no output until done')
-        with open(rootfs, 'rb') as f:
-            r = subprocess.run(adb.cmd + ['exec-in', '%s tar xzf - -C %s/slots/a' % (unit.bb, STORE)], stdin=f,
-                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        script = os.path.join(a.work, 'techo5-cannoli-slot.sh')
-        with open(script, 'w', newline='\n') as f:
-            f.write(SLOT_DONE)
-        adb.push(script, stage + '/slot-done.sh')
-        os.remove(script)
-        result = adb.sh('sh %s/slot-done.sh %s 2>&1' % (stage, STORE))
-        if not result.startswith('slot a: '):
-            fail('unpacking the root filesystem failed: %s %s\nboot_b is written; run the installer again.'
-                 % (r.stdout.decode('utf-8', 'replace').strip(), result))
-        note(result)
+        unpack_rootfs(unit, rootfs, a.work, stage)
     if bt:
         adb.push(bt, LINUX_DIR + '/bt.tar.gz')
         if unit.sha256(LINUX_DIR + '/bt.tar.gz') != hash_file(bt):
@@ -957,6 +951,99 @@ def main():
     print('   Unplug the Dot\'s power, hold Volume-Up, plug it back in and keep holding about 5 s. Any power-on')
     print('   without Volume-Up starts Fire OS from slot A, as before.')
     wait_healthy(a, shown, key_file, rootfs is not None)
+
+
+def rootfs_names(rootfs):
+    """The paths a root filesystem tarball makes, each once, and the bytes its files hold."""
+    names, size = set(), 0
+    with tarfile.open(rootfs, 'r:gz') as t:
+        for m in t:
+            n = m.name[2:] if m.name.startswith('./') else m.name
+            n = n.rstrip('/')
+            if n and n != '.':
+                names.add(n)
+                if m.isfile():
+                    size += m.size
+    return names, size
+
+
+def split_rootfs(rootfs, out_dir, limit):
+    """The tarball as parts that are each a whole tarball of their own, in order, each holding at most
+    limit bytes of its files (so at most about that much compressed, as a part is never bigger than what
+    it holds). A part goes onto the unit, is checked, unpacked and deleted before the next: userdata
+    after a factory reset has about 155 MB free, and the slot alone takes 63 MiB. Hard links name a file
+    of an earlier part or their own, which is on disk by then."""
+    os.makedirs(out_dir, exist_ok=True)
+    for old in os.listdir(out_dir):
+        os.remove(os.path.join(out_dir, old))
+    parts, out, held = [], None, 0
+    with tarfile.open(rootfs, 'r:gz') as src:
+        for m in src:
+            if out is None or (held and held + m.size > limit):
+                if out:
+                    out.close()
+                path = os.path.join(out_dir, 'part-%03d.tar.gz' % len(parts))
+                out = tarfile.open(path, 'w:gz', format=src.format)
+                parts.append(path)
+                held = 0
+            out.addfile(m, src.extractfile(m) if m.isfile() else None)
+            held += m.size if m.isfile() else 0
+    if out:
+        out.close()
+    return parts
+
+
+def unpack_rootfs(unit, rootfs, work, stage):
+    """The root filesystem into the store's slot a, in parts that fit the room userdata has: each pushed,
+    checked by sha256 on the unit, unpacked with tar's own exit status and errors read back, and deleted.
+    Then SLOT_DONE checks the slot has every path the tarball has, the four init-cannoli boots, and a
+    symlink (busybox's tar makes symlinks last, so a tar cut short loses them first)."""
+    names, size = rootfs_names(rootfs)
+    S = STORE
+    # An earlier slot a goes first: the room is short.
+    unit.checked('mkdir -p %s/slots && rm -rf %s/slots/a %s/slots/a.old %s/incoming-*.tar.gz && mkdir %s/slots/a'
+                 % ((S,) * 5), 'the slot')
+    free = unit.checked("%s df -k /data | %s tail -n 1 | %s awk '{print $4}'" % (unit.bb, unit.bb, unit.bb), 'free space')
+    if not free.isdigit():
+        fail('could not read the free space on userdata (%r)' % free)
+    free = int(free) * 1024
+    # What the slot takes on UBIFS: its files, and a block for every path; then room for what comes after
+    # it (the Bluetooth payload, the wake words).
+    slot = size + 4096 * len(names)
+    room = free - slot - SPARE
+    if room < MIN_PART:
+        fail('userdata has %d MB free; the slot needs about %d MB and %d MB besides. Nothing of the root filesystem '
+             'was written. Free room in Fire OS (or factory-reset it) and run the installer again.'
+             % (free >> 20, slot >> 20, (SPARE + MIN_PART) >> 20))
+    whole = os.path.getsize(rootfs)
+    parts = [rootfs] if whole <= room else split_rootfs(rootfs, os.path.join(work, 'cannoli-rootfs-parts'), room)
+    note('unpacking the root filesystem into slot a: %d paths, %d MB, in %d part%s (userdata has %d MB free)'
+         % (len(names), size >> 20, len(parts), '' if len(parts) == 1 else 's', free >> 20))
+    for i, part in enumerate(parts):
+        remote = '%s/incoming-%03d.tar.gz' % (S, i)
+        unit.adb.push(part, remote)
+        got = unit.sha256(remote)
+        if got != hash_file(part):
+            unit.sh('rm -f %s' % remote)
+            fail('part %d of the root filesystem arrived as %s, not %s (cut short over USB). %s'
+                 % (i + 1, got, hash_file(part), dot.CABLE))
+        out = unit.checked('%s tar xzf %s -C %s/slots/a 2>%s/tar.err; echo "rc=$?"; %s head -c 2000 %s/tar.err; '
+                           'rm -f %s %s/tar.err' % (unit.bb, remote, S, stage, unit.bb, stage, remote, stage), 'tar')
+        if not out.startswith('rc=0'):
+            fail('unpacking part %d of the root filesystem failed (%s). boot_b is written; run the installer again.'
+                 % (i + 1, out))
+    script = os.path.join(work, 'techo5-cannoli-slot.sh')
+    with open(script, 'w', newline='\n') as f:
+        f.write(SLOT_DONE)
+    unit.adb.push(script, stage + '/slot-done.sh')
+    os.remove(script)
+    result = unit.sh('sh %s/slot-done.sh %s %d %s 2>&1' % (stage, S, len(names), unit.bb))
+    if not result.startswith('slot a: '):
+        fail('the root filesystem is not whole in slot a: %s\nboot_b is written; run the installer again.' % result)
+    if len(parts) > 1:
+        for part in parts:
+            os.remove(part)
+    note(result)
 
 
 def identity(a, adb, root):

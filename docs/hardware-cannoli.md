@@ -29,6 +29,7 @@ Installing: [install-cannoli.md](install-cannoli.md). Building the slot-B pieces
 | SoC / storage | MediaTek MT8519, NAND with UBI: 17 volumes, mostly in `_a`/`_b` pairs, with `userdata` and `cache` among them |
 | Kernel | Amazon's 5.4.86 (`-ab0013323246848`), 32-bit ARM, `MODVERSIONS` on and no module signing |
 | Speaker amp | Maxim MAX98396 at i2c 3-0038, on eTDM2 at a fixed 96 kHz. Plays from `DL2 Playback` (card 0, device 1) |
+| Speaker tuning | Fire OS's own chain, IIR rather than the Dot 3's FIR: a volume EQ (`VolEQ_10..100.cfg`), 16 biquads for the driver (`Singleton_DEQ.cfg`, about +17 dB at 60–120 Hz and −7 dB at 3 kHz over 1 kHz), then a 4-band limiter (200/900/5000 Hz) and a −0.1 dB full-band one from `AFE.cfg`. Slot B's `boot.sh` adopts `/vendor/etc/audio-algorithms` once from `system_a` (SquashFS, mounted through `ubiblock`) into the store; echod's `lib/asp` runs it as `asp.Cannoli` |
 | Microphones | 3 mics on a TI TLV320ADC5140 (i2c 4-004c) over eTDM1, captured on `UL9` (card 0, device 9) without the HiFi5 DSP. ch0–2 are the mics, ch3 is unwired. Which hole is which channel is not known yet |
 | Echo reference | the playback looped into the same capture: `O30 I40` / `O31 I41` put DL2 on UL9's channels 4 and 5 |
 | LED ring | ISSI IS31FL3246 (i2c 0-0031), 12 RGB LEDs as `ledmod_0..11`. `ledmod_0` sits over the power socket; the numbers run clockwise from above |

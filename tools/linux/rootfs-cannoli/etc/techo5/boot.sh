@@ -166,6 +166,55 @@ else
 	say "no Wi-Fi driver in $MODS: no Wi-Fi (the rescue ramdisk adopts it there)"
 fi
 
+# --- The speaker's tuning (echod's lib/asp, asp.Cannoli): Fire OS's /vendor/etc/audio-algorithms, about
+# 2 MB, adopted once into the store from system_a, a SquashFS UBI volume that a ubiblock device lets us
+# mount read-only and leave as it was. Amazon's, so never in a published rootfs: every unit takes its own.
+# Without it the speaker plays untuned (flat: no bass lift and no limiter).
+AA=$S/audio-algorithms
+ubivol() {
+	local d
+	for d in /sys/class/ubi/ubi*_*; do
+		[ "$($BB cat $d/name 2>/dev/null)" = "$1" ] && { $BB basename $d; return 0; }
+	done
+	return 1
+}
+adopt_audio() {
+	[ -e $AA/AFE.cfg ] && return 0
+	[ -e $S/.techo5-store ] || return 0
+	vol=$(ubivol system_a) || { say "no system_a volume: the speaker plays untuned"; return 0; }
+	[ -e /dev/$vol ] || $BB mdev -s
+	/usr/local/bin/ubiblock create /dev/$vol || { say "no block device for system_a: the speaker plays untuned"; return 0; }
+	blk=/dev/ubiblock${vol#ubi}
+	i=0
+	while [ $i -lt 5 ] && [ ! -b $blk ]; do $BB mdev -s; $BB sleep 1; i=$((i + 1)); done
+	$BB mkdir -p /tmp/system_a $AA.new
+	if $BB mount -t squashfs -o ro $blk /tmp/system_a 2>/tmp/system_a.err; then
+		$BB cp /tmp/system_a/system/vendor/etc/audio-algorithms/* $AA.new/ 2>/dev/null
+		$BB umount /tmp/system_a
+	else
+		say "system_a will not mount: $($BB cat /tmp/system_a.err)"
+	fi
+	/usr/local/bin/ubiblock remove /dev/$vol
+	if [ -e $AA.new/AFE.cfg ]; then
+		$BB rm -rf $AA
+		$BB mv $AA.new $AA
+		$BB sync
+		say "audio coefficients adopted from system_a: $($BB ls $AA | $BB wc -l) files"
+	else
+		$BB rm -rf $AA.new
+		say "no audio coefficients on system_a: the speaker plays untuned"
+	fi
+}
+adopt_audio
+if [ -e $AA/AFE.cfg ]; then
+	for v in /vendor /system/vendor; do
+		[ -L $v ] && continue
+		$BB mkdir -p $v/etc
+		$BB ln -sfn $AA $v/etc/audio-algorithms
+	done
+	say "audio coefficients at /vendor/etc/audio-algorithms"
+fi
+
 # --- The same address every boot, before wpa_supplicant (usr/local/sbin/techo5-wlan-mac), then the
 # network: the one set with wifi-set, or the one Fire OS saved (usr/local/sbin/techo5-net).
 [ -e /sys/class/net/wlan0 ] && /usr/local/sbin/techo5-wlan-mac > /dev/null

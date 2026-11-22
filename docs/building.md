@@ -58,6 +58,7 @@ export GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0
 (cd ../techo5/echod && go build -tags dot -o ../../techo5-dot/bin/echod-dot ./cmd/echod)
 (cd ../techo5 && go build -o ../techo5-dot/bin/btbridge ./cmd/btbridge)
 go build -o bin/wmtup ./cmd/wmtup
+go build -o bin/ubiblock ./cmd/ubiblock   # for the Echo Dot 5th gen's root filesystem
 unset GOOS GOARCH GOARM CGO_ENABLED
 ```
 

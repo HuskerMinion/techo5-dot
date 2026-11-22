@@ -16,7 +16,8 @@ The Echo Input (cupcake) is the Dot 3's board and runs this same root filesystem
 
 --board cannoli builds the Echo Dot 5th gen's: echod built with -tags dot,cannoli, its boot scripts
 (rootfs-cannoli, over the Dot 2's), our wpa_supplicant, and the Bluetooth stack for its stock kernel
-(build-cannoli-bt-modules.sh, with their load-order); no wmtup. Its Wi-Fi and Bluetooth driver and
+(build-cannoli-bt-modules.sh, with their load-order) and bin/ubiblock (cmd/ubiblock, through which boot.sh
+adopts the unit's speaker tuning from system_a); no wmtup. Its Wi-Fi and Bluetooth driver and
 firmware are the unit's own and stay out: the slot-B ramdisk, built from the unit's backup, adopts them
 into the store at boot (init-cannoli). bluez-alsa is build-bluealsa.sh's when built, else Alpine's.
 Windows, Linux and macOS alike; needs Python 3.
@@ -47,6 +48,9 @@ def main():
                          "with --board cannoli the default is build/cannoli-bt-modules, build-cannoli-bt-modules.sh's")
     ap.add_argument('--release', required=True, help='the version this root filesystem is, e.g. v0.6.0')
     ap.add_argument('--wmtup', default=j(REPO, 'bin', 'wmtup'))
+    ap.add_argument('--ubiblock', default=j(REPO, 'bin', 'ubiblock'),
+                    help="with --board cannoli: cmd/ubiblock's, which boot.sh mounts system_a through to adopt "
+                         "the unit's speaker tuning")
     ap.add_argument('--btbridge', default=None, help='default: bin/btbridge, else build/btbridge/btbridge')
     ap.add_argument('--librespot', default=j(REPO, 'bin', 'techo5-librespot'),
                     help="Spotify Connect's receiver: techo5's tools/linux/build-librespot.sh writes it as "
@@ -83,6 +87,8 @@ def main():
     if not bluealsa:
         print("no %s: Alpine's bluez-alsa 4.3.1 goes in (build-bluealsa.sh has the AAC fix)" % a.bluealsa)
     needs = [a.daemon, a.btbridge, busybox] + bluealsa + ([a.wpa_supplicant] + modules if donut or cannoli else [a.wmtup])
+    if cannoli:
+        needs.append(a.ubiblock)
     for f in needs:
         if not os.path.exists(f):
             sys.exit('missing %s (docs/building.md says how to fetch or build it)' % f)
@@ -139,6 +145,8 @@ def main():
             cmd += ['--data', '%s=/usr/lib/techo5/modules/%s' % (m, os.path.basename(m))]
     else:
         cmd += ['--add', a.wmtup + '=/usr/local/bin/wmtup']
+    if cannoli:
+        cmd += ['--add', a.ubiblock + '=/usr/local/bin/ubiblock']
     # Each program built from others' sources carries its licenses (tools/linux/licenses) in /usr/share/licenses.
     def licenses(name):
         for f in sorted(glob.glob(j(HERE, 'licenses', name, '*'))):

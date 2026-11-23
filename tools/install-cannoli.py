@@ -406,11 +406,16 @@ def back_up(unit, m0, with_files):
 
 # ---------------------------------------------------------------------------------------------- firebreak
 
+# The firebreak the installer was tested with, when there is no checkout: no release on PyPI has the
+# cannoli route yet, so it is the commit on Gamer92000/firebreak that added cannoli-upgrade and keyless adb.
+FIREBREAK_PIN = 'git+https://github.com/Gamer92000/firebreak@c0ad855b412cc76a562033a5a1a32a0955dd36fe'
+
+
 def firebreak_cmd(checkout, *args):
-    """firebreak's command line: uv run in its checkout (the cannoli route), else uvx from PyPI."""
+    """firebreak's command line: uv run in its checkout (the cannoli route), else uvx from the pinned commit."""
     if checkout:
         return ['uv', 'run', '--project', checkout, 'firebreak'] + list(args)
-    return ['uvx', 'firebreak@latest'] + list(args)
+    return ['uvx', '--from', FIREBREAK_PIN, 'firebreak'] + list(args)
 
 
 def on_wsl():
@@ -573,7 +578,7 @@ def main():
     ap.add_argument('--unit', help="the unit's folder: bundle/, stock-8349-parts/, builds/ (default ../cannoli-<serial>)")
     ap.add_argument('--bundle', help="firebreak's bundle for this unit (default <unit>/bundle)")
     ap.add_argument('--firebreak', default=os.environ.get('FIREBREAK') or os.path.join(os.path.dirname(repo_root()), 'firebreak'),
-                    help='a firebreak checkout with the cannoli route (default ../firebreak; uvx firebreak@latest when missing)')
+                    help='a firebreak checkout with the cannoli route (default ../firebreak; uvx from a pinned commit when missing)')
     ap.add_argument('--ota-parts', help='the unpacked 8349 OTA, for a unit on an older build (default <unit>/stock-8349-parts)')
     ap.add_argument('--ota', help='the 8349 OTA itself (%s), to check its MD5' % OTA_NAME)
     ap.add_argument('--accept-efuse', action='store_true', help="answer the one-way 8349 upgrade's question with yes")

@@ -107,7 +107,8 @@ class Verdict(unittest.TestCase):
 class Firebreak(unittest.TestCase):
     def test_command(self):
         self.assertEqual(ic.firebreak_cmd('/fb', 'unlock', '--device', 'cannoli')[:5], ['uv', 'run', '--project', '/fb', 'firebreak'])
-        self.assertEqual(ic.firebreak_cmd(None, 'unlock')[:2], ['uvx', 'firebreak@latest'])
+        self.assertEqual(ic.firebreak_cmd(None, 'unlock'), ['uvx', '--from', ic.FIREBREAK_PIN, 'firebreak', 'unlock'])
+        self.assertRegex(ic.FIREBREAK_PIN, r'@[0-9a-f]{40}$')
 
     def test_bundle_for_another_unit_is_refused(self):
         d = tempfile.mkdtemp()

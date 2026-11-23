@@ -285,8 +285,9 @@ if [ -e $MODS/btmtksdio.ko ] && [ -e /sys/class/net/wlan0 ]; then
 		$BB mdev -s
 		if [ -e /dev/vhci ]; then
 			# hci0 first: a BLE proxy that opened /dev/stpbt before btbridge did would split the
-			# controller's replies with it.
-			/usr/local/sbin/techo5-bt > /dev/null 2>&1 &
+			# controller's replies with it. TECHO5_BT_LEGACY_ADV: this kernel's extended advertising
+			# stops after 2 s (usr/local/sbin/techo5-bt).
+			TECHO5_BT_LEGACY_ADV=1 /usr/local/sbin/techo5-bt > /dev/null 2>&1 &
 			i=0
 			while [ $i -lt 20 ] && [ ! -d /sys/class/bluetooth/hci0 ]; do $BB sleep 1; i=$((i + 1)); done
 			say "bluetooth hci0 $([ -d /sys/class/bluetooth/hci0 ] && echo up || echo missing)"

@@ -14,7 +14,7 @@
  * twelve modules, the codecs' settings), and the sound card, which names the codecs by phandle, finds
  * them once they bind. The node's status is not looked at again after the bus has been populated.
  *
- * nodes= names the parts, by path; the default is the DVT/PVT aluminium board's (the first
+ * nodes= names the parts, by path; the default is the DVT/PVT aluminum board's (the first
  * unit: ISSI IS31FL3246 at 0-0031, Maxim MAX98396 at 3-0038, TI TLV320ADC5140 at 4-004c).
  * A node already populated, or whose address is taken, is left alone.
  */

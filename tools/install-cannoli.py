@@ -18,7 +18,8 @@ What it does, stopping at the first thing not right:
   3. unlocks a stock unit with firebreak (`--firebreak`, `--bundle`)
   4. backs up every UBI volume but cache and userdata, the four brhgptlk copies, and the Wi-Fi and
      Bluetooth drivers and firmware into backups/<serial>/m0/, each checked against a hash the unit
-     computes itself
+     computes itself; a rooted 8349 unit whose brhgptlk copies still hold the launch BL2 is asked before
+     they are written at the end
   5. builds slot B's image from that backup (tools/linux/build-cannoli-image.py) and the Bluetooth
      payload (tools/linux/build-cannoli-bt-payload.py)
   6. asks for the name, Wi-Fi and Home Assistant key as install-dot.py does
@@ -576,6 +577,8 @@ def main():
     ap.add_argument('--ota-parts', help='the unpacked 8349 OTA, for a unit on an older build (default <unit>/stock-8349-parts)')
     ap.add_argument('--ota', help='the 8349 OTA itself (%s), to check its MD5' % OTA_NAME)
     ap.add_argument('--accept-efuse', action='store_true', help="answer the one-way 8349 upgrade's question with yes")
+    ap.add_argument('--accept-bl2', action='store_true',
+                    help="answer the question before a rooted 8349 unit's brhgptlk copies are written with yes")
     ap.add_argument('--rootfs', help="build-dot-rootfs.py --board cannoli's tarball (default build/techo5-cannoli-rootfs.tar.gz)")
     ap.add_argument('--rescue-only', action='store_true', help='no root filesystem: slot B boots the rescue environment')
     ap.add_argument('--hwfixup', help='cannoli_hwfixup.ko (default build/cannoli-hwfixup/, else <unit>/builds/)')
@@ -789,8 +792,15 @@ def main():
             bl2[name] = hashlib.sha256(f.read()[:BRHGPTLK_LEN]).hexdigest() == BRHGPTLK_SHA256
     if not all(bl2.values()):
         flash_brhgptlk_needed = [n for n, ok in bl2.items() if not ok]
-        note('brhgptlk still the launch BL2 (%s): the ring stays dark under Fire OS. They are written from TWRP '
-             'at the end of the install.' % ', '.join(flash_brhgptlk_needed))
+        lines = ['brhgptlk still holds the launch BL2 (%s): under Fire OS 8349 the ring stays dark.'
+                 % ', '.join(flash_brhgptlk_needed),
+                 "The install writes 8349's BL2 to them from TWRP at its end, each read back. A BL2 is the first",
+                 'thing the unit boots: a copy left bad by a power cut while it is written can stop it starting.']
+        if a.dry_run:
+            for line in lines:
+                note(line)
+        else:
+            confirm(a.accept_bl2, lines, 'BL2')
     # The way back to TWRP: the first boot_b backup that is not ours.
     twrp_copy = os.path.join(root, 'twrp-boot_b.img')
     with open(files['boot_b'], 'rb') as f:

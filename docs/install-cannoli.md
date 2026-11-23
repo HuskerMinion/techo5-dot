@@ -102,7 +102,8 @@ isn't rooted yet, it stops after the checks and prints the firebreak commands it
    the unit computes itself, and `ubi-sha256.txt` lists them with their volume names. A copy already
    there and the same is kept. If a volume has changed, the new copy is saved beside the old one with a
    time stamp. The TWRP that was in slot B is kept as `backups/<serial>/twrp-boot_b.img`: it's the way
-   back to recovery.
+   back to recovery. If a rooted 8349 unit's `brhgptlk` copies still hold the launch BL2, the installer
+   asks here before it writes 8349's to them from TWRP at the end (type `BL2`, or pass `--accept-bl2`).
 5. **The build.** `tools/linux/build-cannoli-image.py` builds slot B's image from that backup: boot_a's
    stock 8349 FIT with its ramdisk replaced, checked to be byte-for-byte the stock FIT everywhere else and
    to fit what the unit's U-Boot reads of `boot_b`. Then the Bluetooth payload.

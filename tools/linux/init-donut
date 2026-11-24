@@ -28,7 +28,10 @@ $BB mount -t sysfs sysfs /sys
 $BB mount -t tmpfs -o mode=0755 tmpfs /dev
 $BB mkdir -p /dev/pts /run /tmp /data /store
 $BB mount -t devpts devpts /dev/pts
-$BB mount -t tmpfs tmpfs /run
+# 0755, not the 1777 a tmpfs gets without a mode: root's scripts and the daemon use fixed names in
+# /run (the DHCP script, pid files), and the root filesystem runs users other than root (TECHO5's
+# feature/addons).
+$BB mount -t tmpfs -o mode=0755 tmpfs /run
 $BB mount -t tmpfs tmpfs /tmp
 
 $BB mknod -m 600 $MISC b 179 $MISC_DEV 2>/dev/null

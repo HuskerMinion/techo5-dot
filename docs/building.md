@@ -146,8 +146,10 @@ On a Dot already running TECHO5 (SSH switched on in Home Assistant, with a key):
 
 - a new kernel: `python3 tools/update-boot.py --serial <serial> --address <address> --kernel build/kernel/zImage-dtb`;
 - a new daemon, until the next reboot:
-  `scp bin/echod-dot root@<address>:/tmp/echod-test` then
-  `ssh root@<address> 'mount --bind /tmp/echod-test /usr/local/bin/echod && killall echod'`.
+  `scp bin/echod-dot root@<address>:/run/echod-test` then
+  `ssh root@<address> 'mount --bind /run/echod-test /usr/local/bin/echod && killall echod'`. It goes in
+  `/run`, root's alone and not capped, rather than `/tmp`, which is bounded at 32 MB, less than a daemon,
+  and which anyone on the device can write to.
 
 ## Package versions
 

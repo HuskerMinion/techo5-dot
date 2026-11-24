@@ -75,7 +75,12 @@ lease() {
 	# busybox's client hands a lease to a script or throws it away. It stays running (no -q), so the
 	# lease is renewed: a client that quits after the first lease keeps an address the router later
 	# gives away.
-	cat > /run/udhcpc.sh <<'EOF'
+	# In root's own folder, written beside itself and moved into place: the client runs it as root, and a
+	# file another user left at a name in /run (writable by anyone before the images mounted it 0755)
+	# would keep its owner through cat >, and be run.
+	mkdir -p -m 0700 /run/techo5
+	rm -f /run/techo5/udhcpc.sh.new
+	cat > /run/techo5/udhcpc.sh.new <<'EOF'
 #!/bin/sh
 case "$1" in
 deconfig)
@@ -91,8 +96,8 @@ bound | renew)
 	;;
 esac
 EOF
-	chmod 755 /run/udhcpc.sh
-	udhcpc -i wlan0 -s /run/udhcpc.sh -b -t 8 -p /run/udhcpc.pid >> $LOG/udhcpc.log 2>&1
+	chmod 755 /run/techo5/udhcpc.sh.new && mv -f /run/techo5/udhcpc.sh.new /run/techo5/udhcpc.sh
+	udhcpc -i wlan0 -s /run/techo5/udhcpc.sh -b -t 8 -p /run/udhcpc.pid >> $LOG/udhcpc.log 2>&1
 
 	i=0
 	while [ $i -lt 30 ]; do

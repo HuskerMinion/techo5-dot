@@ -39,7 +39,11 @@ $BB mount -t devpts devpts /dev/pts 2>/dev/null
 $BB mount -t tmpfs -o mode=1777,size=1m tmpfs /dev/shm 2>/dev/null
 # The initramfs wrote which slot this is into /run before switching; read it before the tmpfs hides it.
 SLOT=$($BB cat /run/techo5/slot 2>/dev/null)
-$BB mount -t tmpfs tmpfs /run 2>/dev/null
+# 0755, not the 1777 a tmpfs gets without a mode: root's scripts and the daemon use fixed names in
+# /run (the DHCP script, pid files), and the root filesystem runs users other than root (TECHO5's
+# feature/addons).
+$BB mount -t tmpfs -o mode=0755 tmpfs /run 2>/dev/null
+$BB chown 0:0 /run && $BB chmod 755 /run
 # /tmp and /var/tmp are memory anyone can write to: bounded, so a user other than root (an add-on) that
 # fills them cannot take the memory the daemon needs on a board with about 445 MB free. Nothing of
 # TECHO5's own keeps anything there.

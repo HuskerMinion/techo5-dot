@@ -55,7 +55,14 @@ say() { echo "techo5-donut boot: $*"; }
 say "slot $($BB cat /run/techo5/slot 2>/dev/null) release $($BB cat /etc/techo5-release 2>/dev/null)"
 
 # --- Userdata first: the store is on it.
-$BB mount -t ext4 -o noatime $DATA /data 2>/dev/null && $BB mkdir -p /data/techo5-linux
+# commit=60: ext4 commits its journal every 60 s rather than every 5 s. eMMC wears with what is written
+# to it, and each commit writes journal blocks however little changed (TECHO5's techo5-lib.sh,
+# t5_data_commit, measured on a Show 8). What syncs itself is unaffected: the daemon's state and alive
+# marker fsync as they are written, and its log is flushed after every warning or error. A power cut can
+# lose up to 60 s of writes nothing synced, such as routine log lines. No lazytime: the Dot 2's 3.18
+# kernel does not know it. A userdata already mounted without it is remounted with it.
+$BB mount -t ext4 -o noatime,commit=60 $DATA /data 2>/dev/null && $BB mkdir -p /data/techo5-linux
+$BB grep -q ' /data ext4 .*commit=60' /proc/mounts || $BB mount -o remount,noatime,commit=60 /data 2>/dev/null
 say "userdata $([ -d /data/techo5-linux ] && echo mounted || echo unavailable)"
 $BB chmod 700 /data/techo5-linux 2>/dev/null
 $BB mount --bind $STOREDIR /store 2>/dev/null

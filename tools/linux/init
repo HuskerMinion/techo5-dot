@@ -202,8 +202,10 @@ boot_slot() {
 crumb "rescue mode: no slot to boot"
 
 # --- Userdata, for a log that outlives this boot.
-# commit=60 to spare the eMMC, as the slot mounts it (rootfs/etc/techo5/boot.sh).
-if $BB mount -t ext4 -o noatime,commit=60 $DATA /data 2>/dev/null; then
+# commit=60 to spare the eMMC, as the slot mounts it (rootfs/etc/techo5/boot.sh), and the old options
+# if it is refused.
+if $BB mount -t ext4 -o noatime,commit=60 $DATA /data 2>/dev/null ||
+	$BB mount -t ext4 -o noatime $DATA /data 2>/dev/null; then
 	$BB mkdir -p /data/techo5-linux
 	LOGDIR=/data/techo5-linux
 	crumb "userdata mounted"

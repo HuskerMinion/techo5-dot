@@ -98,9 +98,11 @@ $BB sync
 crumb "boot try $tries of $TRIES_MAX; the next boot is Linux too"
 
 # --- Userdata, and the store on it.
-# commit=60 to spare the eMMC, as the slot mounts it (rootfs-donut/etc/techo5/boot.sh).
+# commit=60 to spare the eMMC, as the slot mounts it (rootfs-donut/etc/techo5/boot.sh), and the old
+# options if it is refused.
 DATA_UP=
-if $BB mount -t ext4 -o noatime,commit=60 $DATA /data 2>/dev/null; then
+if $BB mount -t ext4 -o noatime,commit=60 $DATA /data 2>/dev/null ||
+	$BB mount -t ext4 -o noatime $DATA /data 2>/dev/null; then
 	DATA_UP=1
 	$BB mkdir -p /data/techo5-linux
 fi
@@ -147,7 +149,8 @@ boot_slot() {
 crumb "rescue mode: no slot to boot"
 
 # --- Rescue: a log on userdata, a root shell over USB, Wi-Fi and SSH with the keys on userdata.
-if [ -n "$DATA_UP" ] || $BB mount -t ext4 -o noatime,commit=60 $DATA /data 2>/dev/null; then
+if [ -n "$DATA_UP" ] || $BB mount -t ext4 -o noatime,commit=60 $DATA /data 2>/dev/null ||
+	$BB mount -t ext4 -o noatime $DATA /data 2>/dev/null; then
 	$BB mkdir -p /data/techo5-linux
 	LOGDIR=/data/techo5-linux
 else

@@ -44,6 +44,21 @@ if [ ! -s $STATE/bdaddr ]; then
 fi
 bdaddr=$(cat $STATE/bdaddr 2>/dev/null)
 
+# bluetoothd's cache of the devices it has heard (<adapter>/cache) in RAM, as on TECHO5's Shows
+# (techo5-lib.sh, t5_bt_cache): it rewrites a device's file, fsynced and renamed, each time it learns
+# another name, and eMMC wears with what is written to it. The Dot's proxy listens through a raw HCI
+# socket and starts no BlueZ discovery, so here it is only what pairing a speaker or a phone connecting
+# writes, but it costs nothing to keep off userdata. bluetoothd learns it all again; pairings and the
+# adapter's settings stay on userdata. What the cache held there before is stale and would be hidden
+# under the tmpfs, so it is removed. The adapter's folder is named for its address, upper case.
+if [ -n "$bdaddr" ]; then
+	cache=/var/lib/bluetooth/$(echo "$bdaddr" | sed 's/../&:/g; s/:$//' | tr 'a-f' 'A-F')/cache
+	if ! grep -q " $cache " /proc/mounts; then
+		mkdir -p $cache && rm -rf $cache/*
+		mount -t tmpfs -o size=4m,mode=0700 tmpfs $cache || say "the device cache stays on userdata"
+	fi
+fi
+
 # again: a bridge that restarted brings up a new hci0 with bluetoothd's saved settings. The class goes
 # back to bluetoothd's default, so it is set again, and tried until it takes. And it is made
 # unfindable: a pairing window open when the bridge went down was ended meanwhile by the daemon's

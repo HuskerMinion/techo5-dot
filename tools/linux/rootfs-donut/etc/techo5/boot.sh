@@ -21,6 +21,16 @@ exec > /dev/kmsg 2>&1
 $BB mount -o remount,rw / 2>/dev/null
 $BB mount -t proc proc /proc 2>/dev/null
 $BB mount -o remount,hidepid=2 /proc 2>/dev/null
+# Users other than root run here (avahi, the receivers, and add-ons, each as a user of its own:
+# TECHO5's feature/addons), and root writes files of fixed names. The kernel's protections, where it has
+# them: links in a folder anyone can write to are followed only when their owner is the follower or the
+# folder's, and files and FIFOs there that root does not own are not opened to create. And the kernel
+# log, where a driver can print an address or a name, is root's.
+for k in protected_symlinks:1 protected_hardlinks:1 protected_fifos:2 protected_regular:2; do
+	f=/proc/sys/fs/${k%%:*}
+	[ -w "$f" ] && echo "${k##*:}" > "$f" 2>/dev/null
+done
+[ -w /proc/sys/kernel/dmesg_restrict ] && echo 1 > /proc/sys/kernel/dmesg_restrict
 $BB mount -t sysfs sysfs /sys 2>/dev/null
 $BB mount -t tmpfs -o mode=0755 tmpfs /dev 2>/dev/null
 $BB mkdir -p /dev/pts /dev/shm /tmp /data /android /store
@@ -30,11 +40,17 @@ $BB mount -t tmpfs -o mode=1777,size=1m tmpfs /dev/shm 2>/dev/null
 # The initramfs wrote which slot this is into /run before switching; read it before the tmpfs hides it.
 SLOT=$($BB cat /run/techo5/slot 2>/dev/null)
 $BB mount -t tmpfs tmpfs /run 2>/dev/null
-$BB mount -t tmpfs tmpfs /tmp 2>/dev/null
+# /tmp and /var/tmp are memory anyone can write to: bounded, so a user other than root (an add-on) that
+# fills them cannot take the memory the daemon needs on a board with about 445 MB free. Nothing of
+# TECHO5's own keeps anything there.
+$BB mount -t tmpfs -o size=32m,mode=1777 tmpfs /tmp 2>/dev/null
 $BB mount -t tmpfs -o mode=0755 tmpfs /var/log 2>/dev/null
-$BB mount -t tmpfs tmpfs /var/tmp 2>/dev/null
+$BB mount -t tmpfs -o size=16m,mode=1777 tmpfs /var/tmp 2>/dev/null
 [ -s /etc/hostname ] && $BB hostname -F /etc/hostname
 $BB mkdir -p /run/techo5
+# Root's scratch folder: ntpd's output goes here rather than to a fixed name in /tmp, where a link another
+# user left would be written through as root.
+$BB chmod 700 /run/techo5
 [ -n "$SLOT" ] && echo "$SLOT" > /run/techo5/slot
 
 $BB --install -s 2>/dev/null
@@ -67,6 +83,8 @@ say "slot $($BB cat /run/techo5/slot 2>/dev/null) release $($BB cat /etc/techo5-
 $BB grep -q ' /data ext4 .*commit=60' /proc/mounts || $BB mount -o remount,noatime,commit=60 /data 2>/dev/null
 say "userdata $([ -d /data/techo5-linux ] && echo mounted || echo unavailable)"
 $BB chmod 700 /data/techo5-linux 2>/dev/null
+# And the logs in it are root's alone too, whatever made them before.
+$BB chmod 600 /data/techo5-linux/*.log /data/techo5-linux/*.log.1 2>/dev/null
 $BB mount --bind $STOREDIR /store 2>/dev/null
 say "store $([ -e $S/.techo5-store ] && echo mounted || echo unavailable)"
 [ -d /data/techo5-linux ] && $BB mkdir -p /data/misc/echolocal
@@ -218,7 +236,7 @@ fi
 gw=$($BB route -n 2>/dev/null | $BB awk '$1 == "0.0.0.0" { print $2; exit }')
 own=$($BB head -n 1 /data/misc/echolocal/ntp-server 2>/dev/null | $BB tr -cd 'A-Za-z0-9.:-')
 ( n=0
-	until $BB timeout -s KILL 40 $BB ntpd -n -q ${own:+-p "$own"} -p time.cloudflare.com -p time.google.com -p 0.pool.ntp.org -p 1.pool.ntp.org ${gw:+-p "$gw"} > /tmp/ntpd.log 2>&1; do
+	until $BB timeout -s KILL 40 $BB ntpd -n -q ${own:+-p "$own"} -p time.cloudflare.com -p time.google.com -p 0.pool.ntp.org -p 1.pool.ntp.org ${gw:+-p "$gw"} > /run/techo5/ntpd.log 2>&1; do
 		n=$((n + 1))
 		[ $n -ge 30 ] && { echo "techo5-donut boot: clock not set yet, no time server answered; ntpd keeps trying" > /dev/kmsg; break; }
 		$BB sleep 60

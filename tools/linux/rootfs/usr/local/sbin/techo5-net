@@ -18,7 +18,7 @@ ANDROID=/data/misc/wifi/wpa_supplicant.conf
 KEPT=/data/techo5-linux/wpa_supplicant.conf
 CONF=/run/wpa_supplicant.conf
 LOG=/data/techo5-linux
-[ -d $LOG ] || LOG=/tmp
+[ -d $LOG ] || { LOG=/run/techo5; mkdir -p -m 0700 $LOG; }
 
 # The rescue initramfs has no /data, so it keeps to /run and the one network it was told about.
 [ -d /data/techo5-linux ] && CONF=$KEPT

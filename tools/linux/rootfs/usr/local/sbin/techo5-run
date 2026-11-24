@@ -10,5 +10,9 @@ BB=/bin/busybox.static
 while [ ! -e /run/techo5/ready ]; do $BB sleep 1; done
 while [ -e /run/techo5/hold ]; do $BB sleep 5; done
 $BB sleep 2
+# The log is root's alone, as its folder is: users other than root run here (add-ons, TECHO5's
+# feature/addons). Only the file: a umask for the daemon would reach what it writes for the receivers.
+[ -e /data/techo5-linux/echod.log ] || (umask 077; : > /data/techo5-linux/echod.log)
+$BB chmod 600 /data/techo5-linux/echod.log 2>/dev/null
 echo "techo5-run: starting at $($BB date)" >> /data/techo5-linux/echod.log
 exec /usr/local/bin/echod run >> /data/techo5-linux/echod.log 2>&1

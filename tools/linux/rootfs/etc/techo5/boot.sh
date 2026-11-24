@@ -27,6 +27,16 @@ $BB mount -t proc proc /proc 2>/dev/null
 # Another user's processes, and their command lines, are root's to see: the services that drop root
 # (avahi, the AirPlay and Spotify Connect receivers) see only their own. As on TECHO5's images.
 $BB mount -o remount,hidepid=2 /proc 2>/dev/null
+# Users other than root run here (avahi, the receivers, and add-ons, each as a user of its own:
+# TECHO5's feature/addons), and root writes files of fixed names. The kernel's protections, where it has
+# them: links in a folder anyone can write to are followed only when their owner is the follower or the
+# folder's, and files and FIFOs there that root does not own are not opened to create. And the kernel
+# log, where a driver can print an address or a name, is root's.
+for k in protected_symlinks:1 protected_hardlinks:1 protected_fifos:2 protected_regular:2; do
+	f=/proc/sys/fs/${k%%:*}
+	[ -w "$f" ] && echo "${k##*:}" > "$f" 2>/dev/null
+done
+[ -w /proc/sys/kernel/dmesg_restrict ] && echo 1 > /proc/sys/kernel/dmesg_restrict
 $BB mount -t sysfs sysfs /sys 2>/dev/null
 $BB mount -t tmpfs -o mode=0755 tmpfs /dev 2>/dev/null
 $BB mkdir -p /dev/pts /dev/shm /tmp /data /android /store
@@ -37,15 +47,21 @@ $BB mount -t tmpfs -o mode=1777,size=1m tmpfs /dev/shm 2>/dev/null
 # so it is read first and put back after.
 SLOT=$($BB cat /run/techo5/slot 2>/dev/null)
 $BB mount -t tmpfs tmpfs /run 2>/dev/null
-$BB mount -t tmpfs tmpfs /tmp 2>/dev/null
+# /tmp and /var/tmp are memory anyone can write to: bounded, so a user other than root (an add-on) that
+# fills them cannot take the memory the daemon needs on a board with about 445 MB free. Nothing of
+# TECHO5's own keeps anything there.
+$BB mount -t tmpfs -o size=32m,mode=1777 tmpfs /tmp 2>/dev/null
 # Logs that matter go to userdata (/data/techo5-linux); what services write to /var/log and /var/tmp
 # lives in RAM rather than wearing the slot's flash.
 $BB mount -t tmpfs -o mode=0755 tmpfs /var/log 2>/dev/null
-$BB mount -t tmpfs tmpfs /var/tmp 2>/dev/null
+$BB mount -t tmpfs -o size=16m,mode=1777 tmpfs /var/tmp 2>/dev/null
 [ -s /etc/hostname ] && $BB hostname -F /etc/hostname
 # After /run is mounted, not before: a directory made first is hidden by the tmpfs, and then the
 # marker the daemon waits for can never be written. The first slot boot waited on it for ever.
 $BB mkdir -p /run/techo5
+# Root's scratch folder: ntpd's output goes here rather than to a fixed name in /tmp, where a link another
+# user left would be written through as root.
+$BB chmod 700 /run/techo5
 [ -n "$SLOT" ] && echo "$SLOT" > /run/techo5/slot
 
 # Every command by name, not only through $BB. The unpacked slot can arrive without Alpine's /bin
@@ -96,6 +112,8 @@ say "userdata $([ -d /data/techo5-linux ] && echo mounted || echo unavailable)"
 # The daemon's state (the Home Assistant key and token, SSH keys) and the logs are root's alone.
 # EchoLocal's install left the state directory writable by everyone.
 $BB chmod 700 /data/techo5-linux 2>/dev/null
+# And the logs in it are root's alone too, whatever made them before.
+$BB chmod 600 /data/techo5-linux/*.log /data/techo5-linux/*.log.1 2>/dev/null
 # The installer makes it; made here too, so a unit without one still finds the zone files below.
 [ -d /data/techo5-linux ] && $BB mkdir -p /data/misc/echolocal
 [ -d /data/misc/echolocal ] && $BB chmod 700 /data/misc/echolocal
@@ -342,7 +360,7 @@ gw=$($BB route -n 2>/dev/null | $BB awk '$1 == "0.0.0.0" { print $2; exit }')
 # The home's own time server, set on the setup page (echod feature/timezone), is asked first.
 own=$($BB head -n 1 /data/misc/echolocal/ntp-server 2>/dev/null | $BB tr -cd 'A-Za-z0-9.:-')
 ( n=0
-	until $BB timeout -s KILL 40 $BB ntpd -n -q ${own:+-p "$own"} -p time.cloudflare.com -p time.google.com -p 0.pool.ntp.org -p 1.pool.ntp.org ${gw:+-p "$gw"} > /tmp/ntpd.log 2>&1; do
+	until $BB timeout -s KILL 40 $BB ntpd -n -q ${own:+-p "$own"} -p time.cloudflare.com -p time.google.com -p 0.pool.ntp.org -p 1.pool.ntp.org ${gw:+-p "$gw"} > /run/techo5/ntpd.log 2>&1; do
 		n=$((n + 1))
 		[ $n -ge 30 ] && { echo "techo5-dot boot: clock not set yet, no time server answered; ntpd keeps trying" > /dev/kmsg; break; }
 		$BB sleep 60

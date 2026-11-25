@@ -374,8 +374,10 @@ cannoli route, and starts on every ordinary power-on. TECHO5 Linux goes in slot 
 Volume-Up is held at power-on. Its image is the unit's own signed kernel with TECHO5's ramdisk, built on
 your computer from that unit's backup.
 
-> **Working on one unit.** It needs Fire OS NS6575/8349. The installer upgrades an older unit to it,
-> one-way, after asking, and stops on anything newer. Keep the unit off Wi-Fi until it's installed.
+> **Working on one unit.** TECHO5's slot B is built for Fire OS NS6575/8349 (its kernel modules' CRCs
+> and the stock boot FIT are 8349's). The installer upgrades an older unit to it, one-way, after asking,
+> and stops on anything newer. Which builds firebreak's unlock works on is in its
+> [cannoli guide](https://github.com/Gamer92000/firebreak/blob/main/docs/cannoli.md). Keep the unit off Wi-Fi until it's installed.
 
 ```
 python3 tools/install-cannoli.py --serial <serial> --dry-run

@@ -25,8 +25,10 @@ the slot-B image on your computer from the backup it takes of the unit it runs o
   with its 5 V wire left off. firebreak's [cannoli guide](https://github.com/Gamer92000/firebreak/blob/main/docs/cannoli.md)
   has the pads. The Dot's own 15 V adapter powers it.
 - Fire OS **NS6575/8349** (6.5.7.5, build 8349), or an older build that the installer upgrades to it
-  (see below). firebreak's unlock and the Dot 5's kernel modules are pinned to 8349. **Keep the unit off
-  Wi-Fi** until it is installed, so Amazon can't update it past 8349.
+  (see below). TECHO5's slot B is built for 8349: the kernel modules' CRCs and the stock boot FIT are
+  that build's. Which Fire OS builds firebreak's unlock works on is in firebreak's
+  [cannoli guide](https://github.com/Gamer92000/firebreak/blob/main/docs/cannoli.md). **Keep the unit off Wi-Fi** until it is installed, so it takes no
+  update past 8349.
 - firebreak's per-unit bundle, for a unit that isn't rooted yet. It is built for this unit's serial on an
   x86-64 Linux host (WSL is fine) with
   [cannoli-os-builder](https://github.com/Gamer92000/cannoli-os-builder) and the
@@ -91,8 +93,8 @@ isn't rooted yet, it stops after the checks and prints the firebreak commands it
      one-way:** the first 8349 TEE boot burns the anti-rollback eFuse, and the 2022 firmware can never
      come back. An Amazon OTA to 8349 does the same. Before the upgrade it backs up the launch volumes and
      BL2 copies from TWRP.
-   - **A newer build** stops with nothing written. Amazon may have closed the U-Boot hole the route uses
-     (CVE-2026-46728). Keep that unit off Wi-Fi.
+   - **A newer build** stops with nothing written: TECHO5's slot B is built for 8349's kernel. firebreak's
+     [cannoli guide](https://github.com/Gamer92000/firebreak/blob/main/docs/cannoli.md) says which builds its unlock works on.
 3. **The unlock.** A stock unit is unlocked with `firebreak unlock --device cannoli`, with a fresh
    `--backup` folder in `backups/<serial>/`. Follow its power prompts (unplug the 15 V adapter, Enter,
    plug it back in). The installer doesn't do any of firebreak's work itself.

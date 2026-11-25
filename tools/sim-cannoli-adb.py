@@ -11,7 +11,7 @@ rooted), unauthorized or offline (stock adb with no key accepted), recovery (TWR
 TECHO5_SIM_NUMBER ro.build.version.number. TECHO5_SIM_DIR is where pushed files land (default a folder
 in the system's temp directory). It only reads the backup; it writes nothing but its own folder.
 
-It knows the commands install-cannoli.py sends and nothing else: anything it does not recognise prints
+It knows the commands install-cannoli.py sends and nothing else: anything it does not recognize prints
 nothing, as a missing file would on the unit.
 """
 import hashlib

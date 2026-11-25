@@ -55,6 +55,7 @@ from techo5lib import (CONSOLE_TECHO5, Adb, Console, Fastboot, adb_devices, ask,
 from techo5lib import wifi_conf as techo5_wifi_conf  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+FIREBREAK_GUIDE = 'https://github.com/Gamer92000/firebreak/blob/main/docs/cannoli.md'
 
 
 def _load(name, path):
@@ -69,8 +70,9 @@ dot = _load('install_dot', os.path.join(HERE, 'install-dot.py'))
 
 # ---------------------------------------------------------------------------------------------- the build
 
-# The one Fire OS build this route takes: firebreak's unlock and our kernel modules' CRCs are pinned to
-# it, and it is the newest on FTVDB. ro.build.version.number is Amazon's long build number.
+# The one Fire OS build TECHO5's slot B is built for: the kernel modules' CRCs and the stock boot FIT
+# are 8349's. Which builds firebreak's unlock works on is firebreak's to say (its cannoli guide).
+# ro.build.version.number is Amazon's long build number.
 TARGET_BUILD = 8349
 TARGET_NUMBER = 13323246980
 TARGET_NAME = 'NS6575/8349'
@@ -177,7 +179,7 @@ def build_of(props):
 
 def gate(build, number):
     """What the build means for the install: 'ok' (8349), 'upgrade' (older, takes the one-way 8349
-    upgrade), 'newer' (stop: the U-Boot hole may be closed) or 'unknown' (stop: nothing to go by). The
+    upgrade), 'newer' (stop: TECHO5's slot B is built for 8349's kernel) or 'unknown' (stop: nothing to go by). The
     id decides when known; the long number otherwise, compared with 8349's."""
     if build is not None:
         if build == TARGET_BUILD:
@@ -690,7 +692,7 @@ def main():
 
     # ---------------------------------------------------------------------------------------- 2
     if locked:
-        # 'unread': gated after the unlock, from slot A, where firebreak's own pins have held it to 8349.
+        # 'unread': gated after the unlock, from the rooted slot A.
         verdict = 'unread'
     elif state == 'twrp':
         unit.setup_busybox(busybox)
@@ -708,9 +710,9 @@ def main():
                 fail('%s says 8349 but its protected volumes are not 8349\'s (%s); nothing was written'
                      % (a.serial, ', '.join(k for k, v in pre.items() if not v)))
     if verdict == 'newer':
-        fail('%s runs a Fire OS newer than %s. Amazon may have closed the U-Boot hole this route uses '
-             '(CVE-2026-46728), and firebreak and our modules are pinned to 8349. Nothing was written. Keep the '
-             'unit off Wi-Fi so it takes no further update.' % (a.serial, TARGET_NAME))
+        fail('%s runs a Fire OS newer than %s. TECHO5\'s slot B is built for %s: its kernel modules\' CRCs and '
+             'the stock boot FIT are that build\'s. Nothing was written. For which builds firebreak\'s unlock works '
+             'on, see its cannoli guide (%s). Keep the unit off Wi-Fi so it takes no further update.' % (a.serial, TARGET_NAME, TARGET_NAME, FIREBREAK_GUIDE))
     if verdict == 'unknown':
         fail('the Fire OS build of %s cannot be read (%s); nothing was written' % (a.serial, props))
     if state == 'stock' or verdict == 'upgrade':

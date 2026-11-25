@@ -43,8 +43,9 @@ device tree. `cannoli_hwfixup.ko` creates their devices from their nodes.
 
 ## Why 8349, and what isn't reversible
 
-- firebreak's unlock (CVE-2026-46728 in U-Boot) is validated on 8349 only, and the installer stops on a
-  newer build with nothing written. Keep a unit off Wi-Fi until it is installed.
+- TECHO5's pin is 8349: the installer stops on a newer build with nothing written. Which builds
+  firebreak's unlock (CVE-2026-46728 in U-Boot) works on is in firebreak's
+  [cannoli guide](https://github.com/Gamer92000/firebreak/blob/main/docs/cannoli.md). Keep a unit off Wi-Fi until it is installed.
 - The Bluetooth modules and `cannoli_hwfixup.ko` are built against 8349's kernel. Every CRC they import is
   checked against the stock `boot.img`'s (`tools/linux/cannoli-kernel.sh`).
 - An older unit, including the 2022 launch firmware, is brought up to 8349 with `firebreak cannoli-upgrade`

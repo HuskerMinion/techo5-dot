@@ -34,9 +34,9 @@ fi
 a=$(echo "$a" | $BB sed 's/../&:/g; s/:$//')
 [ "$($BB cat /sys/class/net/wlan0/address)" = "$a" ] && { say "wlan0 already $a ($from)"; exit 0; }
 $BB ip link set wlan0 down 2>/dev/null
-if $BB ip link set wlan0 address "$a" 2>/tmp/mac.err; then
+if $BB ip link set wlan0 address "$a" 2>/run/techo5/mac.err; then
 	say "wlan0 address $a ($from)"
 else
-	say "wlan0: setting $a failed: $($BB cat /tmp/mac.err)"
+	say "wlan0: setting $a failed: $($BB cat /run/techo5/mac.err)"
 	exit 1
 fi

@@ -27,7 +27,9 @@ $BB mount -t sysfs sysfs /sys
 $BB mount -t devtmpfs devtmpfs /dev 2>/dev/null || $BB mount -t tmpfs -o mode=0755 tmpfs /dev
 $BB mkdir -p /dev/pts /run /tmp /data /config /android
 $BB mount -t devpts devpts /dev/pts
-$BB mount -t tmpfs tmpfs /run
+# 0755, not the 1777 a tmpfs gets without a mode: root's scripts use fixed names in /run, and the root
+# filesystem runs users other than root (TECHO5's feature/addons).
+$BB mount -t tmpfs -o mode=0755 tmpfs /run
 $BB mount -t tmpfs tmpfs /tmp
 $BB mount -t configfs configfs /config 2>/dev/null
 [ -e /dev/kmsg ] || $BB mknod -m 600 /dev/kmsg c 1 11

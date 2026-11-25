@@ -174,10 +174,16 @@ fi
 # before it (#57). Only the newest five are kept, as a unit in a reset loop would otherwise fill
 # userdata with them.
 case "$($BB cat /run/techo5/boot-reason 2>/dev/null)" in watchdog | panic)
-	if [ -d /data/techo5-linux ] && [ -s /proc/last_kmsg ]; then
+	# A proc file reports a size of 0 however much it holds, so it is read whole and the copy is kept
+	# only if something came out of it.
+	if [ -d /data/techo5-linux ] && [ -r /proc/last_kmsg ]; then
 		$BB mkdir -p /data/techo5-linux/crash
-		$BB cp /proc/last_kmsg "/data/techo5-linux/crash/$($BB date +%Y%m%d-%H%M%S)-last_kmsg" 2>/dev/null &&
+		f="/data/techo5-linux/crash/$($BB date +%Y%m%d-%H%M%S)-$$-last_kmsg"
+		if $BB cat /proc/last_kmsg > "$f" 2>/dev/null && [ -s "$f" ]; then
 			say "the previous boot's kernel log kept (last_kmsg)"
+		else
+			$BB rm -f "$f"
+		fi
 		$BB ls -1t /data/techo5-linux/crash/*-last_kmsg 2>/dev/null | $BB tail -n +6 | while read -r old; do
 			$BB rm -f "$old"
 		done

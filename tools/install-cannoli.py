@@ -67,6 +67,8 @@ def _load(name, path):
 
 # The Dot installer's wake words, mDNS lookup and slot unpacking, shared rather than copied.
 dot = _load('install_dot', os.path.join(HERE, 'install-dot.py'))
+# The board check on a root filesystem tarball, as push-cannoli-rootfs.py makes it.
+push = _load('push_cannoli_rootfs', os.path.join(HERE, 'linux', 'push-cannoli-rootfs.py'))
 
 # ---------------------------------------------------------------------------------------------- the build
 
@@ -888,7 +890,10 @@ def main():
             note('no root filesystem at %s yet (a real run needs it, or --rescue-only)' % rootfs)
             rootfs = None
         else:
-            note('root filesystem %s, %d bytes' % (rootfs, os.path.getsize(rootfs)))
+            err = push.board_error(rootfs)
+            if err:
+                fail(err + '. Nothing was written.')
+            note('root filesystem %s, %d bytes: %s' % (rootfs, os.path.getsize(rootfs), push.rootfs_release(rootfs)))
 
     # ---------------------------------------------------------------------------------------- 6
     step('Wi-Fi and Home Assistant identity')

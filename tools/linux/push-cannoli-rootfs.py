@@ -16,12 +16,14 @@ both slots first, for a unit with room for only one.
 
 The tarball is build-dot-rootfs.py --board cannoli's: nothing of the unit's own is in it. The unit's
 Wi-Fi and Bluetooth driver and firmware come from its slot-B ramdisk, which adopts them into the store
-at boot. Needs Python 3 and an ssh client (OpenSSH, as Windows has).
+at boot. A tarball whose etc/techo5-release does not start with techo5-cannoli (another Dot's) is
+refused here, before anything is sent. Needs Python 3 and an ssh client (OpenSSH, as Windows has).
 """
 import argparse
 import os
 import subprocess
 import sys
+import tarfile
 
 S = '/data/techo5-store/techo5'
 
@@ -56,6 +58,33 @@ df -h /data | awk 'NR==2 { print $4 " free on userdata" }'
 ''' % S
 
 
+BOARD = 'techo5-cannoli'
+
+
+def rootfs_release(path):
+    """The first line of the tarball's etc/techo5-release, or None when it has none."""
+    with tarfile.open(path, 'r:*') as t:
+        for m in t:
+            name = m.name[2:] if m.name.startswith('./') else m.name
+            if name == 'etc/techo5-release' and m.isfile():
+                return (t.extractfile(m).read(256).decode('utf-8', 'replace').splitlines() or [''])[0].strip()
+    return None
+
+
+def board_error(path):
+    """Why the tarball is not an Echo Dot 5th gen root filesystem, or None when it is one."""
+    try:
+        release = rootfs_release(path)
+    except (tarfile.TarError, EOFError, OSError) as e:
+        return '%s is not a readable tarball (%s)' % (path, e)
+    if release is None:
+        return '%s has no etc/techo5-release: not a TECHO5 root filesystem' % path
+    if not release.startswith(BOARD):
+        return ("%s is %r, not an Echo Dot 5th gen root filesystem (its etc/techo5-release starts with %s): "
+                'build it with build-dot-rootfs.py --board cannoli' % (path, release, BOARD))
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--host', required=True, help="the unit's address on the network")
@@ -66,6 +95,9 @@ def main():
     a = ap.parse_args()
     if not os.path.isfile(a.rootfs):
         sys.exit('no %s' % a.rootfs)
+    err = board_error(a.rootfs)
+    if err:
+        sys.exit(err + '; nothing was sent')
     cmd = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10']
     if a.identity:
         cmd += ['-i', a.identity, '-o', 'IdentitiesOnly=yes']

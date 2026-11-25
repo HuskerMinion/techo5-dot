@@ -430,6 +430,21 @@ class Rootfs(unittest.TestCase):
             ic.unpack_rootfs(self.unit, rootfs, self.work, '/data/local/tmp/techo5')
         self.assertIn('Nothing of the root filesystem was written', str(e.exception))
 
+    def test_another_boards_rootfs_is_refused(self):
+        import io
+        import tarfile
+        self.assertIsNone(ic.push.board_error(self.tarball(blobs=0)))
+        path = os.path.join(self.d, 'donut.tar.gz')
+        with tarfile.open(path, 'w:gz') as t:
+            m = tarfile.TarInfo('./etc/techo5-release')
+            data = b'techo5-donut v0.1.0 (abc)'
+            m.size = len(data)
+            t.addfile(m, io.BytesIO(data))
+        self.assertIn("'techo5-donut v0.1.0 (abc)'", ic.push.board_error(path))
+        with tarfile.open(path, 'w:gz') as t:
+            t.addfile(tarfile.TarInfo('./etc'))
+        self.assertIn('no etc/techo5-release', ic.push.board_error(path))
+
     def test_slot_done_checks_count_and_links(self):
         self.assertIn('[ -L $S/slots/a/bin/sh ]', ic.SLOT_DONE)
         self.assertIn('"$HAVE" -ge "$WANT"', ic.SLOT_DONE)

@@ -5,12 +5,12 @@
 # tzdata: the zone database. Without it a time zone can only be followed from Home Assistant - the
 # setup page's list of regions and zones is read out of /usr/share/zoneinfo, and a device that has
 # never paired has no way to say where it is.
-tzdata-2026d-r0.apk
+tzdata-2026f-r0.apk
 #
 # AirPlay (the daemon's feature/streaming): shairport-sync, and avahi to announce it, with what they
 # need that the rescue and Bluetooth sets do not already carry. Spotify Connect is the daemon's own
 # helper binary (bin/techo5-librespot, built by techo5's tools/linux/build-librespot.sh) and needs only avahi.
-shairport-sync-5.0.4-r0.apk
+shairport-sync-5.5.1-r0.apk
 avahi-0.9_rc4-r0.apk
 avahi-libs-0.9_rc4-r0.apk
 libdaemon-0.14-r6.apk

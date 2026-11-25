@@ -134,6 +134,25 @@ class Firebreak(unittest.TestCase):
             ic.check_ota_parts(d)
 
 
+    def test_bl2_image_is_checked_before_the_question(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        p = os.path.join(d, 'brhgptlk_0.img')
+        with self.assertRaises(techo5lib.Fail) as e:
+            ic.check_bl2_image(p)
+        self.assertIn('there is none', str(e.exception))
+        with open(p, 'wb') as f:
+            f.write(b'z' * ic.BRHGPTLK_LEN)
+        with self.assertRaises(techo5lib.Fail) as e:
+            ic.check_bl2_image(p)
+        self.assertIn("not 8349's brhgptlk", str(e.exception))
+
+    def test_another_device_is_refused(self):
+        with self.assertRaises(techo5lib.Fail):
+            ic.check_cannoli(SERIAL, {'ro.product.device': 'checkers', 'ro.build.product': 'checkers'})
+        ic.check_cannoli(SERIAL, {'ro.product.device': 'cannoli'})
+
+
 class Manifest(unittest.TestCase):
     def test_round_trip_in_volume_order(self):
         d = tempfile.mkdtemp()
@@ -385,6 +404,19 @@ class Rootfs(unittest.TestCase):
             ic.unpack_rootfs(self.unit, self.tarball(), self.work, '/data/local/tmp/techo5')
         self.assertIn('rc=1', str(e.exception))
         self.assertIn('tar: short read', str(e.exception))
+
+    def slot_state(self):
+        p = os.path.join(self.env['TECHO5_SIM_DIR'], 'slot-a.state')
+        return open(p).read() if os.path.exists(p) else None
+
+    def test_an_unpack_cut_short_leaves_slot_a_bad(self):
+        os.environ['TECHO5_SIM_TAR_FAIL'] = '1'
+        with self.assertRaises(techo5lib.Fail):
+            ic.unpack_rootfs(self.unit, self.tarball(), self.work, '/data/local/tmp/techo5')
+        self.assertEqual(self.slot_state(), 'bad')
+        del os.environ['TECHO5_SIM_TAR_FAIL']
+        ic.unpack_rootfs(self.unit, self.tarball(), self.work, '/data/local/tmp/techo5')
+        self.assertEqual(self.slot_state(), 'good')
 
     def test_a_slot_without_its_symlinks_is_not_made_active(self):
         with self.assertRaises(techo5lib.Fail) as e:

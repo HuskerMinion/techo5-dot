@@ -68,6 +68,7 @@ def read(path, length=None):
 
 
 SLOT = os.path.join(DIR, 'slot-a.names')
+SLOT_STATE = os.path.join(DIR, 'slot-a.state')
 
 
 def slot_names():
@@ -100,6 +101,11 @@ def shell(cmd):
     if marked:
         cmd = cmd[:-len('; echo %s' % END)]
     if re.search(r'rm -rf \S+/slots/a ', cmd):
+        # The slot's state as SLOT_DONE and the emptying write it: bad only when it is said before the rm.
+        m = re.search(r'echo (\w+) > \S+/slots/a\.state', cmd)
+        if m and m.start() < cmd.index('rm -rf'):
+            with open(SLOT_STATE, 'w') as f:
+                f.write(m.group(1))
         if os.path.exists(SLOT):
             os.remove(SLOT)
     elif cmd == 'id -u' or cmd == 'id':
@@ -154,6 +160,8 @@ def shell(cmd):
             elif len(have) < want:
                 out.append("slot a has %d of the tarball's %d paths" % (len(have), want))
             else:
+                with open(SLOT_STATE, 'w') as f:
+                    f.write('good')
                 out.append('slot a: simulated')
         elif cmd.startswith('[ -e /data/local/hassmic ]'):
             out.append('yes' if STATE == 'rooted' else '')

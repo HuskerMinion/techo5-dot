@@ -19,11 +19,12 @@ What it does, stopping at the first thing not right:
   4. backs up every UBI volume but cache and userdata, the four brhgptlk copies, and the Wi-Fi and
      Bluetooth drivers and firmware into backups/<serial>/m0/, each checked against a hash the unit
      computes itself; a rooted 8349 unit whose brhgptlk copies still hold the launch BL2 is asked before
-     they are written at the end
+     they are written (8349's image checked first)
   5. builds slot B's image from that backup (tools/linux/build-cannoli-image.py) and the Bluetooth
      payload (tools/linux/build-cannoli-bt-payload.py)
   6. asks for the name, Wi-Fi and Home Assistant key as install-dot.py does
-  7. writes boot_b and reads it back, unpacks the root filesystem and the Bluetooth payload onto userdata
+  7. writes any brhgptlk copies from TWRP, then boot_b from Fire OS, each read back, and unpacks the root
+     filesystem and the Bluetooth payload onto userdata
   8. has the unit powered on with Volume-Up held and waits on its USB console for a healthy boot
 
 --dry-run does 1, 2, 4, 5 and 6 and writes nothing to the unit (firebreak's commands are printed, not
@@ -481,9 +482,22 @@ def check_ota_parts(parts):
         fail('%s lacks %s' % (parts, ', '.join(missing)))
     if hash_file(os.path.join(parts, 'boot.img')) != STOCK_BOOT_SHA256:
         fail('%s/boot.img is not 8349\'s boot image' % parts)
-    bl2 = os.path.join(parts, 'brhgptlk_0.img')
-    if os.path.getsize(bl2) != BRHGPTLK_LEN or hash_file(bl2) != BRHGPTLK_SHA256:
-        fail('%s is not 8349\'s brhgptlk' % bl2)
+    check_bl2_image(os.path.join(parts, 'brhgptlk_0.img'))
+
+
+def check_bl2_image(path):
+    """8349's BL2 as the OTA unpacks it: there, and the right length and hash, before anyone is asked."""
+    if not os.path.exists(path):
+        fail("brhgptlk needs 8349's BL2 at %s, from the unpacked 8349 OTA (%s, MD5 %s, from %s, unpacked with "
+             'payload_dump.py); there is none. Pass the folder with --ota-parts. Nothing was written.'
+             % (path, OTA_NAME, OTA_MD5, OTA_PAGE))
+    if os.path.getsize(path) != BRHGPTLK_LEN or hash_file(path) != BRHGPTLK_SHA256:
+        fail("%s is not 8349's brhgptlk (sha256 %s expected). Nothing was written." % (path, BRHGPTLK_SHA256))
+
+
+def check_cannoli(serial, props):
+    if 'cannoli' not in (props.get('ro.product.device', ''), props.get('ro.build.product', '')):
+        fail('%s is %r, not an Echo Dot 5th gen (cannoli); nothing more was written' % (serial, props.get('ro.product.device')))
 
 
 def check_ota(path):
@@ -665,8 +679,7 @@ def main():
             root_shell(adb)
         uid = adb.sh('id -u')
         props = unit.props()
-        if 'cannoli' not in (props.get('ro.product.device', ''), props.get('ro.build.product', '')):
-            fail('%s is %r, not an Echo Dot 5th gen (cannoli)' % (a.serial, props.get('ro.product.device')))
+        check_cannoli(a.serial, props)
         port = adb.sh('[ -e /data/local/hassmic ] && echo yes') == 'yes'
         state = classify(adb_state, props, uid, port)
     if state == 'rooted-keyed':
@@ -772,6 +785,8 @@ def main():
                  '`firebreak unlock --device cannoli` (docs/install-cannoli.md), then this again.')
         unit.setup_busybox(busybox)
         props = unit.props()
+        # The unit firebreak unlocked is read again: what adb shows now is what slot B is written for.
+        check_cannoli(a.serial, props)
         if gate(*build_of(props)) != 'ok' or not all(prerequisites_8349(unit).values()):
             fail('%s still does not run %s; nothing more was written' % (a.serial, TARGET_NAME))
         state = 'rooted'
@@ -795,17 +810,6 @@ def main():
     for name in BRHGPTLK:
         with open(files[name], 'rb') as f:
             bl2[name] = hashlib.sha256(f.read()[:BRHGPTLK_LEN]).hexdigest() == BRHGPTLK_SHA256
-    if not all(bl2.values()):
-        flash_brhgptlk_needed = [n for n, ok in bl2.items() if not ok]
-        lines = ['brhgptlk still holds the launch BL2 (%s): under Fire OS 8349 the ring stays dark.'
-                 % ', '.join(flash_brhgptlk_needed),
-                 "The install writes 8349's BL2 to them from TWRP at its end, each read back. A BL2 is the first",
-                 'thing the unit boots: a copy left bad by a power cut while it is written can stop it starting.']
-        if a.dry_run:
-            for line in lines:
-                note(line)
-        else:
-            confirm(a.accept_bl2, lines, 'BL2')
     # The way back to TWRP: the first boot_b backup that is not ours.
     twrp_copy = os.path.join(root, 'twrp-boot_b.img')
     with open(files['boot_b'], 'rb') as f:
@@ -823,6 +827,27 @@ def main():
         note('TWRP, the way back to slot B recovery: %s' % twrp_copy)
     else:
         note('no copy of TWRP to go back with: keep the bundle (%s)' % os.path.join(bundle, 'boot_b.img'))
+    techo5_in_b = is_techo5_fit(boot_b)
+    if not all(bl2.values()):
+        flash_brhgptlk_needed = [n for n, ok in bl2.items() if not ok]
+        # Everything the BL2 step needs is checked before the question: 8349's image, and TWRP to write it
+        # from (a reinstall over TECHO5 puts the TWRP copy back in boot_b first).
+        check_bl2_image(os.path.join(ota_parts, 'brhgptlk_0.img'))
+        if techo5_in_b and not os.path.exists(twrp_copy):
+            fail('brhgptlk is written from TWRP, but boot_b holds TECHO5 and there is no copy of TWRP (%s, or the '
+                 "bundle's boot_b.img) to put back first. Nothing was written." % twrp_copy)
+        lines = ['brhgptlk still holds the launch BL2 (%s): under Fire OS 8349 the ring stays dark.'
+                 % ', '.join(flash_brhgptlk_needed),
+                 "The install writes 8349's BL2 to them from TWRP before slot B is written, each read back.",
+                 'A BL2 is the first thing the unit boots: a copy left bad by a power cut while it is written can',
+                 'stop it starting.']
+        if techo5_in_b:
+            lines.append('boot_b holds TECHO5 now, so TWRP goes back into it first.')
+        if a.dry_run:
+            for line in lines:
+                note(line)
+        else:
+            confirm(a.accept_bl2, lines, 'BL2')
 
     # ---------------------------------------------------------------------------------------- 5
     step("this unit's slot-B image")
@@ -884,25 +909,29 @@ def main():
         return
 
     # ---------------------------------------------------------------------------------------- 7
+    # brhgptlk first, from TWRP, which is in slot B only until boot_b is written; then back to Fire OS.
+    if flash_brhgptlk_needed:
+        if techo5_in_b:
+            step('TWRP back into boot_b, for the BL2')
+            write_boot_b(unit, twrp_copy, twrp_copy)
+        to_twrp(adb)
+        unit = Unit(adb, '/tmp/techo5')
+        unit.setup_busybox(busybox)
+        step('brhgptlk, the 8349 BL2')
+        flash_brhgptlk(unit, os.path.join(ota_parts, 'brhgptlk_0.img'), False)
+        to_fireos(adb)
+        unit = Unit(adb, '/data/local/tmp/techo5')
+        if not root_shell(adb):
+            fail('Fire OS came up without root adb after the BL2; slot B was not written. Run the installer again.')
+        unit.setup_busybox(busybox)
+        props = unit.props()
+        check_cannoli(a.serial, props)
+        if props.get('ro.boot.slot_suffix') not in ('_a', ''):
+            fail('Fire OS runs from slot %r after the BL2; slot B is written from slot A' % props.get('ro.boot.slot_suffix'))
+    stage = unit.stage
+
     step('boot_b, slot B')
-    vols = {nm: n for n, nm, _ in unit.volumes()}
-    size = os.path.getsize(image)
-    room = dict((nm, b) for _, nm, b in unit.volumes())['boot_b']
-    if size > room:
-        fail('the image is %d bytes; boot_b holds %d' % (size, room))
-    want = hash_file(image)
-    remote = stage + '/boot_b.img'
-    adb.push(image, remote)
-    if unit.sha256(remote) != want:
-        fail('the image pushed to the unit differs; nothing written')
-    unit.checked('$(command -v ubiupdatevol || echo /system/vendor/bin/ubiupdatevol) /dev/ubi0_%d %s'
-                 % (vols['boot_b'], remote), 'ubiupdatevol')
-    back = unit.sha256('/dev/ubi0_%d' % vols['boot_b'], size)
-    adb.sh('rm -f %s' % remote)
-    if back != want:
-        fail('boot_b reads back %s, not %s. Do not boot slot B. TWRP is at %s: ubiupdatevol /dev/ubi0_%d with it '
-             'from Fire OS puts it back.' % (back, want, twrp_copy, vols['boot_b']))
-    note('written and read back, sha256 %s' % want)
+    write_boot_b(unit, image, twrp_copy)
 
     step('userdata: root filesystem, Bluetooth, identity')
     adb.sh('mkdir -p %s %s %s; chmod 700 %s' % (STORE, LINUX_DIR, STATE, STATE))
@@ -954,18 +983,33 @@ def main():
     os.rmdir(tmp)
     adb.sh('rm -rf %s; sync' % stage)
 
-    if flash_brhgptlk_needed:
-        to_twrp(adb)
-        unit = Unit(adb, '/tmp/techo5')
-        unit.setup_busybox(busybox)
-        step('brhgptlk, the 8349 BL2')
-        flash_brhgptlk(unit, os.path.join(ota_parts, 'brhgptlk_0.img'), False)
-
     # ---------------------------------------------------------------------------------------- 8
     step('first boot of slot B')
     print('   Unplug the Dot\'s power, hold Volume-Up, plug it back in and keep holding about 5 s. Any power-on')
     print('   without Volume-Up starts Fire OS from slot A, as before.')
     wait_healthy(a, shown, key_file, rootfs is not None)
+
+
+def write_boot_b(unit, image, twrp_copy):
+    """An image into boot_b from Fire OS with ubiupdatevol, pushed and read back by sha256."""
+    vols = dict((nm, (n, b)) for n, nm, b in unit.volumes())
+    n, room = vols['boot_b']
+    size = os.path.getsize(image)
+    if size > room:
+        fail('%s is %d bytes; boot_b holds %d' % (image, size, room))
+    want = hash_file(image)
+    remote = unit.stage + '/boot_b.img'
+    unit.adb.push(image, remote)
+    if unit.sha256(remote) != want:
+        fail('the image pushed to the unit differs; nothing written')
+    unit.checked('$(command -v ubiupdatevol || echo /system/vendor/bin/ubiupdatevol) /dev/ubi0_%d %s'
+                 % (n, remote), 'ubiupdatevol')
+    back = unit.sha256('/dev/ubi0_%d' % n, size)
+    unit.sh('rm -f %s' % remote)
+    if back != want:
+        fail('boot_b reads back %s, not %s. Do not boot slot B. TWRP is at %s: ubiupdatevol /dev/ubi0_%d with it '
+             'from Fire OS puts it back.' % (back, want, twrp_copy, n))
+    note('written and read back, sha256 %s' % want)
 
 
 def rootfs_names(rootfs):
@@ -1015,9 +1059,11 @@ def unpack_rootfs(unit, rootfs, work, stage):
     symlink (busybox's tar makes symlinks last, so a tar cut short loses them first)."""
     names, size = rootfs_names(rootfs)
     S = STORE
-    # An earlier slot a goes first: the room is short.
-    unit.checked('mkdir -p %s/slots && rm -rf %s/slots/a %s/slots/a.old %s/incoming-*.tar.gz && mkdir %s/slots/a'
-                 % ((S,) * 5), 'the slot')
+    # An earlier slot a goes first: the room is short. It is marked bad before anything of it goes, so a
+    # run cut short here leaves no active slot a that init-cannoli would boot half-written: slotctl falls
+    # back to slot b if it is good, or the ramdisk stays in rescue. SLOT_DONE marks it good at the end.
+    unit.checked('mkdir -p %s/slots && echo bad > %s/slots/a.state && sync && rm -rf %s/slots/a %s/slots/a.old '
+                 '%s/incoming-*.tar.gz && mkdir %s/slots/a' % ((S,) * 6), 'the slot')
     free = unit.checked("%s df -Pk /data | %s tail -n 1 | %s awk '{print $4}'" % (unit.bb, unit.bb, unit.bb), 'free space')
     if not free.isdigit():
         fail('could not read the free space on userdata (%r)' % free)

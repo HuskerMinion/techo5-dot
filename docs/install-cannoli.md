@@ -103,16 +103,21 @@ isn't rooted yet, it stops after the checks and prints the firebreak commands it
    there and the same is kept. If a volume has changed, the new copy is saved beside the old one with a
    time stamp. The TWRP that was in slot B is kept as `backups/<serial>/twrp-boot_b.img`: it's the way
    back to recovery. If a rooted 8349 unit's `brhgptlk` copies still hold the launch BL2, the installer
-   asks here before it writes 8349's to them from TWRP at the end (type `BL2`, or pass `--accept-bl2`).
+   checks that `stock-8349-parts/brhgptlk_0.img` (`--ota-parts`) is there with 8349's hash, then asks
+   before it writes it to them (type `BL2`, or pass `--accept-bl2`). They are written from TWRP before
+   `boot_b` is (step 7), while slot B still holds TWRP; on a reinstall over TECHO5 the installer puts the
+   kept TWRP back into `boot_b` first.
 5. **The build.** `tools/linux/build-cannoli-image.py` builds slot B's image from that backup: boot_a's
    stock 8349 FIT with its ramdisk replaced, checked to be byte-for-byte the stock FIT everywhere else and
    to fit what the unit's U-Boot reads of `boot_b`. Then the Bluetooth payload.
 6. **Name, Wi-Fi and key**, the same as `install-dot.py`: the network Fire OS saved (asked about first) or
    `--wifi`, a name for Home Assistant, and a new key in `backups/<serial>/home-assistant.key`, or the
    ones a unit already has.
-7. **The writes**, from Fire OS in slot A: `boot_b` with `ubiupdatevol`, read back over the image's
-   length. Then the root filesystem into the store's slot a (`/data/techo5-store/techo5`, slotctl's
-   layout). Any earlier slot a is removed first, and the installer reads how much room userdata has. The
+7. **The writes.** First any `brhgptlk` copies from TWRP (the unit is powered on with Volume-Up held for
+   it, then rebooted into Fire OS). Then, from Fire OS in slot A: `boot_b` with `ubiupdatevol`, read back
+   over the image's length. Then the root filesystem into the store's slot a (`/data/techo5-store/techo5`,
+   slotctl's layout). Any earlier slot a is marked bad and removed first, so a run cut short leaves no
+   half-written slot to boot, and the installer reads how much room userdata has. The
    slot takes about 63 MiB unpacked and the tarball is about 32 MB. After a factory reset userdata has
    about 155 MB free, so the whole tarball fits beside the slot. With less room, the tarball is split on
    this computer into parts that each fit and are each a whole tarball. Every part is pushed, checked by

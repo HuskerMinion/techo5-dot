@@ -41,6 +41,13 @@ Installing: [install-cannoli.md](install-cannoli.md). Building the slot-B pieces
 On a slot-B boot U-Boot leaves the amplifier, the microphone converter and the LED driver disabled in the
 device tree. `cannoli_hwfixup.ko` creates their devices from their nodes.
 
+## Boot slots
+
+- Slot A is Fire OS, rooted by firebreak's cannoli route with OTA service autostart off
+  (cannoli-os-builder). Slot B is TECHO5 Linux, chosen only by Volume-Up held at power-on.
+- So, for now, every reboot from Linux lands in Fire OS: `reboot`, a restart from Home Assistant and an
+  update's restart all start slot A. Power on holding Volume-Up to come back to Linux.
+
 ## Why 8349, and what isn't reversible
 
 - TECHO5's pin is 8349: the installer stops on a newer build with nothing written. Which builds

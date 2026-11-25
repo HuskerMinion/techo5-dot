@@ -11,10 +11,15 @@ other projects and sources the install depends on. The device's exploration is i
 The Dot 5 has two boot slots and keeps both:
 
 - **Slot A** is Fire OS, rooted by [firebreak](https://github.com/Gamer92000/firebreak)'s cannoli route.
-  Every ordinary power-on starts it, so the way back is always there.
+  Every ordinary power-on starts it, so the way back is always there. The rooted slot A
+  ([cannoli-os-builder](https://github.com/Gamer92000/cannoli-os-builder)'s) has Fire OS's OTA service
+  autostart turned off, so it doesn't update itself past 8349 while it runs.
 - **Slot B** is TECHO5 Linux. It starts when **Volume-Up is held at power-on**. Its boot image is the
   unit's own signed kernel and device tree with TECHO5's ramdisk. The ramdisk boots the root filesystem
   from a store on userdata, or stays up as a rescue environment when there is none.
+- **A reboot from Linux lands in Fire OS, for now.** Slot B is only chosen by Volume-Up at power-on, so
+  `reboot`, a restart from Home Assistant, or an update's restart starts slot A. To come back to Linux,
+  unplug the power and plug it back in holding Volume-Up.
 
 Amazon's kernel, drivers and firmware are never downloaded from here or published. The installer builds
 the slot-B image on your computer from the backup it takes of the unit it runs on.

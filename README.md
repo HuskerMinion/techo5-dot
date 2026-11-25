@@ -372,7 +372,8 @@ The Echo Dot 5th gen (2022, `cannoli`) is a different machine: a MediaTek MT8519
 two boot slots. Fire OS stays in slot A, rooted by [firebreak](https://github.com/Gamer92000/firebreak)'s
 cannoli route, and starts on every ordinary power-on. TECHO5 Linux goes in slot B and starts when
 Volume-Up is held at power-on. Its image is the unit's own signed kernel with TECHO5's ramdisk, built on
-your computer from that unit's backup.
+your computer from that unit's backup. For now a reboot from Linux lands in Fire OS: power on holding
+Volume-Up to come back. The rooted slot A has Fire OS's OTA autostart off.
 
 > **Working on one unit.** TECHO5's slot B is built for Fire OS NS6575/8349 (its kernel modules' CRCs
 > and the stock boot FIT are 8349's). The installer upgrades an older unit to it, one-way, after asking,

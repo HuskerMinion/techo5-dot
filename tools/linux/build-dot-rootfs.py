@@ -24,6 +24,7 @@ Windows, Linux and macOS alike; needs Python 3.
 """
 import argparse
 import glob
+import hashlib
 import os
 import shutil
 import subprocess
@@ -32,6 +33,15 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
+
+
+def btbridge_text(path):
+    """Which btbridge a build takes: its path, sha256, and whether it knows -legacy-advertising (the
+    Echo Dot 5th gen's techo5-bt passes it only to one that does)."""
+    with open(path, 'rb') as f:
+        data = f.read()
+    return '%s (sha256 %s, %s -legacy-advertising)' % (path, hashlib.sha256(data).hexdigest(),
+                                                       'with' if b'legacy-advertising' in data else 'without')
 
 
 def main():
@@ -92,6 +102,7 @@ def main():
     for f in needs:
         if not os.path.exists(f):
             sys.exit('missing %s (docs/building.md says how to fetch or build it)' % f)
+    print('btbridge: %s' % btbridge_text(a.btbridge))
     # The wake word models every unit offers: boot.sh adds any a unit is missing.
     models = sorted(glob.glob(j(a.inputs, 'models', '*.tflite')) + glob.glob(j(a.inputs, 'models', '*.json')))
     if not any(m.endswith('.tflite') for m in models):

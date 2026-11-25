@@ -20,6 +20,7 @@ The unit's driver and firmware make the payload the unit's own: never redistribu
 """
 import argparse
 import glob
+import hashlib
 import io
 import os
 import sys
@@ -92,6 +93,15 @@ def lf(path):
     return read(path).replace(b"\r\n", b"\n")
 
 
+def btbridge_text(path):
+    """Which btbridge a build takes: its path, sha256, and whether it knows -legacy-advertising (the
+    Echo Dot 5th gen's techo5-bt passes it only to one that does)."""
+    with open(path, 'rb') as f:
+        data = f.read()
+    return '%s (sha256 %s, %s -legacy-advertising)' % (path, hashlib.sha256(data).hexdigest(),
+                                                       'with' if b'legacy-advertising' in data else 'without')
+
+
 def main():
     j = os.path.join
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -128,6 +138,7 @@ def main():
     o.file(mods + "load-order", ("\n".join(order) + "\n").encode())
     o.file("lib/firmware/bt.cfg", read(j(m0, "firmware", "bt.cfg")))
     o.file("usr/local/bin/btbridge", read(a.btbridge), 0o755)
+    print("btbridge: %s" % btbridge_text(a.btbridge))
     o.file("usr/local/sbin/techo5-bt", lf(j(HERE, "rootfs", "usr", "local", "sbin", "techo5-bt")), 0o755)
     conf = "etc/dbus-1/system.d/techo5-bluealsa.conf"
     o.file(conf, lf(j(HERE, "rootfs", conf)))

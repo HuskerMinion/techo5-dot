@@ -168,6 +168,22 @@ if [ -d /data/techo5-linux ] && { $BB mount -t pstore pstore /sys/fs/pstore 2>/d
 			say "kernel crash record kept: ${f##*/}" && $BB rm -f "$f"
 	done
 fi
+# The 3.18 kernels have no pstore: their last words are MediaTek's RAM console, /proc/last_kmsg,
+# which outlives a warm reset. A copy is kept when the unit restarted itself (a watchdog reset or a
+# panic, by the reason above), so a hang that ended in a watchdog reset leaves what the kernel said
+# before it (#57). Only the newest five are kept, as a unit in a reset loop would otherwise fill
+# userdata with them.
+case "$($BB cat /run/techo5/boot-reason 2>/dev/null)" in watchdog | panic)
+	if [ -d /data/techo5-linux ] && [ -s /proc/last_kmsg ]; then
+		$BB mkdir -p /data/techo5-linux/crash
+		$BB cp /proc/last_kmsg "/data/techo5-linux/crash/$($BB date +%Y%m%d-%H%M%S)-last_kmsg" 2>/dev/null &&
+			say "the previous boot's kernel log kept (last_kmsg)"
+		$BB ls -1t /data/techo5-linux/crash/*-last_kmsg 2>/dev/null | $BB tail -n +6 | while read -r old; do
+			$BB rm -f "$old"
+		done
+	fi
+	;;
+esac
 # The wake word models the image carries, any this unit does not have yet: the installer copied
 # a set once, and a model added to the image since reaches the unit at its next update, so every
 # unit offers the same words. Nothing on the unit is replaced or removed.

@@ -207,6 +207,26 @@ root filesystem only; a Dot installed before the Bluetooth kernel gets it with
 `python3 tools/update-boot.py --serial <serial> --address <address>` (SSH switched on in Home Assistant).
 On Windows, type `python` for `python3`.
 
+### Power cuts during boot
+
+On the Echo Dot 2nd gen, each boot counts one try, and the count goes back to zero once the daemon has stayed up for about a
+minute and a half. So a power cut in that first minute and a half after power comes back costs a try.
+After five such boots in a row, as on a grid with repeated brownouts, the Dot boots no slot and stays
+in its rescue environment (USB console, SSH, firewall) until someone looks. The slots are usually
+fine then: over SSH, or on the USB console, run
+
+```
+techo5-retry
+```
+
+It clears the count and reboots to try the slots again.
+
+A cut in the first seconds of a boot, before TECHO5 has asked the bootloader for the next boot, can
+land in Fire OS instead (#37). TECHO5 asks first thing, so that window is short. To get back, hold
+**+** at power-on, which starts TECHO5 (Getting started,
+[Going back to TWRP or Fire OS](https://github.com/HuskerMinion/techo5/blob/main/docs/getting-started.md#going-back-to-twrp-or-fire-os)),
+or run `adb reboot recovery` if Fire OS has adb and the Dot shows up on USB. Nothing needs reinstalling.
+
 ### Echo 2nd gen
 
 <img src="images/radar.png" alt="RADAR" width="90" align="right">

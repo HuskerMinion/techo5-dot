@@ -189,10 +189,13 @@ after Wi-Fi. Build the stack's modules in WSL, then the payload:
 
 ```
 FILL=<6.5.5.5 drop>/kernel/mediatek/5.4 \
-  tools/linux/build-cannoli-bt-modules.sh <6.5.7.1 drop>/platform.tar <unit>/stock-8349-parts/boot.img <unit>/m0/modules/*.ko
+  tools/linux/build-cannoli-bt-modules.sh [--source-tarball build/techo5-cannoli-bt-modules-source.tar.xz] <6.5.7.1 drop>/platform.tar <unit>/stock-8349-parts/boot.img <unit>/m0/modules/*.ko
 GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -trimpath -o ../techo5-dot/build/btbridge/btbridge ./cmd/btbridge   # in TECHO5
 python3 tools/linux/build-cannoli-bt-payload.py --unit ../cannoli-<serial>
 ```
+
+A root filesystem that is passed on carries these GPL-2.0 modules, so it goes with their source:
+`--source-tarball` writes it (NOTICE).
 
 The radio driver stays the unit's own `btmtksdio.ko`: it makes `/dev/stpbt` without any stack, and
 `btbridge` puts it behind `hci0` through `hci_vhci`, as on the Echo Dot 3rd gen.

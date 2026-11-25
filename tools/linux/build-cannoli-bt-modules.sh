@@ -3,7 +3,7 @@
 # kernel (Fire OS NS6575/8349), which is built without it (CONFIG_BT is off). Run inside WSL/Linux; no root.
 #
 #   FILL=<6.5.5.5 drop>/kernel/mediatek/5.4 tools/linux/build-cannoli-bt-modules.sh \
-#       <6.5.7.1 drop>/platform.tar <stock boot.img> <stock module>...
+#       [--source-tarball OUT.tar.xz] <6.5.7.1 drop>/platform.tar <stock boot.img> <stock module>...
 #
 # The radio's side stays Amazon's: the stock btmtksdio.ko (MediaTek's vendor driver, WMT inside, no
 # dependency on a Bluetooth stack) makes /dev/stpbt, raw H4. btbridge turns that into hci0 through
@@ -12,10 +12,17 @@
 # (ecdh_generic.ko and ecc.ko for LE Secure Connections).
 #
 # The tree, its config, the compiler and the CRC check: cannoli-kernel.sh. Environment as there, and
-# OUTDIR (default build/cannoli-bt-modules).
+# OUTDIR (default build/cannoli-bt-modules). --source-tarball writes the complete corresponding source of
+# the modules for a release (the tree as built, its config, what came from FILL, the GCC 4.9 attribute
+# header, these scripts and the GPL), as build-bt-modules.sh does for the Echo Dot 3rd gen.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
+SRCTAR=
+if [ "${1:-}" = --source-tarball ]; then
+	SRCTAR=$(realpath -m "${2:?--source-tarball needs a file}")
+	shift 2
+fi
 PLATFORM=${1:?usage: $0 <platform.tar> <stock boot.img> <stock module>...}
 BOOTIMG=${2:?usage: $0 <platform.tar> <stock boot.img> <stock module>...}
 shift 2
@@ -55,6 +62,18 @@ done
 cannoli_check_imports "$OUTDIR"
 cannoli_check_vermagic "$OUTDIR"
 for k in "${take[@]}"; do basename "$k" .ko; done > "$OUTDIR/load-order"
+
+if [ -n "$SRCTAR" ]; then
+	cp "$O/.config" "$SRC/techo5-bt-modules.config"
+	cp "$WORK/FILLED" "$SRC/techo5-filled-from-6.5.5.5.txt" 2>/dev/null || : > "$SRC/techo5-filled-from-6.5.5.5.txt"
+	cp "$GCC4" "$SRC/techo5-gcc49-attributes.h"
+	cp "$0" "$SRC/techo5-build-cannoli-bt-modules.sh"
+	cp "$HERE/cannoli-kernel.sh" "$SRC/techo5-cannoli-kernel.sh"
+	tar -C "$(dirname "$SRC")" --exclude=.git --owner=0 --group=0 --numeric-owner -cJf "$SRCTAR" "$(basename "$SRC")"
+	rm "$SRC/techo5-bt-modules.config" "$SRC/techo5-filled-from-6.5.5.5.txt" "$SRC/techo5-gcc49-attributes.h" \
+		"$SRC/techo5-build-cannoli-bt-modules.sh" "$SRC/techo5-cannoli-kernel.sh"
+	ls -l "$SRCTAR"
+fi
 cat "$OUTDIR/load-order"
 ls -l "$OUTDIR"
 sha256sum "$OUTDIR"/*.ko

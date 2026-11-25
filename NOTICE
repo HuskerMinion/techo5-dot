@@ -124,6 +124,35 @@ Linux kernel, https://git.kernel.org (GPL-2.0)
   The Echo Dot 3rd gen's kernel itself is the unit's own, from its own boot partition, and is never
   distributed.
 
+  The Echo Dot 5th gen's (cannoli) root filesystem (build-dot-rootfs.py --board cannoli) carries
+  Bluetooth kernel modules for its stock kernel (bluetooth.ko, hci_vhci.ko, rfcomm.ko and what they
+  need of ecdh_generic.ko and ecc.ko, Linux 5.4.86 for 32-bit ARM, under /usr/lib/techo5/modules).
+  They are GPL-2.0, and a release that carries them carries their complete source:
+  techo5-cannoli-bt-modules-source.tar.xz (build-cannoli-bt-modules.sh --source-tarball).
+    - Base: Amazon's GPL source release for the Echo Dot (5th Generation),
+      Echo_Dot_5th_Gen_src-6.5.7.1-20251027, kernel/mediatek/5.4 inside platform.tar. That drop
+      carries only what Amazon's build compiled, so the files it lacks (the Bluetooth sources among
+      them) are taken unchanged from the same tree in Amazon's complete earlier release,
+      Echo_Dot_5th_Gen_src-6.5.5.5-20221208, never over a file of the newer drop; the tarball lists
+      them (techo5-filled-from-6.5.5.5.txt). Nothing else is changed.
+    - Configuration: the shipped kernel's own (IKCONFIG, read out of the stock boot image) with the
+      Bluetooth stack turned on as modules (tools/linux/cannoli-kernel.sh). A forced header
+      (techo5-gcc49-attributes.h) gives the compiler the attribute table of the GCC 4.9 the shipped
+      kernel was built with, so the modules' symbol CRCs match the kernel's; it changes no code.
+    - The scripts that do all of it are tools/linux/build-cannoli-bt-modules.sh and
+      tools/linux/cannoli-kernel.sh.
+  The Echo Dot 5th gen's kernel itself is the unit's own, from its own boot volume, and is never
+  distributed; nor is its slot-B boot image, which is built on the owner's computer from the unit's own
+  backup.
+
+cannoli_hwfixup, tools/linux/cannoli-hwfixup/cannoli_hwfixup.c (GPL-2.0)
+  TECHO5's kernel module for the Echo Dot 5th gen: it makes the ring's, the amplifier's and the
+  microphone converter's devices from their device tree nodes on a slot-B boot. GPL-2.0, as its SPDX
+  line and MODULE_LICENSE say, since it is built against and loaded into the Linux kernel. It is built
+  with tools/linux/build-cannoli-hwfixup.sh against the same tree and configuration as the Bluetooth
+  modules above, and goes only into the slot-B image each owner builds for their own unit; this
+  repository is its source.
+
 wpa_supplicant, https://w1.fi/wpa_supplicant/
   Copyright (c) Jouni Malinen and contributors, BSD license. The Echo Dot 3rd gen's root filesystem
   carries Alpine's 2.11 rebuilt with tools/linux/wpa-patches/0100-donut-no-wmm-replay-counters.patch

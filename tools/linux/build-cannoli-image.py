@@ -330,7 +330,9 @@ def main():
     print("\nbuilt: %s (sha256 %s)" % (out, hashlib.sha256(image).hexdigest()))
     print("write it to slot B from rooted Fire OS (slot A), keeping bundle/boot_b.img (TWRP) to go back:")
     print("  adb -s <serial> push %s /data/local/tmp/linux.img" % os.path.basename(out))
-    print("  adb -s <serial> shell su -c 'ubiupdatevol /dev/ubi0_8 /data/local/tmp/linux.img'")
+    print("  adb -s <serial> shell su -c 'ubiupdatevol /dev/ubi0_<boot_b> /data/local/tmp/linux.img'")
+    print("where <boot_b> is the number of the volume named boot_b (8 on the first unit;")
+    print("`cat /sys/class/ubi/ubi0_8/name` says).")
     print("then power on holding Volume-Up. Back to TWRP: the same ubiupdatevol with bundle/boot_b.img.")
 
 

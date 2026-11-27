@@ -877,7 +877,10 @@ def console_exchange(port, command, wait):
     (wrapped at 80 columns) never matches one."""
     sp = SerialPort(port)
     try:
-        sp.write(b'\n')
+        # ^C first: a run cut short (Ctrl-C in the installer) can leave its command half typed, the shell
+        # at its continuation prompt, and every later command then lost in it (D#610). On a shell that
+        # waits at its prompt it only starts a fresh line.
+        sp.write(b'\x03\n')
         time.sleep(0.4)
         sp.read()
         tag = secrets.token_hex(4)

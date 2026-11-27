@@ -17,6 +17,9 @@
 # repository; or -o), APKINDEX_DIR (WORK/apkindex), JOBS (default 4: keep it light).
 set -euo pipefail
 
+# The sysroot wrapper below runs the host pkg-config by full path (D#610).
+[ -x /usr/bin/pkg-config ] || { echo "no /usr/bin/pkg-config: install it first (apt install pkgconf)" >&2; exit 1; }
+
 HERE=$(cd "$(dirname "$0")" && pwd)
 WORK=${WORK:-$HOME/wpa-build}
 DL=${DL:-$WORK/dl}

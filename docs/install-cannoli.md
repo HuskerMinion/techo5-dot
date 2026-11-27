@@ -60,6 +60,25 @@ the slot-B image on your computer from the backup it takes of the unit it runs o
   (`build-dot-rootfs.py --board cannoli`, to `build/techo5-cannoli-rootfs.tar.gz`). The Bluetooth payload
   for the rescue environment is built too, when its modules and `btbridge` are there.
 
+### On a newer Linux host
+
+On Ubuntu 26.04 (Python 3 only, Rust coreutils) the bundle builds too, with two things to know from
+[#610](https://github.com/HuskerMinion/techo5/discussions/610), both in other projects' trees:
+
+- **The TWRP build**: some prebuilt toolchain wrappers in the synced Android tree are Python 2 scripts
+  that name `/usr/bin/python` by absolute path, so the TWRP builder's own Python 2.7 on `PATH` doesn't
+  reach them. The build stops with `bad interpreter` at about 24 %, or, for
+  `prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/arm-linux-androideabi/bin/as`, with
+  `clang.real: error: unable to execute command: posix_spawn failed` at about 83 % (boringssl's
+  `libcrypto_no_clang`). The `arm-linux-androideabi`, `aarch64-linux-android` and `x86_64-linux-android`
+  4.9 `gcc`/`g++` wrappers and that `as` built once their first line was `#!/usr/bin/env python2.7`.
+  That's for the [TWRP builder](https://github.com/Gamer92000/twrp_device_amazon_cannoli) to settle.
+- **`magiskpolicy32` under qemu** blocks on a futex when it's run by hand on a host whose process IDs
+  pass 65535: 32-bit bionic keeps a mutex owner's ID in 16 bits. cannoli-os-builder runs it under
+  `unshare --pid`, so its build isn't affected.
+
+For TECHO5's own builds, install `pkgconf` too ([building.md](building.md)).
+
 The unit's folder (`--unit`, default `../cannoli-<serial>`) is the one you build the bundle in:
 `bundle/`, `stock-8349-parts/` (the unpacked 8349 OTA, for an upgrade) and `builds/`.
 
@@ -71,7 +90,12 @@ python3 tools/install-cannoli.py --serial <serial> --name Kitchen
 ```
 
 `--dry-run` does the checks, the backups and the builds, and writes nothing to the unit. On a unit that
-isn't rooted yet, it stops after the checks and prints the firebreak commands it would run.
+isn't rooted yet, it stops after the checks and prints the firebreak commands it would run. Each dry run
+on a rooted unit keeps a new time-stamped copy of every volume that changed since the last one in
+`m0/` (step 4), so a few runs can take several hundred MB there.
+
+Run it from a terminal. firebreak asks its own questions (type `yes`, unplug the power and press
+Enter) and writes nothing unless it can ask them, so the installer gives it the terminal.
 
 1. **The unit's state.** The installer reads what the unit is running:
 
@@ -82,7 +106,7 @@ isn't rooted yet, it stops after the checks and prints the firebreak commands it
    | `device`, root adb | firebreak's rooted Fire OS in slot A | goes on |
    | `recovery` | TWRP in slot B (Volume-Up held) | checks 8349's volumes, then boots Fire OS |
    | `fastboot` | the RAM fastboot (action button held) | stops: the build can't be read there |
-   | nothing | no USB | stops: check the solder joints |
+   | nothing | no USB, or a factory unit on the 2022 launch firmware, which can show only its preloader (`0e8d:2000`) for a moment at power-on | stops, and prints the `firebreak unlock` command to run by hand (it needs no adb); then run the installer again from TWRP. With nothing on USB at all, check the solder joints |
 
 2. **The build.** It reads `ro.build.display.id` and `ro.build.version.number`. From rooted Fire OS or
    TWRP it also checks that the TEE, SCP and MCUPM volumes hash to 8349's, as firebreak does.

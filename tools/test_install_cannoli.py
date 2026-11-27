@@ -111,6 +111,41 @@ class Firebreak(unittest.TestCase):
         self.assertEqual(ic.firebreak_cmd(None, 'unlock'), ['uvx', '--from', ic.FIREBREAK_PIN, 'firebreak', 'unlock'])
         self.assertRegex(ic.FIREBREAK_PIN, r'@[0-9a-f]{40}$')
 
+    def run_fake(self, script, expect_fail=None, on_pty=False):
+        """run_firebreak with a stand-in for firebreak: a Python script, on a pseudo-terminal or not."""
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        fake = os.path.join(d, 'fake.py')
+        with open(fake, 'w') as f:
+            f.write(script)
+        a = type('A', (), {'firebreak': None})()
+        saved = ic.firebreak_cmd, ic.on_wsl
+        ic.firebreak_cmd, ic.on_wsl = (lambda checkout, *args: [sys.executable, fake] + list(args)), (lambda: False)
+        self.addCleanup(lambda: (setattr(ic, 'firebreak_cmd', saved[0]), setattr(ic, 'on_wsl', saved[1])))
+        if on_pty:
+            import pty
+            return ic._firebreak_on_pty([sys.executable, fake], None, pty)
+        return ic.run_firebreak(a, ['unlock'], False, expect_fail=expect_fail)
+
+    @unittest.skipUnless(os.name == 'posix', 'pseudo-terminals are POSIX')
+    def test_firebreak_sees_a_terminal_and_its_prompt_shows(self):
+        # D#610: firebreak writes nothing unless its output is a terminal, and its power prompt has no newline.
+        code, out = self.run_fake('import sys\nprint("tty", sys.stdout.isatty())\nsys.stdout.write("press Enter: ")\n'
+                                  'sys.stdout.flush()\nsys.exit(3)\n', on_pty=True)
+        self.assertEqual(code, 3)
+        self.assertIn('tty True\n', out)
+        self.assertTrue(out.endswith('press Enter: '), out)
+
+    def test_an_expected_stop_it_cannot_read_stops_the_installer(self):
+        # No terminal here (a test's own output), so firebreak's output is not kept: the expected stop on
+        # launch firmware cannot be told from another, and the installer stops, pointing to TWRP.
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            self.skipTest('run on a terminal')
+        with self.assertRaises(techo5lib.Fail) as e:
+            self.run_fake('import sys\nsys.exit(1)\n', expect_fail='Unsupported firmware prerequisite')
+        self.assertIn('holding Volume-Up', str(e.exception))
+        self.assertEqual(self.run_fake('import sys\nsys.exit(0)\n'), (0, None))
+
     def test_bundle_for_another_unit_is_refused(self):
         d = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, d)
@@ -344,6 +379,16 @@ class Simulated(unittest.TestCase):
             self.assertRegex(out, r'firebreak: uv run --project \S+ firebreak unlock --device cannoli')
             self.assertNotIn('adb does not see', out)
             self.assertIn('Nothing was written', out)
+
+    def test_unit_not_on_adb_gets_the_unlock_to_run_by_hand(self):
+        # D#610: a factory unit on the launch firmware need not show on adb at all.
+        self.bundle()
+        code, out = self.run_installer('none')
+        self.assertEqual(code, 1, out)
+        self.assertIn('adb does not see', out)
+        self.assertRegex(out, r'uv run --project \S+ firebreak unlock --device cannoli --bundle \S+ --serial ' + SERIAL)
+        self.assertIn('Nothing was written', out)
+        self.assertFalse(os.path.exists(os.path.join(self.d, 'backups')), out)
 
     def test_unauthorized_unit_needs_its_bundle_first(self):
         code, out = self.run_installer('unauthorized')

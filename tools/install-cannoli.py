@@ -435,8 +435,15 @@ def on_wsl():
 
 
 def run_firebreak(a, args, dry_run, expect_fail=None):
-    """Runs firebreak, its output shown as it goes. Returns (exit code, output). In a dry run the command
-    is printed, not run."""
+    """Runs firebreak on this terminal, its output shown as it goes. Returns (exit code, output), the output
+    None where it cannot be kept. In a dry run the command is printed, not run.
+
+    firebreak asks its own questions (type yes, unplug the power and press Enter) and refuses to write
+    unless its input and output are both a terminal (D#610). A pipe for its output stopped every
+    upgrade and unlock right after this installer's own question, with nothing written. So its input is
+    this terminal, and its output is a pseudo-terminal whose every byte is passed on at once, prompts
+    without a newline included, and kept to read its stop. Where there is no pseudo-terminal (Windows) or
+    no terminal at all, firebreak gets this installer's own output, and nothing of it is kept."""
     cmd = firebreak_cmd(a.firebreak, *args)
     note('firebreak: ' + ' '.join('"%s"' % c if ' ' in c else c for c in cmd))
     if dry_run:
@@ -444,19 +451,84 @@ def run_firebreak(a, args, dry_run, expect_fail=None):
     if on_wsl() and args[0] == 'unlock':
         note("this runs in WSL, where firebreak's preloader catch has not worked: the BL2 USB window is "
              'shorter than usbipd passes it on. Run the installer from a Windows Python if it does not catch.')
-    lines = []
-    p = subprocess.Popen(cmd, cwd=a.firebreak or None, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    for raw in iter(p.stdout.readline, b''):
-        line = raw.decode('utf-8', 'replace')
-        sys.stdout.write('   | ' + line)
-        sys.stdout.flush()
-        lines.append(line)
-    p.wait()
-    out = ''.join(lines)
-    if p.returncode != 0 and not (expect_fail and expect_fail in out):
+    sys.stdout.flush()
+    try:
+        import pty
+        usable = sys.stdin.isatty() and sys.stdout.isatty()
+    except ImportError:
+        usable = False
+    if not usable:
+        code, out = _wait_through_ctrl_c(subprocess.Popen(cmd, cwd=a.firebreak or None)), None
+    else:
+        code, out = _firebreak_on_pty(cmd, a.firebreak or None, pty)
+    if code != 0:
+        if expect_fail and out is not None and expect_fail in out:
+            return code, out
+        if expect_fail and out is None:
+            # Its output went by uncaptured, so the expected stop cannot be told from another one here.
+            fail('firebreak %s stopped (exit %d). If its output above ends with "%s", that is the expected '
+                 'stop on launch firmware: firebreak put TWRP in slot B. Run the installer again with the unit in '
+                 'TWRP (power on holding Volume-Up); it reads the volumes there and takes the one-way 8349 upgrade, '
+                 'after asking. Otherwise its output says what stopped it. Nothing more was written by this installer.'
+                 % (args[0], code, expect_fail))
         fail('firebreak %s stopped (exit %d); its output is above. Nothing more was written by this installer.'
-             % (args[0], p.returncode))
-    return p.returncode, out
+             % (args[0], code))
+    return code, out
+
+
+def _firebreak_on_pty(cmd, cwd, pty):
+    master, slave = pty.openpty()
+    try:
+        import fcntl
+        import termios
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, b'\0' * 8))
+    except (ImportError, OSError):
+        pass
+    try:
+        p = subprocess.Popen(cmd, cwd=cwd, stdout=slave, stderr=slave)
+    finally:
+        os.close(slave)
+    import select
+    kept, start, done = [], True, False
+    try:
+        while True:
+            try:
+                # Until firebreak exits, then what it left: a server it started (adb's) may hold the
+                # terminal open after it.
+                if not select.select([master], [], [], 0 if done else 0.2)[0]:
+                    if done:
+                        break
+                    done = p.poll() is not None
+                    continue
+                chunk = os.read(master, 4096)
+            except KeyboardInterrupt:
+                # Ctrl-C reaches firebreak too, which says what it stopped: its output is still read.
+                continue
+            except OSError:  # EIO: everything that had the terminal has closed it
+                break
+            if not chunk:
+                break
+            kept.append(chunk)
+            text = chunk.decode('utf-8', 'replace')
+            shown = ('   | ' if start else '') + text.replace('\n', '\n   | ')
+            if text.endswith('\n'):
+                shown = shown[:-len('   | ')]
+            start = text.endswith('\n')
+            sys.stdout.write(shown)
+            sys.stdout.flush()
+    finally:
+        os.close(master)
+    return _wait_through_ctrl_c(p), b''.join(kept).decode('utf-8', 'replace').replace('\r\n', '\n')
+
+
+def _wait_through_ctrl_c(p):
+    """firebreak's exit code. Ctrl-C reaches firebreak as well, which stops in its own way; it is never
+    killed from here, which could cut a write short."""
+    while True:
+        try:
+            return p.wait()
+        except KeyboardInterrupt:
+            continue
 
 
 def check_bundle(bundle, serial):
@@ -675,9 +747,19 @@ def main():
                 fail('%s is in the RAM fastboot (action button held at power-on). Its Fire OS build cannot be read '
                      'there. Unplug the power and plug it back in without a button, let it start (stock: orange '
                      'ring; rooted: blue), and run this again.' % a.serial)
-        fail('adb does not see %s (state %r). With D+, D- and GND soldered to USB and the 15 V adapter in, a stock '
-             'or rooted unit shows on adb; none at all means the solder joints, or the preloader fallback (Volume-Up '
-             'and action held for about 30 s).' % (a.serial, adb_state))
+        # A factory unit on the 2022 launch firmware may not list at all, not even unauthorized: only its
+        # preloader (0e8d:2000) shows for a moment at power-on (D#610). firebreak's unlock needs no adb.
+        backup = os.path.join(a.backups, a.serial, 'firebreak-%s' % time.strftime('%Y%m%d-%H%M%S'))
+        unlock = firebreak_cmd(a.firebreak, 'unlock', '--device', 'cannoli', '--bundle', bundle, '--serial', a.serial,
+                               '--backup', backup)
+        fail('adb does not see %s (state %r). With D+, D- and GND soldered to USB and the 15 V adapter in, a rooted '
+             'unit shows on adb, and most stock ones do. A factory unit on the 2022 launch firmware may not show at '
+             'all, only its preloader (0e8d:2000) for a moment at power-on. For one of those, run firebreak\'s unlock '
+             'yourself, which needs no adb:\n   %s\nOn launch firmware it puts TWRP in slot B and stops at "Unsupported '
+             'firmware prerequisite"; then run this again with the unit in TWRP (power on holding Volume-Up). '
+             'Otherwise, nothing on USB at all means the solder joints, or the preloader fallback (Volume-Up and '
+             'action held for about 30 s). Nothing was written.'
+             % (a.serial, adb_state, ' '.join('"%s"' % c if ' ' in c else c for c in unlock)))
     twrp = adb_state == 'recovery'
     stage = '/tmp/techo5' if twrp else '/data/local/tmp/techo5'
     unit = Unit(adb, stage)

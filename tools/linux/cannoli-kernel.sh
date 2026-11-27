@@ -61,9 +61,11 @@ cannoli_tree() {
 	fi
 	if [ -n "${FILL:-}" ] && [ ! -f "$WORK/FILLED" ]; then
 		[ -f "$FILL/Makefile" ] || { echo "FILL=$FILL is not a kernel tree" >&2; exit 1; }
-		(cd "$FILL" && find . -type f) | sort > "$WORK/fill.all"
-		(cd "$SRC" && find . -type f) | sort > "$WORK/fill.have"
-		comm -23 "$WORK/fill.all" "$WORK/fill.have" > "$WORK/FILLED.tmp"
+		# Byte order for both: under another locale sort collates and comm may not (Ubuntu 26.04's Rust
+		# coreutils, D#610), and comm stops with "file 1 is not in sorted order".
+		(cd "$FILL" && find . -type f) | LC_ALL=C sort > "$WORK/fill.all"
+		(cd "$SRC" && find . -type f) | LC_ALL=C sort > "$WORK/fill.have"
+		LC_ALL=C comm -23 "$WORK/fill.all" "$WORK/fill.have" > "$WORK/FILLED.tmp"
 		(cd "$FILL" && tar cf - -T "$WORK/FILLED.tmp") | (cd "$SRC" && tar xf -)
 		mv "$WORK/FILLED.tmp" "$WORK/FILLED"
 		echo "filled $(wc -l < "$WORK/FILLED") files from $FILL"

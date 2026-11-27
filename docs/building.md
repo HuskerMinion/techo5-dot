@@ -11,8 +11,13 @@ Everything is Go, Python 3 and bash. The kernel and bluez-alsa build on Linux.
 **Linux** (Ubuntu 24.04 or Debian; other distributions have the same packages under similar names):
 
 ```
-sudo apt install git python3 build-essential bc bison flex libssl-dev curl xz-utils bzip2
+sudo apt install git python3 build-essential bc bison flex libssl-dev curl xz-utils bzip2 pkgconf
 ```
+
+`pkgconf` gives `/usr/bin/pkg-config`, which `build-wpa-supplicant.sh` runs by full path. Ubuntu
+26.04 works too (Python 3.14, Rust coreutils; the scripts here sort and compare in the C locale, and
+need no Python 2). The TWRP builder for the Echo Dot 5th gen has needs of its own on 26.04; see
+[install-cannoli.md](install-cannoli.md#on-a-newer-linux-host).
 
 and Go 1.26 or later from [go.dev/dl](https://go.dev/dl/) (distribution packages are often older).
 
@@ -209,7 +214,9 @@ the stock `boot.img`, and compares every CRC our modules import with the shipped
 `tools/linux/kcrc.py` (from echo-dot-assist, MIT; see NOTICE). A CRC that differs means a struct differs between the GPL tree and
 the shipped kernel, and the build stops.
 
-Use Amazon's 6.5.7.1 drop (`Echo_Dot_5th_Gen_src-6.5.7.1-20251027`). With it every CRC matches
+Use Amazon's 6.5.7.1 drop (`Echo_Dot_5th_Gen_src-6.5.7.1-20251027`). Amazon's source page may list it
+only in English: in another language the Dot 5's list can stop at 6.5.6.4, so add `&language=en_US` to
+the page's address if it isn't there. With it every CRC matches
 (Bluetooth's 265, the hwfixup's 16), while the 6.5.5.5 tree differs in half of them. The 6.5.7.1 drop is
 trimmed to what Amazon compiled and has no Bluetooth sources or `scripts/config`, so `FILL` adds the
 files it lacks from the full 6.5.5.5 drop, never replacing one. Plain GCC works: the script hides the

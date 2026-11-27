@@ -38,18 +38,20 @@ The bundle itself (cannoli-os-builder, the TWRP builder) is built on an x86-64 L
 docs/install-cannoli.md has those commands.
 """
 import argparse
+import codecs
 import hashlib
 import importlib.util
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import tarfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from techo5lib import (CONSOLE_TECHO5, Adb, Console, Fastboot, adb_devices, ask, ask_name, ask_wifi, check_gift, confirm,  # noqa: E402
+from techo5lib import (CONSOLE_TECHO5, Adb, Console, Fail, Fastboot, adb_devices, ask, ask_name, ask_wifi, check_gift, confirm,  # noqa: E402
                        default_dir, download_checked, fail, hash_file, interactive, need, new_api_key, note,
                        repo_root, run_main, step, valid_api_key, write_private)
 from techo5lib import wifi_conf as techo5_wifi_conf  # noqa: E402
@@ -458,7 +460,11 @@ def run_firebreak(a, args, dry_run, expect_fail=None):
     except ImportError:
         usable = False
     if not usable:
-        code, out = _wait_through_ctrl_c(subprocess.Popen(cmd, cwd=a.firebreak or None)), None
+        p, sigint = _start(cmd, a.firebreak or None)
+        try:
+            code, out = p.wait(), None
+        finally:
+            signal.signal(signal.SIGINT, sigint)
     else:
         code, out = _firebreak_on_pty(cmd, a.firebreak or None, pty)
     if code != 0:
@@ -476,7 +482,54 @@ def run_firebreak(a, args, dry_run, expect_fail=None):
     return code, out
 
 
+def _start(cmd, cwd, **kw):
+    """firebreak started, and Ctrl-C ignored here until it is done: it reaches firebreak, which stops in
+    its own way, and nothing here is cut short by it, nor firebreak with it (a terminal closed under it, or
+    a kill, mid-write). Returns the process and the handler to put back."""
+    sigint = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    if os.name == 'posix':
+        # An ignored SIGINT is inherited, and Python then keeps it ignored: firebreak gets the default.
+        kw['preexec_fn'] = lambda: signal.signal(signal.SIGINT, signal.SIG_DFL)
+    try:
+        return subprocess.Popen(cmd, cwd=cwd, **kw), sigint
+    except BaseException:
+        signal.signal(signal.SIGINT, sigint)
+        raise
+
+
+class Prefixed:
+    """firebreak's output as shown: each line after "   | ", a line redrawn after a carriage return (its
+    countdown) too, and UTF-8 split between reads put back together."""
+
+    def __init__(self):
+        self.decoder = codecs.getincrementaldecoder('utf-8')('replace')
+        self.start, self.cr = True, False
+
+    def feed(self, data):
+        out = []
+        for ch in self.decoder.decode(data):
+            if self.cr:
+                self.cr = False
+                if ch == '\n':
+                    out.append('\n')
+                    self.start = True
+                    continue
+                out.append('\r')
+                self.start = True
+            if ch == '\r':
+                self.cr = True
+                continue
+            if self.start:
+                out.append('   | ')
+                self.start = False
+            out.append(ch)
+            if ch == '\n':
+                self.start = True
+        return ''.join(out)
+
+
 def _firebreak_on_pty(cmd, cwd, pty):
+    import select
     master, slave = pty.openpty()
     try:
         import fcntl
@@ -485,50 +538,46 @@ def _firebreak_on_pty(cmd, cwd, pty):
     except (ImportError, OSError):
         pass
     try:
-        p = subprocess.Popen(cmd, cwd=cwd, stdout=slave, stderr=slave)
+        p, sigint = _start(cmd, cwd, stdout=slave, stderr=slave)
+    except BaseException:
+        os.close(master)
+        raise
     finally:
         os.close(slave)
-    import select
-    kept, start, done = [], True, False
+    kept, shown, done = [], Prefixed(), False
     try:
         while True:
+            # Until firebreak exits, then what it left: a server it started (adb's) may hold the terminal
+            # open after it.
             try:
-                # Until firebreak exits, then what it left: a server it started (adb's) may hold the
-                # terminal open after it.
                 if not select.select([master], [], [], 0 if done else 0.2)[0]:
                     if done:
                         break
                     done = p.poll() is not None
                     continue
                 chunk = os.read(master, 4096)
-            except KeyboardInterrupt:
-                # Ctrl-C reaches firebreak too, which says what it stopped: its output is still read.
-                continue
             except OSError:  # EIO: everything that had the terminal has closed it
                 break
             if not chunk:
                 break
             kept.append(chunk)
-            text = chunk.decode('utf-8', 'replace')
-            shown = ('   | ' if start else '') + text.replace('\n', '\n   | ')
-            if text.endswith('\n'):
-                shown = shown[:-len('   | ')]
-            start = text.endswith('\n')
-            sys.stdout.write(shown)
+            sys.stdout.write(shown.feed(chunk))
             sys.stdout.flush()
     finally:
-        os.close(master)
-    return _wait_through_ctrl_c(p), b''.join(kept).decode('utf-8', 'replace').replace('\r\n', '\n')
-
-
-def _wait_through_ctrl_c(p):
-    """firebreak's exit code. Ctrl-C reaches firebreak as well, which stops in its own way; it is never
-    killed from here, which could cut a write short."""
-    while True:
         try:
-            return p.wait()
-        except KeyboardInterrupt:
-            continue
+            # Whatever stopped the loop, firebreak keeps its terminal until it exits: a write to one
+            # closed under it fails, mid-flash.
+            while p.poll() is None:
+                try:
+                    if select.select([master], [], [], 0.2)[0]:
+                        kept.append(os.read(master, 4096))
+                except OSError:
+                    time.sleep(0.2)
+            p.wait()
+        finally:
+            os.close(master)
+            signal.signal(signal.SIGINT, sigint)
+    return p.returncode, b''.join(kept).decode('utf-8', 'replace').replace('\r\n', '\n')
 
 
 def check_bundle(bundle, serial):
@@ -724,7 +773,10 @@ def main():
     if not a.serial:
         units = [u for u in adb_devices(a.adb) if u[1] in ('device', 'recovery', 'unauthorized', 'offline')]
         if len(units) != 1:
-            fail('pass --serial: %s' % ('no unit is on adb' if not units else 'several are: ' + ', '.join(u[0] for u in units)))
+            fail('pass --serial: %s' % ('no unit is on adb. A factory unit on the 2022 launch firmware may not show on '
+                                        'adb at all: run this with --serial <serial> (the one its bundle was built '
+                                        'for), and it prints the firebreak unlock to run by hand. Nothing was written.'
+                                        if not units else 'several are: ' + ', '.join(u[0] for u in units)))
         a.serial = units[0][0]
     a.unit = os.path.abspath(a.unit or os.path.join(os.path.dirname(repo_root()), 'cannoli-' + a.serial))
     bundle = a.bundle or os.path.join(a.unit, 'bundle')
@@ -749,17 +801,23 @@ def main():
                      'ring; rooted: blue), and run this again.' % a.serial)
         # A factory unit on the 2022 launch firmware may not list at all, not even unauthorized: only its
         # preloader (0e8d:2000) shows for a moment at power-on (D#610). firebreak's unlock needs no adb.
-        backup = os.path.join(a.backups, a.serial, 'firebreak-%s' % time.strftime('%Y%m%d-%H%M%S'))
-        unlock = firebreak_cmd(a.firebreak, 'unlock', '--device', 'cannoli', '--bundle', bundle, '--serial', a.serial,
-                               '--backup', backup)
+        # The unlock is printed only with a bundle firebreak takes; otherwise what is wrong with it.
+        try:
+            check_bundle(bundle, a.serial)
+            backup = os.path.join(a.backups, a.serial, 'firebreak-%s' % time.strftime('%Y%m%d-%H%M%S'))
+            unlock = firebreak_cmd(a.firebreak, 'unlock', '--device', 'cannoli', '--bundle', bundle, '--serial',
+                                   a.serial, '--backup', backup)
+            run = 'run firebreak\'s unlock yourself, which needs no adb:\n   %s\n' % ' '.join(
+                '"%s"' % c if ' ' in c else c for c in unlock)
+        except Fail as e:
+            run = ("run firebreak's unlock yourself, which needs no adb, once it has a bundle it takes (%s)\n" % e)
         fail('adb does not see %s (state %r). With D+, D- and GND soldered to USB and the 15 V adapter in, a rooted '
              'unit shows on adb, and most stock ones do. A factory unit on the 2022 launch firmware may not show at '
-             'all, only its preloader (0e8d:2000) for a moment at power-on. For one of those, run firebreak\'s unlock '
-             'yourself, which needs no adb:\n   %s\nOn launch firmware it puts TWRP in slot B and stops at "Unsupported '
-             'firmware prerequisite"; then run this again with the unit in TWRP (power on holding Volume-Up). '
-             'Otherwise, nothing on USB at all means the solder joints, or the preloader fallback (Volume-Up and '
-             'action held for about 30 s). Nothing was written.'
-             % (a.serial, adb_state, ' '.join('"%s"' % c if ' ' in c else c for c in unlock)))
+             'all, only its preloader (0e8d:2000) for a moment at power-on. For one of those, %sOn launch firmware it '
+             'puts TWRP in slot B and stops at "Unsupported firmware prerequisite"; then run this again with the unit '
+             'in TWRP (power on holding Volume-Up). Otherwise, nothing on USB at all means the solder joints, or the '
+             'preloader fallback (Volume-Up and action held for about 30 s). Nothing was written.'
+             % (a.serial, adb_state, run))
     twrp = adb_state == 'recovery'
     stage = '/tmp/techo5' if twrp else '/data/local/tmp/techo5'
     unit = Unit(adb, stage)

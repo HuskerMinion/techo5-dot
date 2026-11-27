@@ -105,6 +105,18 @@ class Verdict(unittest.TestCase):
         self.assertEqual(ic.boot_verdict({}, True), '')
 
 
+class ConsoleContinuation(unittest.TestCase):
+    """^C goes to a console only when its shell is at the continuation prompt (D#610)."""
+
+    def test_continuation_prompt(self):
+        self.assertTrue(techo5lib.at_continuation(b'\r\n> '))
+        self.assertTrue(techo5lib.at_continuation(b'echo "half\r\n> \r\n> '))
+        self.assertFalse(techo5lib.at_continuation(b'\r\n~ # '))
+        self.assertFalse(techo5lib.at_continuation(b''))
+        self.assertFalse(techo5lib.at_continuation(None))
+        self.assertFalse(techo5lib.at_continuation(b'still running\r\n'))
+
+
 class Firebreak(unittest.TestCase):
     def test_command(self):
         self.assertEqual(ic.firebreak_cmd('/fb', 'unlock', '--device', 'cannoli')[:5], ['uv', 'run', '--project', '/fb', 'firebreak'])
@@ -135,6 +147,22 @@ class Firebreak(unittest.TestCase):
         self.assertEqual(code, 3)
         self.assertIn('tty True\n', out)
         self.assertTrue(out.endswith('press Enter: '), out)
+
+    @unittest.skipUnless(os.name == 'posix', 'pseudo-terminals are POSIX')
+    def test_ctrl_c_here_never_cuts_firebreak_short(self):
+        # D#610 review: a SIGINT to the installer mid-run must not close firebreak's terminal or return early.
+        import signal
+        before = signal.getsignal(signal.SIGINT)
+        # The stand-in sends it, once it runs: by then the installer ignores it, so the timing is fixed.
+        code, out = self.run_fake('import os, signal, time\nprint("one", flush=True)\nos.kill(os.getppid(), signal.SIGINT)\n'
+                                  'time.sleep(1)\nprint("two")\n', on_pty=True)
+        self.assertEqual((code, out), (0, 'one\ntwo\n'))
+        self.assertIs(signal.getsignal(signal.SIGINT), before)
+
+    def test_output_is_prefixed_through_carriage_returns_and_split_utf8(self):
+        p = ic.Prefixed()
+        shown = p.feed(b'a\r\nStarting in 10 s.\rStarting in  9 s.\r') + p.feed(b'\nb \xe2\x80') + p.feed(b'\x94 c\n')
+        self.assertEqual(shown, '   | a\n   | Starting in 10 s.\r   | Starting in  9 s.\n   | b \u2014 c\n')
 
     def test_an_expected_stop_it_cannot_read_stops_the_installer(self):
         # No terminal here (a test's own output), so firebreak's output is not kept: the expected stop on
@@ -389,6 +417,24 @@ class Simulated(unittest.TestCase):
         self.assertRegex(out, r'uv run --project \S+ firebreak unlock --device cannoli --bundle \S+ --serial ' + SERIAL)
         self.assertIn('Nothing was written', out)
         self.assertFalse(os.path.exists(os.path.join(self.d, 'backups')), out)
+
+    def test_unit_not_on_adb_without_a_bundle_says_what_the_unlock_needs(self):
+        code, out = self.run_installer('none')
+        self.assertEqual(code, 1, out)
+        self.assertIn('adb does not see', out)
+        self.assertIn('no firebreak bundle', out)
+        self.assertIn('solder joints', out)
+        self.assertNotIn('firebreak unlock --device', out)
+
+    def test_no_serial_and_nothing_on_adb_names_the_factory_unit(self):
+        env = dict(self.env, TECHO5_SIM_STATE='none')
+        r = subprocess.run([sys.executable, os.path.join(HERE, 'install-cannoli.py'), '--adb', SIM,
+                            '--unit', os.path.join(self.d, 'unit'), '--inputs', self.inputs, '--dry-run'],
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
+        out = r.stdout.decode('utf-8', 'replace')
+        self.assertEqual(r.returncode, 1, out)
+        self.assertIn('no unit is on adb', out)
+        self.assertIn('--serial <serial>', out)
 
     def test_unauthorized_unit_needs_its_bundle_first(self):
         code, out = self.run_installer('unauthorized')

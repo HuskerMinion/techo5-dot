@@ -871,18 +871,30 @@ def list_consoles(ids):
 _ESCAPES = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
 
 
+def at_continuation(raw):
+    """Whether what a console printed after a newline ends at the shell's continuation prompt (PS2,
+    "> "): a line left open, a quote or a block, that the next command would only add to."""
+    text = _ESCAPES.sub('', (raw or b'').decode('utf-8', 'replace')).replace('\r', '')
+    return text.split('\n')[-1] == '> '
+
+
 def console_exchange(port, command, wait):
     """Runs one command on a console and returns what it printed, or None when no answer came. The
     markers are printed from variables and matched as whole lines, so the shell echoing the typed line
     (wrapped at 80 columns) never matches one."""
     sp = SerialPort(port)
     try:
-        # ^C first: a run cut short (Ctrl-C in the installer) can leave its command half typed, the shell
-        # at its continuation prompt, and every later command then lost in it (D#610). On a shell that
-        # waits at its prompt it only starts a fresh line.
-        sp.write(b'\x03\n')
+        sp.write(b'\n')
         time.sleep(0.4)
-        sp.read()
+        if at_continuation(sp.read()):
+            # A run cut short (Ctrl-C in the installer) can leave its command half typed and the shell at
+            # its continuation prompt, where every later command is lost (D#610): ^C ends that line. Only
+            # then, so a command still running is never interrupted by the next one. On the Echo Dot 5th
+            # gen's rescue console (setsid, so ^C is a SIGINT) it would be: what runs on a console has
+            # to stay safe to stop, never a write.
+            sp.write(b'\x03\n')
+            time.sleep(0.4)
+            sp.read()
         tag = secrets.token_hex(4)
         begin, end = '__T5BEGIN%s__' % tag, '__T5END%s__' % tag
         sp.write(('b=%s; m=%s; echo $b; %s; echo $m\n' % (begin, end, command)).encode('utf-8'))

@@ -414,6 +414,27 @@ class Rootfs(unittest.TestCase):
         os.environ['TECHO5_SIM_FREE_KB'] = self.free_kb(rootfs, ic.MIN_PART + (512 << 10))
         ic.unpack_rootfs(self.unit, rootfs, self.work, '/data/local/tmp/techo5')
 
+    def test_slot_b_goes_when_it_leaves_no_room(self):
+        # A reinstall over TECHO5 on the Dot 5 whose slot b leaves too little room for slot a beside it.
+        rootfs = self.tarball()
+        os.environ.update(TECHO5_SIM_SLOT_B='1', TECHO5_SIM_FREE_KB=self.free_kb(rootfs, 0),
+                          TECHO5_SIM_FREE_KB_WITHOUT_B=self.free_kb(rootfs, 8 << 20))
+        ic.unpack_rootfs(self.unit, rootfs, self.work, '/data/local/tmp/techo5', drop_b=True)
+        self.assertTrue(os.path.exists(os.path.join(self.env['TECHO5_SIM_DIR'], 'slot-b.removed')))
+
+    def test_slot_b_is_kept_without_an_answer(self):
+        rootfs = self.tarball()
+        os.environ.update(TECHO5_SIM_SLOT_B='1', TECHO5_SIM_FREE_KB=self.free_kb(rootfs, 0), TECHO5_NO_PROMPT='1')
+        with self.assertRaises(techo5lib.Fail) as e:
+            ic.unpack_rootfs(self.unit, rootfs, self.work, '/data/local/tmp/techo5')
+        self.assertIn('--force', str(e.exception))
+        self.assertFalse(os.path.exists(os.path.join(self.env['TECHO5_SIM_DIR'], 'slot-b.removed')))
+
+    def test_slot_b_stays_when_there_is_room(self):
+        os.environ['TECHO5_SIM_SLOT_B'] = '1'
+        ic.unpack_rootfs(self.unit, self.tarball(), self.work, '/data/local/tmp/techo5')
+        self.assertFalse(os.path.exists(os.path.join(self.env['TECHO5_SIM_DIR'], 'slot-b.removed')))
+
     def test_split_keeps_every_path_in_order(self):
         import tarfile
         rootfs = self.tarball()

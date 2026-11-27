@@ -605,6 +605,8 @@ def main():
     ap.add_argument('--accept-efuse', action='store_true', help="answer the one-way 8349 upgrade's question with yes")
     ap.add_argument('--accept-bl2', action='store_true',
                     help="answer the question before a rooted 8349 unit's brhgptlk copies are written with yes")
+    ap.add_argument('--drop-slot-b', action='store_true',
+                    help='answer the question before an earlier slot b is removed to make room with yes')
     ap.add_argument('--rootfs', help="build-dot-rootfs.py --board cannoli's tarball (default build/techo5-cannoli-rootfs.tar.gz)")
     ap.add_argument('--rescue-only', action='store_true', help='no root filesystem: slot B boots the rescue environment')
     ap.add_argument('--hwfixup', help='cannoli_hwfixup.ko (default build/cannoli-hwfixup/, else <unit>/builds/)')
@@ -946,7 +948,7 @@ def main():
     step('userdata: root filesystem, Bluetooth, identity')
     adb.sh('mkdir -p %s %s %s; chmod 700 %s' % (STORE, LINUX_DIR, STATE, STATE))
     if rootfs:
-        unpack_rootfs(unit, rootfs, a.work, stage)
+        unpack_rootfs(unit, rootfs, a.work, stage, a.drop_slot_b)
     if bt:
         adb.push(bt, LINUX_DIR + '/bt.tar.gz')
         if unit.sha256(LINUX_DIR + '/bt.tar.gz') != hash_file(bt):
@@ -1073,11 +1075,15 @@ def split_rootfs(rootfs, out_dir, limit):
     return parts
 
 
-def unpack_rootfs(unit, rootfs, work, stage):
+def unpack_rootfs(unit, rootfs, work, stage, drop_b=False):
     """The root filesystem into the store's slot a, in parts that fit the room userdata has: each pushed,
     checked by sha256 on the unit, unpacked with tar's own exit status and errors read back, and deleted.
     Then SLOT_DONE checks the slot has every path the tarball has, the four init-cannoli boots, and a
-    symlink (busybox's tar makes symlinks last, so a tar cut short loses them first)."""
+    symlink (busybox's tar makes symlinks last, so a tar cut short loses them first).
+
+    The Echo Dot 5th gen's userdata is 179 MB beside Fire OS's own files: two of today's slots fit (about
+    55 MB each on UBIFS), but an earlier, larger slot b can leave too little room. Then slot b goes too,
+    after asking (drop_b answers for somebody who is not there)."""
     names, size = rootfs_names(rootfs)
     S = STORE
     # An earlier slot a goes first: the room is short. It is marked bad before anything of it goes, so a
@@ -1085,14 +1091,22 @@ def unpack_rootfs(unit, rootfs, work, stage):
     # back to slot b if it is good, or the ramdisk stays in rescue. SLOT_DONE marks it good at the end.
     unit.checked('mkdir -p %s/slots && echo bad > %s/slots/a.state && sync && rm -rf %s/slots/a %s/slots/a.old '
                  '%s/incoming-*.tar.gz && mkdir %s/slots/a' % ((S,) * 6), 'the slot')
-    free = unit.checked("%s df -Pk /data | %s tail -n 1 | %s awk '{print $4}'" % (unit.bb, unit.bb, unit.bb), 'free space')
-    if not free.isdigit():
-        fail('could not read the free space on userdata (%r)' % free)
-    free = int(free) * 1024
     # What the slot takes on UBIFS: its files, and a block for every path; then room for what comes after
     # it (the Bluetooth payload, the wake words).
     slot = size + 4096 * len(names)
+    free = userdata_free(unit)
     room = free - slot - SPARE
+    if room < MIN_PART and unit.checked('[ -d %s/slots/b ] && echo yes' % S, 'slot b') == 'yes':
+        confirm(drop_b, ['userdata has %d MB free; slot a needs about %d MB and %d MB besides.'
+                         % (free >> 20, slot >> 20, (SPARE + MIN_PART) >> 20),
+                         'The earlier root filesystem in slot b takes the rest, so slot b is removed to make room,',
+                         'and with it the way back to that root filesystem.',
+                         'Until slot a is whole, slot B boots the rescue environment.'], 'SLOT')
+        unit.checked('echo bad > %s/slots/b.state && sync && rm -rf %s/slots/b %s/slots/b.old && rm -f %s/slots/b.state'
+                     % ((S,) * 4), 'slot b')
+        note('slot b removed for room')
+        free = userdata_free(unit)
+        room = free - slot - SPARE
     if room < MIN_PART:
         fail('userdata has %d MB free; the slot needs about %d MB and %d MB besides. Nothing of the root filesystem '
              'was written. Free room in Fire OS (or factory-reset it) and run the installer again.'
@@ -1126,6 +1140,14 @@ def unpack_rootfs(unit, rootfs, work, stage):
         for part in parts:
             os.remove(part)
     note(result)
+
+
+def userdata_free(unit):
+    """The bytes free on userdata."""
+    free = unit.checked("%s df -Pk /data | %s tail -n 1 | %s awk '{print $4}'" % (unit.bb, unit.bb, unit.bb), 'free space')
+    if not free.isdigit():
+        fail('could not read the free space on userdata (%r)' % free)
+    return int(free) * 1024
 
 
 def identity(a, adb, root):

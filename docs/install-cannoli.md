@@ -121,13 +121,15 @@ isn't rooted yet, it stops after the checks and prints the firebreak commands it
    `--wifi`, a name for Home Assistant, and a new key in `backups/<serial>/home-assistant.key`, or the
    ones a unit already has.
 7. **The writes.** First any `brhgptlk` copies from TWRP (the unit is powered on with Volume-Up held for
-   it, then rebooted into Fire OS). Then, from Fire OS in slot A: `boot_b` with `ubiupdatevol`, read back
-   over the image's length. Then the root filesystem into the store's slot a (`/data/techo5-store/techo5`,
+   it, then rebooted into Fire OS). Then, from Fire OS in slot A: `boot_b` with `ubiupdatevol`, staged in
+   memory (`/dev`) since userdata may have no room for it, and read back over the image's length. Then the root filesystem into the store's slot a (`/data/techo5-store/techo5`,
    slotctl's layout). Any earlier slot a is marked bad and removed first, so a run cut short leaves no
    half-written slot to boot, and the installer reads how much room userdata has. The
    slot takes about 63 MiB unpacked and the tarball is about 32 MB. After a factory reset userdata has
    about 155 MB free, so the whole tarball fits beside the slot. With less room, the tarball is split on
-   this computer into parts that each fit and are each a whole tarball. Every part is pushed, checked by
+   this computer into parts that each fit and are each a whole tarball. Two of today's slots fit on
+   userdata, but on a reinstall over TECHO5 an earlier slot b that leaves too little room is removed too,
+   after asking (`--drop-slot-b` answers yes), and with it the way back to that root filesystem. Every part is pushed, checked by
    sha256 on the unit, unpacked with tar's exit status and errors read back, and deleted before the next.
    The slot becomes active only once it has every path the tarball has, the four files init-cannoli boots,
    and its `/bin/sh` symlink. Then come the Bluetooth payload and the name, key, Wi-Fi and wake words.

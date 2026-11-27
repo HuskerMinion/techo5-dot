@@ -108,6 +108,11 @@ def shell(cmd):
                 f.write(m.group(1))
         if os.path.exists(SLOT):
             os.remove(SLOT)
+    elif re.search(r'rm -rf \S+/slots/b ', cmd):
+        open(os.path.join(DIR, 'slot-b.removed'), 'w').close()
+    elif re.fullmatch(r'\[ -d \S+/slots/b \] && echo yes', cmd):
+        if os.environ.get('TECHO5_SIM_SLOT_B') and not os.path.exists(os.path.join(DIR, 'slot-b.removed')):
+            out.append('yes')
     elif cmd == 'id -u' or cmd == 'id':
         out.append('0' if STATE in ('rooted', 'recovery') else '2000')
     elif cmd.startswith('for p in ') and 'getprop' in cmd:
@@ -147,7 +152,11 @@ def shell(cmd):
             m = re.search(r'ubiupdatevol\)? /dev/ubi0_(\d+) (\S+)', cmd)
             shutil.copyfile(local(m.group(2)), os.path.join(DIR, 'ubi0_%s.bin' % m.group(1)))
         elif re.search(r' df -Pk /data ', cmd):
-            out.append(os.environ.get('TECHO5_SIM_FREE_KB', '160000'))
+            after = os.environ.get('TECHO5_SIM_FREE_KB_WITHOUT_B')
+            if after and os.path.exists(os.path.join(DIR, 'slot-b.removed')):
+                out.append(after)
+            else:
+                out.append(os.environ.get('TECHO5_SIM_FREE_KB', '160000'))
         elif re.search(r' df -Pk /dev/\S+ ', cmd):
             out.append(os.environ.get('TECHO5_SIM_RAM_FREE_KB', '230000'))
         elif re.match(r'\S+ tar xzf (\S+) -C \S+/slots/a 2>', cmd):

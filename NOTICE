@@ -49,7 +49,31 @@ echo-dot-assist, https://github.com/Gamer92000/echo-dot-assist
   Copyright (c) 2026 Julian Imhof (Gamer92000), MIT License.
   Findings on the Echo Dot 3rd gen's speaker path and on the Echo Input's (cupcake) firmware: its
   microphones, LED, buttons, mute latch, line out and Wi-Fi driver, cited in docs/hardware-donut.md
-  and docs/hardware-cupcake.md. No code is taken from it.
+  and docs/hardware-cupcake.md, and on the Echo Dot 5th gen (cannoli), cited in
+  docs/hardware-cannoli.md. tools/linux/kcrc.py is its tools/kcrc.py (commit ae3a42d), unchanged
+  below a header naming where it comes from. echo-dot-assist's license applies to that file:
+
+  MIT License
+
+  Copyright (c) 2026 Julian Imhof
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
 
 lineageos-echo-show-camera, https://github.com/jxlarrea/lineageos-echo-show-camera
   Echo cancellation and microphone array measurements on the Echo Show family, cited in docs/.
@@ -99,6 +123,35 @@ Linux kernel, https://git.kernel.org (GPL-2.0)
       directory, so no path of the machine that built them is compiled in.
   The Echo Dot 3rd gen's kernel itself is the unit's own, from its own boot partition, and is never
   distributed.
+
+  The Echo Dot 5th gen's (cannoli) root filesystem (build-dot-rootfs.py --board cannoli) carries
+  Bluetooth kernel modules for its stock kernel (bluetooth.ko, hci_vhci.ko, rfcomm.ko and what they
+  need of ecdh_generic.ko and ecc.ko, Linux 5.4.86 for 32-bit ARM, under /usr/lib/techo5/modules).
+  They are GPL-2.0, and a release that carries them carries their complete source:
+  techo5-cannoli-bt-modules-source.tar.xz (build-cannoli-bt-modules.sh --source-tarball).
+    - Base: Amazon's GPL source release for the Echo Dot (5th Generation),
+      Echo_Dot_5th_Gen_src-6.5.7.1-20251027, kernel/mediatek/5.4 inside platform.tar. That drop
+      carries only what Amazon's build compiled, so the files it lacks (the Bluetooth sources among
+      them) are taken unchanged from the same tree in Amazon's complete earlier release,
+      Echo_Dot_5th_Gen_src-6.5.5.5-20221208, never over a file of the newer drop; the tarball lists
+      them (techo5-filled-from-6.5.5.5.txt). Nothing else is changed.
+    - Configuration: the shipped kernel's own (IKCONFIG, read out of the stock boot image) with the
+      Bluetooth stack turned on as modules (tools/linux/cannoli-kernel.sh). A forced header
+      (techo5-gcc49-attributes.h) gives the compiler the attribute table of the GCC 4.9 the shipped
+      kernel was built with, so the modules' symbol CRCs match the kernel's; it changes no code.
+    - The scripts that do all of it are tools/linux/build-cannoli-bt-modules.sh and
+      tools/linux/cannoli-kernel.sh.
+  The Echo Dot 5th gen's kernel itself is the unit's own, from its own boot volume, and is never
+  distributed; nor is its slot-B boot image, which is built on the owner's computer from the unit's own
+  backup.
+
+cannoli_hwfixup, tools/linux/cannoli-hwfixup/cannoli_hwfixup.c (GPL-2.0)
+  TECHO5's kernel module for the Echo Dot 5th gen: it makes the ring's, the amplifier's and the
+  microphone converter's devices from their device tree nodes on a slot-B boot. GPL-2.0, as its SPDX
+  line and MODULE_LICENSE say, since it is built against and loaded into the Linux kernel. It is built
+  with tools/linux/build-cannoli-hwfixup.sh against the same tree and configuration as the Bluetooth
+  modules above, and goes only into the slot-B image each owner builds for their own unit; this
+  repository is its source.
 
 wpa_supplicant, https://w1.fi/wpa_supplicant/
   Copyright (c) Jouni Malinen and contributors, BSD license. The Echo Dot 3rd gen's root filesystem

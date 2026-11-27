@@ -380,6 +380,10 @@ class Adb:
             r = self.run('push', local, remote)
             if r.returncode == 0:
                 return
+            said = (r.stderr or r.stdout).decode('utf-8', 'replace')
+            if 'No space left on device' in said:
+                # Not a dropped push: trying again only fills the same room.
+                fail('adb push %s: the unit has no room for it at %s (%s)' % (local, remote, said.strip()))
             if attempt < tries:
                 note('adb push %s dropped (try %d of %d); waiting and trying again' % (os.path.basename(local), attempt, tries))
                 time.sleep(10)

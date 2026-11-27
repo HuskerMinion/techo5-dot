@@ -1,0 +1,376 @@
+#!/bin/busybox.static sh
+# TECHO5 Echo Dot 5th gen (cannoli) initramfs init: boot a root filesystem slot from the store on
+# userdata (rootfs-cannoli, the Dot 3's layout), or stay up as the rescue environment: a root shell on
+# the UART and over USB, a log on userdata, Wi-Fi on the network Fire OS saved, and SSH with the keys on
+# userdata. Rescue is what it does when there is no store or slot, a slot is broken, five slot boots in
+# a row never became healthy, or `slotctl rescue` asked for it.
+#
+# Runs as PID 1 from the ramdisk of the FIT in boot_b (UBI volume 8), which the unit's patched U-Boot
+# boots when Volume-Up is held at power-on. The kernel, its device tree and its command line are the
+# unit's own and signed; only this ramdisk is ours (build-cannoli-image.py). Fire OS stays in slot A: a
+# reboot without Volume-Up goes back to it.
+#
+# Storage is raw NAND under UBI, attached by the kernel (ubi.mtd= on its command line): userdata is a
+# UBIFS volume, system_a a SquashFS one. Volumes are found by name in /sys/class/ubi, never by number.
+# Nothing is written to misc (the bootloader's), to a boot or system volume, or to any volume as raw
+# bytes: a UBI volume's character device takes writes only inside an update, which replaces the whole
+# volume.
+#
+# What it learns goes to the kernel log and to /data/techo5-linux/first-boot.log.
+#
+# The interpreter is the static busybox: PID 1 must not depend on a dynamic loader.
+
+BB=/bin/busybox.static
+
+$BB mount -t proc proc /proc
+$BB mount -t sysfs sysfs /sys
+$BB mount -t devtmpfs devtmpfs /dev 2>/dev/null || $BB mount -t tmpfs -o mode=0755 tmpfs /dev
+$BB mkdir -p /dev/pts /run /tmp /data /config /android
+$BB mount -t devpts devpts /dev/pts
+# 0755, not the 1777 a tmpfs gets without a mode: root's scripts use fixed names in /run, and the root
+# filesystem runs users other than root (TECHO5's feature/addons).
+$BB mount -t tmpfs -o mode=0755 tmpfs /run
+$BB mount -t tmpfs tmpfs /tmp
+$BB mount -t configfs configfs /config 2>/dev/null
+[ -e /dev/kmsg ] || $BB mknod -m 600 /dev/kmsg c 1 11
+$BB mdev -s
+
+exec > /dev/kmsg 2>&1
+
+# The stock command line has printk.disable_uart=1, and the command line is signed: MediaTek's printk
+# takes it back at run time where the parameter is writable, so the kernel log reaches the UART.
+echo 0 > /sys/module/printk/parameters/disable_uart 2>/dev/null
+echo 7 4 1 7 > /proc/sys/kernel/printk
+
+LOGDIR=/tmp
+# The ring, the amplifier and the microphone converter: U-Boot leaves their nodes disabled on this
+# recovery boot (cannoli-hwfixup/cannoli_hwfixup.c), and the module makes their devices from them. First,
+# so the sound card's deferred probe finds its codecs while the rest comes up.
+[ -e /lib/modules/techo5/cannoli_hwfixup.ko ] && $BB insmod /lib/modules/techo5/cannoli_hwfixup.ko 2>/tmp/hwfixup.err
+say() { echo "techo5-cannoli: $*"; echo "$($BB cut -d' ' -f1 /proc/uptime) $*" >> $LOGDIR/first-boot.log 2>/dev/null; }
+
+say "init started: $($BB uname -r) $($BB uname -m)"
+if [ -e /lib/modules/techo5/cannoli_hwfixup.ko ]; then
+	[ -s /tmp/hwfixup.err ] && say "cannoli_hwfixup: $($BB cat /tmp/hwfixup.err)"
+	say "$($BB dmesg | $BB grep -o 'cannoli_hwfixup: [0-9]* of [0-9]* parts brought up' | $BB tail -1)"
+fi
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root
+
+# --- The way back: Fire OS boots from slot A on any power-on without Volume-Up.
+cat > /sbin/to-fireos <<'EOF'
+#!/bin/busybox.static sh
+echo "rebooting; without Volume-Up held the unit boots Fire OS from slot A"
+/bin/busybox.static sync
+/bin/busybox.static reboot -f
+EOF
+$BB chmod 755 /sbin/to-fireos
+
+# ubivol <name>: the UBI volume of that name, as ubiD_N, or nothing.
+ubivol() {
+	local d
+	for d in /sys/class/ubi/ubi*_*; do
+		[ "$($BB cat $d/name 2>/dev/null)" = "$1" ] && { $BB basename $d; return 0; }
+	done
+	return 1
+}
+
+# --- userdata: Fire OS's own UBIFS volume, mounted read-write for a directory of ours beside its files.
+DATA_UP=
+if vol=$(ubivol userdata) && $BB mount -t ubifs -o noatime ubi0:userdata /data 2>/tmp/data.err; then
+	DATA_UP=1
+	$BB mkdir -p /data/techo5-linux
+	$BB cat /tmp/first-boot.log >> /data/techo5-linux/first-boot.log 2>/dev/null
+	LOGDIR=/data/techo5-linux
+	say "userdata ($vol) mounted"
+else
+	say "userdata would not mount: $($BB cat /tmp/data.err 2>/dev/null)"
+fi
+
+# --- The root filesystem: a slot of the store on userdata, as on the Echo Dot 3rd gen (init-donut), and
+# this ramdisk is the rescue environment when there is none to boot.
+#
+#   /data/techo5-store/techo5/   the store (tools/linux/rootfs/usr/local/sbin/slotctl has its layout):
+#     slots/a, slots/b           the root filesystems, plain directories
+#     modules/, firmware/        the unit's Wi-Fi and Bluetooth driver and firmware, adopted from this
+#                                ramdisk at every slot boot (it is built from the unit's backup)
+#     tries                      boots of a slot in a row that never became healthy; the slot's boot.sh
+#                                puts it back to 0 once echod has stayed up. Five, and this ramdisk stays
+#                                in rescue until techo5-retry. A file here, since misc is the
+#                                bootloader's and nothing of ours is written to it.
+#     rescue                     present: the next boot stays here (slotctl rescue), then removed
+#
+# The ring, amplifier and microphones are up already (cannoli_hwfixup, above) and stay up across the
+# switch; Wi-Fi and Bluetooth are left to the slot, which loads them from the store.
+STOREDIR=/data/techo5-store
+S=$STOREDIR/techo5
+TRIES_MAX=5
+
+cat > /sbin/techo5-retry <<EOF
+#!/bin/busybox.static sh
+echo "0 retry" > $S/tries
+/bin/busybox.static sync
+echo "try count cleared; the next boot of slot B (power on holding Volume-Up) tries the slots again"
+EOF
+$BB chmod 755 /sbin/techo5-retry
+
+# adopt: the unit's own modules and firmware from this ramdisk into the store, where the slots find them.
+# Only what differs is copied, so an ordinary boot writes nothing.
+adopt() {
+	local f d n=0
+	$BB mkdir -p $S/modules $S/firmware || return 1
+	for f in /lib/modules/techo5/*.ko /lib/firmware/*; do
+		[ -f "$f" ] || continue
+		case "$f" in /lib/modules/*) d=$S/modules ;; *) d=$S/firmware ;; esac
+		$BB cmp -s "$f" "$d/${f##*/}" && continue
+		$BB cp "$f" "$d/${f##*/}.tmp" && $BB mv -f "$d/${f##*/}.tmp" "$d/${f##*/}" && n=$((n + 1))
+	done
+	[ $n -gt 0 ] && { $BB sync; say "adopted $n module and firmware files into the store"; }
+	return 0
+}
+
+boot_slot() {
+	[ -n "$DATA_UP" ] || return 1
+	[ -e $S/.techo5-store ] || { say "no store on userdata ($S): rescue"; return 1; }
+	if [ -e $S/rescue ]; then
+		$BB rm -f $S/rescue
+		$BB sync
+		say "rescue marker found: staying in the ramdisk this boot"
+		return 1
+	fi
+	local tries slot root f m
+	tries=$($BB sed -n '1s/^\([0-9][0-9]*\).*/\1/p' $S/tries 2>/dev/null)
+	tries=${tries:-0}
+	if [ "$tries" -ge $TRIES_MAX ]; then
+		say "$tries slot boots in a row never became healthy: staying in rescue (techo5-retry tries them again)"
+		return 1
+	fi
+	echo "$((tries + 1))" > $S/tries.tmp && $BB mv -f $S/tries.tmp $S/tries
+	slot=$(STORE=$S /usr/local/sbin/slotctl next 2>/tmp/slotctl.err)
+	say "boot try $((tries + 1)) of $TRIES_MAX; slotctl: $($BB tr '\n' ' ' < /tmp/slotctl.err)-> ${slot:-none}"
+	[ -n "$slot" ] || return 1
+	root=$S/slots/$slot
+	for f in sbin/init bin/busybox.static etc/techo5/boot.sh usr/local/bin/echod; do
+		[ -e $root/$f ] || { say "slot $slot has no /$f"; return 1; }
+	done
+	adopt || { say "the store will not take the modules"; return 1; }
+
+	$BB mkdir -p /newroot
+	$BB mount --bind $root /newroot || { say "bind of slot $slot failed"; return 1; }
+	$BB mkdir -p /newroot/run/techo5 /newroot/store /newroot/data /newroot/dev /newroot/sys /newroot/proc /newroot/config
+	echo "$slot" > /newroot/run/techo5/slot
+	$BB mount --bind $STOREDIR /newroot/store || { say "bind of the store failed"; $BB umount /newroot; return 1; }
+	say "switching into slot $slot ($($BB cat $root/etc/techo5-release 2>/dev/null))"
+	$BB sync
+	# userdata moves in whole (the slot's boot.sh finds it mounted), and so do the kernel's filesystems;
+	# the slot makes its own /run and /tmp. /proc last: the others are looked up in it.
+	$BB umount /run /tmp 2>/dev/null
+	for m in dev sys config data proc; do
+		$BB grep -q " /$m " /proc/mounts && $BB mount --move /$m /newroot/$m
+	done
+	exec $BB switch_root /newroot /sbin/init
+	echo "techo5-cannoli: switch_root failed" > /newroot/dev/kmsg
+	return 1
+}
+
+boot_slot
+say "rescue mode: no slot booted"
+
+# --- Consoles: a root shell on the UART (ttyS0, 921600 8N1 from the bootloader) and, once the gadget
+# is up, on USB.
+# Alpine's static busybox has no cttyhack: the shell gets the tty as its controlling terminal by opening
+# it as the leader of a session of its own (setsid, then the redirections), so ^C and job control work.
+console() {
+	while true; do
+		$BB setsid $BB sh -c "exec $BB sh -l < $1 > $1 2>&1"
+		$BB sleep 2
+	done
+}
+[ -e /dev/ttyS0 ] && { console /dev/ttyS0 & say "root shell on ttyS0"; }
+
+# The USB console: an ACM serial function on the configfs gadget, under a Linux Foundation id so
+# Windows makes it a COM port rather than binding Android's driver. The MT8519's mtu3 is peripheral in
+# the device tree already.
+usb_console() {
+	local g=/config/usb_gadget/techo5 udc sn
+	[ -d /config/usb_gadget ] || { say "no configfs usb_gadget"; return 1; }
+	$BB mkdir -p $g/strings/0x409 $g/configs/c.1/strings/0x409 $g/functions/acm.usb0 || return 1
+	echo 0x1d6b > $g/idVendor
+	echo 0x0104 > $g/idProduct
+	echo 0x0200 > $g/bcdUSB
+	echo 0xEF > $g/bDeviceClass
+	echo 0x02 > $g/bDeviceSubClass
+	echo 0x01 > $g/bDeviceProtocol
+	sn=$($BB sed -n 's/.*androidboot.serialno=\([^ ]*\).*/\1/p' /proc/cmdline)
+	[ -n "$sn" ] || sn=$($BB tr -d '\000 \n' < /proc/idme/serial 2>/dev/null)
+	echo "${sn:-cannoli}" > $g/strings/0x409/serialnumber
+	echo "TECHO5" > $g/strings/0x409/manufacturer
+	echo "Echo Dot 5 Linux" > $g/strings/0x409/product
+	echo "ACM" > $g/configs/c.1/strings/0x409/configuration
+	echo 250 > $g/configs/c.1/MaxPower
+	[ -e $g/configs/c.1/acm.usb0 ] || $BB ln -s $g/functions/acm.usb0 $g/configs/c.1/
+	udc=$($BB ls /sys/class/udc 2>/dev/null | $BB head -1)
+	[ -n "$udc" ] || { say "no USB device controller"; return 1; }
+	echo "$udc" > $g/UDC || { say "gadget would not bind to $udc"; return 1; }
+	local i=0
+	while [ $i -lt 20 ] && [ ! -e /dev/ttyGS0 ]; do $BB mdev -s; $BB sleep 1; i=$((i + 1)); done
+	[ -e /dev/ttyGS0 ] || { say "no /dev/ttyGS0"; return 1; }
+	say "usb acm up on $udc"
+}
+usb_console && { console /dev/ttyGS0 & say "root shell on ttyGS0"; }
+
+snapshot() {
+	{
+		echo "=== uptime $($BB cut -d' ' -f1 /proc/uptime)"
+		echo "--- dmesg"; $BB dmesg | $BB tail -200
+		echo "--- ubi"; for d in /sys/class/ubi/ubi*_*; do echo "$($BB basename $d) $($BB cat $d/name 2>/dev/null)"; done
+		echo "--- mounts"; $BB cat /proc/mounts
+		echo "--- net"; $BB ip addr 2>&1
+		echo "--- input"; $BB cat /proc/bus/input/devices 2>/dev/null
+		echo "--- sound"; $BB cat /proc/asound/cards /proc/asound/pcm 2>/dev/null
+		echo "--- leds"; $BB ls /sys/class/leds 2>/dev/null
+	} > /tmp/snapshot 2>&1
+	[ -n "$DATA_UP" ] && $BB cp /tmp/snapshot /data/techo5-linux/snapshot.log 2>/dev/null && $BB sync
+}
+
+# --- Wi-Fi: the unit's own MT7663 driver and firmware, carried in this ramdisk (build-cannoli-image.py
+# takes them from the unit's backup), loaded the way Fire OS loads them: compat, cfg80211, mac80211
+# and the preallocation module from init.connectivity.rc, then the driver. Its WMT is inside the
+# driver; /dev/wmtWifi powers the radio, as Fire OS's init.mt8519.rc writes it.
+wifi() {
+	local mods=/lib/modules/techo5 m
+	[ -e $mods/wlan_mt76x3_sdio.ko ] || { say "no Wi-Fi driver in this image"; return 1; }
+	echo /sbin/mdev > /proc/sys/kernel/hotplug
+	$BB mkdir -p /vendor /system/vendor /etc
+	$BB ln -sfn /lib/firmware /vendor/firmware
+	$BB ln -sfn /lib/firmware /system/vendor/firmware
+	$BB ln -sfn /lib/firmware /etc/firmware
+	for m in compat cfg80211 mac80211 wlan_mt76x3_sdio_prealloc wlan_mt76x3_sdio; do
+		[ -e $mods/$m.ko ] || continue
+		$BB insmod $mods/$m.ko 2>/tmp/insmod.err || {
+			$BB grep -q 'File exists' /tmp/insmod.err ||
+				{ say "insmod $m failed: $($BB cat /tmp/insmod.err)"; return 1; }
+		}
+	done
+	local i=0
+	while [ $i -lt 10 ] && [ ! -e /dev/wmtWifi ]; do $BB mdev -s; $BB sleep 1; i=$((i + 1)); done
+	[ -e /dev/wmtWifi ] && echo 1 > /dev/wmtWifi
+	i=0
+	while [ $i -lt 30 ] && [ ! -e /sys/class/net/wlan0 ]; do $BB sleep 1; i=$((i + 1)); done
+	[ -e /sys/class/net/wlan0 ] || { say "no wlan0"; return 1; }
+	say "wlan0 after ${i}s"
+	wifi_mac
+}
+
+# wifi_mac gives wlan0 the same address on every boot. On Fire OS, MediaTek's nvram_daemon writes the
+# unit's address into the NVRAM file the driver reads (init.mt8519.rc); this boot runs no nvram_daemon,
+# so the driver picks a random address each time and DHCP hands out a new lease. The address is the
+# factory one from idme when the unit has it, and otherwise a locally administered one made once and
+# kept on userdata, /data/techo5-linux/wlan-mac. Set while the interface is down, before techo5-net.
+wifi_mac() {
+	local f a= from= kept=/data/techo5-linux/wlan-mac
+	for f in mac_addr wifi_mac_addr wifi_mac; do
+		a=$($BB tr -d '\000 :\n' < /proc/idme/$f 2>/dev/null | $BB tr 'A-F' 'a-f' | $BB grep -E '^[0-9a-f]{12}$')
+		[ "$a" = 000000000000 ] || [ "$a" = ffffffffffff ] && a=
+		[ -n "$a" ] && { from="idme $f"; break; }
+	done
+	if [ -z "$a" ] && [ -n "$DATA_UP" ]; then
+		a=$($BB tr -d ':\n' < $kept 2>/dev/null | $BB grep -E '^[0-9a-f]{12}$')
+		from="kept in $kept"
+		if [ -z "$a" ]; then
+			from="made now, kept in $kept"
+			# 02: locally administered, unicast.
+			a=02$($BB od -An -N5 -tx1 /dev/urandom | $BB tr -d ' \n')
+			echo "$a" > $kept && $BB sync
+		fi
+	fi
+	[ -n "$a" ] || { say "wlan0: no stable address, keeping the driver's"; return 0; }
+	a=$(echo "$a" | $BB sed 's/../&:/g; s/:$//')
+	[ "$($BB cat /sys/class/net/wlan0/address)" = "$a" ] && return 0
+	$BB ip link set wlan0 down 2>/dev/null
+	if $BB ip link set wlan0 address "$a" 2>/tmp/mac.err; then
+		say "wlan0 address $a ($from)"
+	else
+		say "wlan0: setting $a failed: $($BB cat /tmp/mac.err)"
+	fi
+}
+
+# SSH: dropbear with keys only, from userdata. authorized_keys is TECHO5's usual place
+# (/data/misc/echolocal/ssh) or, put there by hand from Fire OS, /data/techo5-linux/authorized_keys.
+rescue_ssh() {
+	pidof dropbear > /dev/null && return 0
+	local keys hostkeys=/data/techo5-linux/dropbear
+	for keys in /data/misc/echolocal/ssh /data/techo5-linux; do
+		[ -s $keys/authorized_keys ] && break
+	done
+	[ -x /usr/sbin/dropbear ] && [ -s $keys/authorized_keys ] || { say "no authorized_keys: no SSH"; return 0; }
+	$BB mkdir -p $hostkeys /root/.ssh
+	$BB chmod 700 $hostkeys /root /root/.ssh
+	$BB cp $keys/authorized_keys /root/.ssh/authorized_keys
+	$BB chmod 600 /root/.ssh/authorized_keys
+	[ -s $hostkeys/dropbear_ed25519_host_key ] ||
+		/usr/bin/dropbearkey -t ed25519 -f $hostkeys/dropbear_ed25519_host_key > /dev/null 2>&1
+	/usr/sbin/dropbear -s -p 22 -r $hostkeys/dropbear_ed25519_host_key >> $LOGDIR/dropbear.log 2>&1 &&
+		say "ssh on port 22"
+}
+
+$BB ip link set lo up 2>/dev/null
+/usr/local/sbin/techo5-firewall > /dev/null 2>&1 && say "firewall up" || say "firewall not applied"
+
+if [ -n "$DATA_UP" ] && wifi; then
+	IP=$(/usr/local/sbin/techo5-net 2>/tmp/net.err)
+	if [ -n "$IP" ]; then
+		say "address $IP"
+		rescue_ssh
+	else
+		say "no network: $($BB tr '\n' ' ' < /tmp/net.err | $BB head -c 300)"
+	fi
+fi
+
+# --- Bluetooth: too big for this ramdisk, so it comes from userdata, /data/techo5-linux/bt.tar.gz
+# (build-cannoli-bt-payload.py): the unit's btmtksdio.ko (MediaTek's vendor driver with WMT inside; it
+# makes /dev/stpbt, raw H4, and needs no Bluetooth stack), the stack the stock kernel lacks as modules
+# built for it (build-cannoli-bt-modules.sh), btbridge, BlueZ, dbus and bluez-alsa. btbridge puts
+# /dev/stpbt behind hci0 through /dev/vhci and techo5-bt starts BlueZ on it, as on the Echo Dot 3rd gen.
+# After Wi-Fi, as Fire OS loads the driver: the two share the chip. /sbin/techo5-bt-up runs it again by
+# hand, after a new payload was copied over.
+cat > /sbin/techo5-bt-up <<'EOF'
+#!/bin/busybox.static sh
+BB=/bin/busybox.static
+PAYLOAD=/data/techo5-linux/bt.tar.gz
+MODS=/lib/modules/techo5/bt
+say() { echo "techo5-cannoli: $*" > /dev/kmsg; echo "$*"; }
+[ -s $PAYLOAD ] || { say "bluetooth: no $PAYLOAD"; exit 0; }
+[ -e /sys/class/net/wlan0 ] || say "bluetooth: no wlan0; trying anyway"
+$BB tar -xzf $PAYLOAD -C / 2>/tmp/bt-tar.err || { say "bluetooth: unpacking: $($BB cat /tmp/bt-tar.err)"; exit 1; }
+if [ ! -e /dev/stpbt ]; then
+	$BB insmod $MODS/btmtksdio.ko 2>/tmp/insmod.err || $BB grep -q 'File exists' /tmp/insmod.err ||
+		{ say "bluetooth: insmod btmtksdio: $($BB cat /tmp/insmod.err)"; exit 1; }
+	i=0
+	while [ $i -lt 15 ] && [ ! -e /dev/stpbt ]; do $BB mdev -s; $BB sleep 1; i=$((i + 1)); done
+fi
+[ -e /dev/stpbt ] || { say "bluetooth: btmtksdio loaded but no /dev/stpbt"; exit 1; }
+for m in $($BB cat $MODS/load-order); do
+	$BB insmod $MODS/$m.ko 2>/tmp/insmod.err || $BB grep -q 'File exists' /tmp/insmod.err ||
+		{ say "bluetooth: insmod $m: $($BB cat /tmp/insmod.err) ($($BB dmesg | $BB tail -3 | $BB tr '\n' ' '))"; exit 1; }
+done
+$BB mdev -s
+[ -e /dev/vhci ] || { say "bluetooth: no /dev/vhci"; exit 1; }
+$BB mkdir -p /run/techo5 /data/techo5-linux/bluetooth
+pidof btbridge > /dev/null && { say "bluetooth: btbridge already running"; exit 0; }
+/usr/local/sbin/techo5-bt > /dev/null 2>&1 &
+i=0
+while [ $i -lt 30 ] && [ ! -d /sys/class/bluetooth/hci0 ]; do $BB sleep 1; i=$((i + 1)); done
+say "bluetooth: $([ -d /sys/class/bluetooth/hci0 ] && echo "hci0 $($BB cat /sys/class/bluetooth/hci0/address 2>/dev/null)" || echo "no hci0 after 30 s (see /data/techo5-linux/btbridge.log)")"
+EOF
+$BB chmod 755 /sbin/techo5-bt-up
+[ -n "$DATA_UP" ] && /sbin/techo5-bt-up >> $LOGDIR/bluetooth.log 2>&1 &
+
+snapshot
+say "rescue ready: UART and USB consoles, SSH once on the network; /sbin/to-fireos goes back"
+
+while true; do
+	$BB sleep 30
+	snapshot
+done

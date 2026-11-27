@@ -35,6 +35,11 @@ done
 # up with the firmware's default and every pairing is lost at the next boot.
 if [ ! -s $STATE/bdaddr ]; then
 	a=$(sed -n 's/^Address = \([0-9a-fA-F:]\{17\}\)$/\1/p' /data/misc/bluedroid/bt_config.conf 2>/dev/null | head -1)
+	# No bluedroid (the Echo Dot 5th gen's Fire OS has btmanagerd): the factory address from idme.
+	if [ -z "$a" ]; then
+		a=$(tr -d '\000 \n' < /proc/idme/bt_mac_addr 2>/dev/null | grep -E '^[0-9a-fA-F]{12}$')
+		[ "$a" = 000000000000 ] && a=
+	fi
 	if [ -z "$a" ]; then
 		# No Fire OS record: a locally administered address from the Wi-Fi one, stable across boots.
 		w=$(cat /sys/class/net/wlan0/address 2>/dev/null)
@@ -90,13 +95,26 @@ again() {
 	timeout 5 btmgmt discov off > /dev/null 2>&1
 }
 
+# -legacy-advertising: on the Echo Dot 5th gen's 5.4 kernel an extended advertisement stops after 2 s
+# and is never enabled again (Improv went out twice); legacy advertising runs until turned off. Only
+# that board's boot.sh asks for it (TECHO5_BT_LEGACY_ADV), and only a btbridge that knows the flag gets
+# it: an older one would exit on it, and Bluetooth would not come up.
+LEGACY_ADV=
+if [ -n "$TECHO5_BT_LEGACY_ADV" ]; then
+	if btbridge -h 2>&1 | grep -q -- '-legacy-advertising'; then
+		LEGACY_ADV=-legacy-advertising
+	else
+		say "btbridge without -legacy-advertising; advertising as the kernel does"
+	fi
+fi
+
 # The bridge, restarted if it exits (a chip reset ends it).
 ( while true; do
 	# -max-feature-page 1: this controller claims a second extended features page and refuses to read
 	# it, which the 3.18 kernel takes as a failed init (cmd/btbridge/h4.go).
 	# -accept-as-peripheral: asked for a role switch when it accepts a phone's connection, it leaves
 	# the link unable to authenticate, and no phone could connect to play to the Dot.
-	btbridge -bdaddr "$bdaddr" -max-feature-page 1 -accept-as-peripheral >> $LOG/btbridge.log 2>&1
+	btbridge -bdaddr "$bdaddr" -max-feature-page 1 -accept-as-peripheral $LEGACY_ADV >> $LOG/btbridge.log 2>&1
 	sleep 2
 	# A new hci0 comes up with bluetoothd's saved settings: put it right (again, above).
 	again &

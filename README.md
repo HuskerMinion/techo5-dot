@@ -27,6 +27,7 @@
   <a href="#echo-2nd-gen">Echo 2nd gen</a> ·
   <a href="#echo-dot-3rd-gen">Echo Dot 3rd gen</a> ·
   <a href="#echo-input">Echo Input</a> ·
+  <a href="#echo-dot-5th-gen">Echo Dot 5th gen</a> ·
   <a href="#credits">Credits</a> ·
   <a href="https://github.com/HuskerMinion/techo5">TECHO5 for the Echo Show 5</a>
 </p>
@@ -385,6 +386,30 @@ unit's own kernel and puts the root filesystem on userdata. Before it writes any
 `misc`, `swdl`, the system slots and userdata are where the Dot 3's boot scripts look for them, and
 stops if they aren't. The console shows up as "Echo Input Linux" (`1d6b:0104`).
 
+### Echo Dot 5th gen
+
+The Echo Dot 5th gen (2022, `cannoli`) is a different machine: a MediaTek MT8519 with NAND under UBI and
+two boot slots. Fire OS stays in slot A, rooted by [firebreak](https://github.com/Gamer92000/firebreak)'s
+cannoli route, and starts on every ordinary power-on. TECHO5 Linux goes in slot B and starts when
+Volume-Up is held at power-on. Its image is the unit's own signed kernel with TECHO5's ramdisk, built on
+your computer from that unit's backup. For now a reboot from Linux lands in Fire OS: power on holding
+Volume-Up to come back. The rooted slot A has Fire OS's OTA autostart off.
+
+> **Working on one unit.** TECHO5's slot B is built for Fire OS NS6575/8349 (its kernel modules' CRCs
+> and the stock boot FIT are 8349's). The installer upgrades an older unit to it, one-way, after asking,
+> and stops on anything newer. Which builds firebreak's unlock works on is in its
+> [cannoli guide](https://github.com/Gamer92000/firebreak/blob/main/docs/cannoli.md). Keep the unit off Wi-Fi until it's installed.
+
+```
+python3 tools/install-cannoli.py --serial <serial> --dry-run
+python3 tools/install-cannoli.py --serial <serial>
+```
+
+It detects whether the unit is stock, rooted or in TWRP, unlocks it with firebreak when needed, backs up
+every UBI volume and the BL2 copies, builds and writes slot B, and waits for a healthy first boot.
+[docs/install-cannoli.md](docs/install-cannoli.md) has what you need first (USB soldered to the test pads,
+firebreak's per-unit bundle) and every step.
+
 ## Where things are
 
 - [docs/porting-plan.md](docs/porting-plan.md): how it was built, milestone by milestone, and what
@@ -397,6 +422,8 @@ stops if they aren't. The console shows up as "Echo Input Linux" (`1d6b:0104`).
   boot image, Wi-Fi, audio and Bluetooth modules.
 - [docs/hardware-cupcake.md](docs/hardware-cupcake.md): the Echo Input: what it shares with the Echo
   Dot 3rd gen, what differs, and what is still to be checked on a unit.
+- [docs/hardware-cannoli.md](docs/hardware-cannoli.md): the Echo Dot 5th gen: its board, why it is
+  pinned to Fire OS 8349, and the other projects and sources it depends on.
 - [docs/microphones.md](docs/microphones.md): the array measurements, echo cancellation, and the
   LED whine that turned out to be Fire OS's.
 - `tools/`: the installer, the Wi-Fi tool, the boot image updater, and `tools/linux/` (initramfs,

@@ -1,0 +1,10 @@
+# busybox init in a rootfs slot on the Echo Dot 5th gen (cannoli): the Dot's, with a root shell on the
+# UART too (ttyS0, 921600 8N1 from the bootloader). None may setsid: under busybox init a respawn that
+# forks looks like an exit, and init spawns another every cycle.
+::sysinit:/etc/techo5/boot.sh
+::respawn:/usr/local/sbin/techo5-run
+::respawn:/usr/local/sbin/techo5-console
+ttyS0::respawn:/bin/busybox.static sh -l
+::respawn:/usr/local/sbin/techo5-logs
+::ctrlaltdel:/bin/busybox.static reboot
+::shutdown:/etc/techo5/shutdown.sh

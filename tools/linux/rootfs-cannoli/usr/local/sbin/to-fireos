@@ -1,0 +1,5 @@
+#!/bin/busybox.static sh
+# Back to Fire OS: the Echo Dot 5th gen's U-Boot boots slot A (rooted Fire OS) on any power-on without
+# Volume-Up held, so this is a reboot. Slot B, and the store on userdata, stay as they are.
+echo "rebooting; without Volume-Up held the unit boots Fire OS from slot A"
+exec /bin/busybox.static reboot

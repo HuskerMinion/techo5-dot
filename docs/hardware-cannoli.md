@@ -41,12 +41,22 @@ Installing: [install-cannoli.md](install-cannoli.md). Building the slot-B pieces
 On a slot-B boot U-Boot leaves the amplifier, the microphone converter and the LED driver disabled in the
 device tree. `cannoli_hwfixup.ko` creates their devices from their nodes.
 
-## Boot slots
+## Boot selection
 
 - Slot A is Fire OS, rooted by firebreak's cannoli route with OTA service autostart off
-  (cannoli-os-builder). Slot B is TECHO5 Linux, chosen only by Volume-Up held at power-on.
-- So, for now, every reboot from Linux lands in Fire OS: `reboot`, a restart from Home Assistant and an
-  update's restart all start slot A. Power on holding Volume-Up to come back to Linux.
+  (cannoli-os-builder). Slot B is TECHO5 Linux.
+- As firebreak installs it, slot B is chosen only by Volume-Up held at power-on, so every reboot from
+  Linux lands in Fire OS: `reboot`, a restart from Home Assistant and an update's restart all start
+  slot A. Power on holding Volume-Up to come back to Linux.
+- Once `tools/cannoli-boot-default.py` has made TECHO5 the default, it is the other way around: a reboot
+  from Linux comes back to Linux, and Fire OS needs Volume-Up held at power-on.
+
+`misc` holds the slot record that firebreak's `select-a` and `select-b` loaders write with `bcb write`. It is
+priority, tries and successful for each slot, and at offset 0x360 it reads `00 'ABB' 01` followed by one byte per slot:
+4 bits of priority, 3 bits of tries, 1 bit for successful. After firebreak's install it is on A
+(15/7/1, B 14/7/1). Volume-Up at power-on is a hook in slot A's U-Boot that loads `boot_b` without
+changing the slot. Slot B's U-Boot has no hook. `tools/cannoli-boot-default.py` turns the hook around so
+that TECHO5 boots by default ([install-cannoli.md](install-cannoli.md#booting-techo5-by-default-optional)).
 
 ## Why 8349, and what isn't reversible
 

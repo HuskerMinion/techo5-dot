@@ -20,3 +20,4 @@ jobs:
         run: |
           python3 -m py_compile tools/*.py
           python3 tools/test_install_dot.py
+          python3 tools/test_cannoli_boot_default.py

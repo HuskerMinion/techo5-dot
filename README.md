@@ -393,7 +393,7 @@ two boot slots. Fire OS stays in slot A, rooted by [firebreak](https://github.co
 cannoli route, and starts on every ordinary power-on. TECHO5 Linux goes in slot B and starts when
 Volume-Up is held at power-on. Its image is the unit's own signed kernel with TECHO5's ramdisk, built on
 your computer from that unit's backup. A reboot from Linux lands in Fire OS, unless
-`tools/cannoli-boot-default.py` has turned this round: then the Dot boots TECHO5 by default, a reboot
+`tools/cannoli-boot-default.py` has turned this around: then the Dot boots TECHO5 by default, a reboot
 from Linux comes back to Linux, and Fire OS starts when Volume-Up is held. The rooted slot A has Fire OS's
 OTA autostart off.
 

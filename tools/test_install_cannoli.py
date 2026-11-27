@@ -752,7 +752,6 @@ class Gift(unittest.TestCase):
         self.assertIn("rm -f %s/name %s/psk %s/wifi.conf", src)
 
 
-
 class BootDefault(unittest.TestCase):
     """The installer says which button boots what from uboot_a's hash: firebreak's root-a boots Fire OS
     without a button, cannoli-boot-default.py's image boots TECHO5."""

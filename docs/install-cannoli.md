@@ -209,7 +209,7 @@ TECHO5_SIM_M0=../cannoli-<serial>/m0 TECHO5_SIM_SERIAL=<serial> \
 
 ## Booting TECHO5 by default (optional)
 
-Once TECHO5 runs from slot B, `tools/cannoli-boot-default.py` can turn the button round. A power-on with no
+Once TECHO5 runs from slot B, `tools/cannoli-boot-default.py` can turn the button around. A power-on with no
 button held then boots TECHO5, and holding Volume-Up at power-on boots Fire OS:
 
 ```

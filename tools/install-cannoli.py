@@ -4,7 +4,7 @@
     python3 tools/install-cannoli.py --serial <serial> --unit ../cannoli-<serial> --dry-run
     python3 tools/install-cannoli.py --serial <serial> --unit ../cannoli-<serial> --name Kitchen
 
-The Dot 5 keeps Fire OS in slot A and boots slot B when Volume-Up is held at power-on, or the other way round
+The Dot 5 keeps Fire OS in slot A and boots slot B when Volume-Up is held at power-on, or the other way around
 once tools/cannoli-boot-default.py has made TECHO5 the default (the installer reads which). firebreak's cannoli
 route (`firebreak unlock --device cannoli`) roots Fire OS in slot A and puts TWRP in slot B; this installer
 then puts TECHO5's own boot image in slot B, built here from the unit's own kernel, drivers and firmware
@@ -661,7 +661,7 @@ def prompt(text):
 
 
 # BOOT is what a power-on with no button starts: 'fireos', as firebreak installs slot A's U-Boot, or
-# 'techo5' once tools/cannoli-boot-default.py has turned the Volume-Up hook round (read_boot_default).
+# 'techo5' once tools/cannoli-boot-default.py has turned the Volume-Up hook around (read_boot_default).
 BOOT = {'default': 'fireos'}
 
 

@@ -8,7 +8,7 @@
 The unit keeps one boot selection, slot A, and slot A's U-Boot (firebreak's root-a, from the unit's
 bundle) reads the CPLD's Volume-Up twice at power-on. As built by cannoli-os-builder it loads boot_b
 (TECHO5) when Volume-Up is held on both reads and goes the stock way (Fire OS) otherwise. `techo5`
-writes the same U-Boot with that decision turned round: boot_b unless Volume-Up is held on both reads.
+writes the same U-Boot with that decision turned around: boot_b unless Volume-Up is held on both reads.
 A failed CPLD read and U-Boot's own boot request still go the stock way. Nothing else changes: misc's
 slot record stays on A, and the code that boots boot_b is the code Volume-Up runs today.
 
@@ -217,8 +217,8 @@ def write(a, imgs, target):
     adb = Adb(a.serial, a.adb)
     state = adb.state()
     if state not in ('device', 'recovery'):
-        fail('the unit is not on adb (%r): boot Fire OS (no button now that TECHO5 may be the default: '
-             'hold Volume-Up) or TWRP, then run this again' % state)
+        fail('the unit is not on adb (%r): boot Fire OS (no button, or Volume-Up held if TECHO5 is already '
+             'the default) or TWRP, then run this again' % state)
     if adb.sh('id -u') != '0':
         adb.root()
         if adb.sh('id -u') != '0':
@@ -284,10 +284,16 @@ def put(adb, node, image, what, previous=None):
 def reboot(a, adb, target):
     adb.reboot()
     if target == 'techo5':
+        # Run from TWRP, slot B may still hold TWRP: it coming back on adb is slot B booting by default too.
+        # TWRP stays on adb for a moment after the reboot was asked for: wait for it to go first.
+        gone = time.time() + 60
+        while adb.state() == 'recovery' and time.time() < gone:
+            time.sleep(2)
+
         def up():
-            return any(s == a.serial for _, s in list_consoles(CONSOLE_TECHO5))
+            return any(s == a.serial for _, s in list_consoles(CONSOLE_TECHO5)) or adb.state() == 'recovery'
         wait_for('TECHO5\'s console (%s:%s) with no button held' % CONSOLE_TECHO5, 180, up)
-        print('   TECHO5 booted by default')
+        print('   slot B (%s) booted by default' % ('TWRP' if adb.state() == 'recovery' else 'TECHO5'))
     else:
         wait_for('Fire OS on adb', 240, lambda: adb.state() == 'device')
         print('   Fire OS booted by default')

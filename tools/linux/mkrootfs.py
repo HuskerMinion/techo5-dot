@@ -118,6 +118,41 @@ class Root:
             out.write(buf.getvalue())
 
 
+def apk_name(filename):
+    """The package an Alpine package file is: its name, without the version and release
+    (bluez-alsa-4.3.1-r0.apk is bluez-alsa), or None for a file not named so."""
+    if not filename.endswith(".apk"):
+        return None
+    parts = filename[: -len(".apk")].rsplit("-", 2)
+    if len(parts) != 3 or not parts[2].startswith("r") or not parts[1][:1].isdigit():
+        return None
+    return parts[0]
+
+
+def apk_files(dirs):
+    """The package files to unpack, in order, from each directory in turn. Stops the build when a
+    directory is missing, a file is not named as a package, or one package is there twice (two versions
+    in one folder, or one in two): both would be unpacked, the later over the earlier, and the image would
+    hold a mix of the two that no list names."""
+    seen, out = {}, []
+    for d in dirs:
+        if not os.path.isdir(d):
+            sys.exit(f"no package directory at {d} (fetch-inputs.py fills it)")
+        for f in sorted(os.listdir(d)):
+            if not f.endswith(".apk"):
+                continue
+            name = apk_name(f)
+            if name is None:
+                sys.exit(f"{os.path.join(d, f)} is not named as an Alpine package (name-version-rN.apk)")
+            path = os.path.join(d, f)
+            if name in seen:
+                sys.exit(f"the package {name} is there twice: {seen[name]} and {path}; keep only the one its list "
+                         "names (fetch-inputs.py in TECHO5)")
+            seen[name] = path
+            out.append(path)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rootfs", required=True, help="Alpine minirootfs .tar.gz")
@@ -135,12 +170,9 @@ def main():
     r = Root()
     r.add_tar(a.rootfs, skip_dotfiles=True)
 
-    for d in a.apkdir:
-        if not os.path.isdir(d):
-            sys.exit(f"no package directory at {d} (fetch-inputs.py fills it)")
-        for f in sorted(os.listdir(d)):
-            if f.endswith(".apk"):
-                r.add_tar(os.path.join(d, f), skip_dotfiles=True)
+    apks = apk_files(a.apkdir)
+    for path in apks:
+        r.add_tar(path, skip_dotfiles=True)
 
     for spec, mode in [(s, 0o755) for s in a.add] + [(s, 0o644) for s in a.data]:
         src, _, dest = spec.partition("=")

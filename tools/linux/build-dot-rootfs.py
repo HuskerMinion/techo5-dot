@@ -44,6 +44,43 @@ def btbridge_text(path):
                                                        'with' if b'legacy-advertising' in data else 'without')
 
 
+def notice_data():
+    """mkrootfs.py's arguments that put the repository's NOTICE in the image, at
+    /usr/share/licenses/techo5/NOTICE."""
+    notice = os.path.join(REPO, 'NOTICE')
+    if not os.path.exists(notice):
+        sys.exit('no NOTICE at %s: the image carries it' % notice)
+    return ['--data', '%s=/usr/share/licenses/techo5/NOTICE' % notice]
+
+
+# Each package list and the inputs folder that holds it.
+PACKAGE_DIRS = (('rescue', 'apks-dot'), ('bt', 'apks-bt-dot'), ('rootfs', 'apks-rootfs-dot'))
+
+
+def apk_list(path):
+    """The package files a list names (packages-*.txt): one a line, comments and blank lines aside."""
+    with open(path) as f:
+        return [l.strip() for l in f if l.strip().endswith('.apk') and not l.lstrip().startswith('#')]
+
+
+def apkdir_problem(list_path, d):
+    """What is wrong with the package folder d against its list, or '': it holds exactly the files the
+    list names, versions and all, and the list names each package once."""
+    want = apk_list(list_path)
+    names = {}
+    for f in want:
+        name = f[:-len('.apk')].rsplit('-', 2)[0]
+        if name in names:
+            return '%s names %s twice (%s and %s): one version of each package' % (list_path, name, names[name], f)
+        names[name] = f
+    have = set(n for n in os.listdir(d) if n.endswith('.apk')) if os.path.isdir(d) else set()
+    if set(want) != have:
+        return ('%s does not match %s (missing: %s; not listed: %s); tools/fetch-inputs.py in TECHO5'
+                % (d, os.path.basename(list_path), ' '.join(sorted(set(want) - have)) or '-',
+                   ' '.join(sorted(have - set(want))) or '-'))
+    return ''
+
+
 def main():
     j = os.path.join
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -116,13 +153,10 @@ def main():
         sys.exit('more than one Alpine armv7 minirootfs in %s: keep only the one techo5lib.py names' % a.inputs)
     # Every package folder holds exactly its list: mkrootfs.py unpacks whatever is there, so a package
     # never fetched would be left out without a word, and a newer one fetched beside the old would be both.
-    for lst, d in (('rescue', 'apks-dot'), ('bt', 'apks-bt-dot'), ('rootfs', 'apks-rootfs-dot')):
-        with open(j(HERE, 'packages-%s.txt' % lst)) as f:
-            want = set(l.strip() for l in f if l.strip().endswith('.apk') and not l.startswith('#'))
-        have = set(n for n in os.listdir(j(a.inputs, d)) if n.endswith('.apk')) if os.path.isdir(j(a.inputs, d)) else set()
-        if want != have:
-            sys.exit('%s does not match packages-%s.txt (missing: %s; not listed: %s); tools/fetch-inputs.py in TECHO5'
-                     % (j(a.inputs, d), lst, ' '.join(sorted(want - have)) or '-', ' '.join(sorted(have - want)) or '-'))
+    for lst, d in PACKAGE_DIRS:
+        problem = apkdir_problem(j(HERE, 'packages-%s.txt' % lst), j(a.inputs, d))
+        if problem:
+            sys.exit(problem)
     try:
         commit = subprocess.run(['git', '-C', REPO, 'rev-parse', '--short', 'HEAD'], stdout=subprocess.PIPE).stdout.decode().strip()
     except OSError:
@@ -178,6 +212,8 @@ def main():
         print('no %s or %s: AirPlay will be the classic receiver' % (a.shairport, a.nqptp))
     for m in models:
         cmd += ['--data', '%s=/usr/share/techo5/models/%s' % (m, os.path.basename(m))]
+    # TECHO5's own NOTICE: the open-source code, fonts, models and programs the image carries and their licenses.
+    cmd += notice_data()
     rc = subprocess.run(cmd).returncode
     if tmp:
         shutil.rmtree(tmp, ignore_errors=True)

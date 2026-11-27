@@ -148,6 +148,8 @@ def shell(cmd):
             shutil.copyfile(local(m.group(2)), os.path.join(DIR, 'ubi0_%s.bin' % m.group(1)))
         elif re.search(r' df -Pk /data ', cmd):
             out.append(os.environ.get('TECHO5_SIM_FREE_KB', '160000'))
+        elif re.search(r' df -Pk /dev/\S+ ', cmd):
+            out.append(os.environ.get('TECHO5_SIM_RAM_FREE_KB', '230000'))
         elif re.match(r'\S+ tar xzf (\S+) -C \S+/slots/a 2>', cmd):
             out += untar(re.match(r'\S+ tar xzf (\S+)', cmd).group(1))
         elif re.fullmatch(r'sh \S+/slot-done\.sh \S+ (\d+) \S+ 2>&1', cmd):
@@ -213,6 +215,12 @@ def main():
         with open(local(m.group(1)), 'rb') as f:
             shutil.copyfileobj(f, sys.stdout.buffer, 1 << 20)
     elif verb == 'push':
+        full = os.environ.get('TECHO5_SIM_NO_SPACE')
+        if full and re.match(full, args[2]):
+            # A folder with too little room: adb says so, every time.
+            sys.stderr.write("adb: error: failed to copy '%s' to '%s': remote write failed: No space left on device\n"
+                             % (args[1], args[2]))
+            return 1
         shutil.copyfile(args[1], local(args[2]))
         if os.environ.get('TECHO5_SIM_TRUNCATE') and re.search(r'/incoming-\d+\.tar\.gz$', args[2]):
             # A copy cut short over USB, as the unit's exec-in stream once was.

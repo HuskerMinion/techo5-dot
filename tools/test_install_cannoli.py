@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -231,6 +232,39 @@ class Simulated(unittest.TestCase):
         files = ic.back_up(unit, out, False)
         self.assertRegex(os.path.basename(files['boot_b']), r'^u_8-\d{8}-\d{6}\.bin$')
         self.assertTrue(os.path.exists(os.path.join(out, 'u_8.bin')))
+
+    def boot_b_unit(self, **env):
+        self.sim_env()
+        os.environ.update(env)
+        unit = ic.Unit(techo5lib.Adb(SERIAL, SIM), '/data/local/tmp/techo5')
+        unit.setup_busybox(os.path.join(self.inputs, 'busybox.static'))
+        image = os.path.join(self.d, 'twrp-boot_b.img')
+        with open(image, 'wb') as f:
+            f.write(fit(b'B' * 200))
+        return unit, image, os.path.join(self.env['TECHO5_SIM_DIR'], 'ubi0_8.bin')
+
+    def test_boot_b_goes_through_memory_on_a_full_userdata(self):
+        # A reinstall over TECHO5: its store leaves /data/local/tmp no room for TWRP's 13 MB.
+        unit, image, written = self.boot_b_unit(TECHO5_SIM_NO_SPACE=r'/data/.*boot_b')
+        ic.write_boot_b(unit, image, image)
+        with open(image, 'rb') as a, open(written, 'rb') as b:
+            self.assertEqual(a.read(), b.read())
+
+    def test_boot_b_with_too_little_memory_writes_nothing(self):
+        unit, image, written = self.boot_b_unit(TECHO5_SIM_RAM_FREE_KB='1024')
+        with self.assertRaises(techo5lib.Fail) as e:
+            ic.write_boot_b(unit, image, image)
+        self.assertIn('nothing written', str(e.exception))
+        self.assertFalse(os.path.exists(written))
+
+    def test_a_push_with_no_room_is_not_retried(self):
+        unit, image, written = self.boot_b_unit(TECHO5_SIM_NO_SPACE=r'/dev/.*boot_b')
+        start = time.time()
+        with self.assertRaises(techo5lib.Fail) as e:
+            ic.write_boot_b(unit, image, image)
+        self.assertIn('no room', str(e.exception))
+        self.assertLess(time.time() - start, 8)  # a retry waits 10 s first
+        self.assertFalse(os.path.exists(written))
 
     def bundle(self, **over):
         bundle = os.path.join(self.d, 'unit', 'bundle')

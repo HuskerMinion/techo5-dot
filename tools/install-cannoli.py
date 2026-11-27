@@ -131,6 +131,9 @@ END = 'T5-END'
 # Room left on userdata once the slot is in (the Bluetooth payload, the wake words, Fire OS's own), and
 # the smallest part of the root filesystem worth pushing.
 SPARE = 16 << 20
+# boot_b's images go through memory: on a unit that already runs TECHO5 its store fills userdata, so
+# /data/local/tmp has less room than an image (TWRP's is 13 MB). /dev is a tmpfs under Fire OS.
+RAM_STAGE = '/dev/techo5-stage'
 MIN_PART = 2 << 20
 # A gift install's: the marker that starts first run, and a supplicant configuration with no network.
 FIRSTRUN_MARKER = dot.FIRSTRUN_MARKER
@@ -998,21 +1001,32 @@ def main():
 
 
 def write_boot_b(unit, image, twrp_copy):
-    """An image into boot_b from Fire OS with ubiupdatevol, pushed and read back by sha256."""
+    """An image into boot_b from Fire OS with ubiupdatevol, pushed through memory (RAM_STAGE) and read back
+    by sha256."""
     vols = dict((nm, (n, b)) for n, nm, b in unit.volumes())
     n, room = vols['boot_b']
     size = os.path.getsize(image)
     if size > room:
         fail('%s is %d bytes; boot_b holds %d' % (image, size, room))
     want = hash_file(image)
-    remote = unit.stage + '/boot_b.img'
-    unit.adb.push(image, remote)
-    if unit.sha256(remote) != want:
-        fail('the image pushed to the unit differs; nothing written')
-    unit.checked('$(command -v ubiupdatevol || echo /system/vendor/bin/ubiupdatevol) /dev/ubi0_%d %s'
-                 % (n, remote), 'ubiupdatevol')
-    back = unit.sha256('/dev/ubi0_%d' % n, size)
-    unit.sh('rm -f %s' % remote)
+    unit.checked('rm -rf %s && mkdir -m 700 %s' % (RAM_STAGE, RAM_STAGE), 'a folder in memory')
+    free = unit.checked("%s df -Pk %s | %s tail -n 1 | %s awk '{print $4}'" % (unit.bb, RAM_STAGE, unit.bb, unit.bb),
+                        'free memory')
+    if not free.isdigit():
+        fail('could not read the room in %s (%r); nothing written' % (RAM_STAGE, free))
+    if int(free) * 1024 < size + (4 << 20):
+        unit.sh('rm -rf %s' % RAM_STAGE)
+        fail('%s has %d KB free, too little for the %d-byte image; nothing written' % (RAM_STAGE, int(free), size))
+    remote = RAM_STAGE + '/boot_b.img'
+    try:
+        unit.adb.push(image, remote)
+        if unit.sha256(remote) != want:
+            fail('the image pushed to the unit differs; nothing written')
+        unit.checked('$(command -v ubiupdatevol || echo /system/vendor/bin/ubiupdatevol) /dev/ubi0_%d %s'
+                     % (n, remote), 'ubiupdatevol')
+        back = unit.sha256('/dev/ubi0_%d' % n, size)
+    finally:
+        unit.sh('rm -rf %s' % RAM_STAGE)
     if back != want:
         fail('boot_b reads back %s, not %s. Do not boot slot B. TWRP is at %s: ubiupdatevol /dev/ubi0_%d with it '
              'from Fire OS puts it back.' % (back, want, twrp_copy, n))

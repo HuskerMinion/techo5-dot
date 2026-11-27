@@ -108,9 +108,10 @@ class Image(unittest.TestCase):
         # TECHO5 #779: a switch's IGMP queries, dropped, let the Dot's SSDP group membership time out.
         with open(os.path.join(HERE, 'linux', 'rootfs', 'usr', 'local', 'sbin', 'techo5-firewall'), encoding='utf-8') as f:
             script = f.read()
-        for rule in ('iptables-legacy -A INPUT -p igmp -j ACCEPT', 'iptables-legacy -A INPUT -p udp --dport 1900 -j ACCEPT'):
+        for rule in ('iptables-legacy -A INPUT -p 2 -j ACCEPT', 'iptables-legacy -A INPUT -p udp --dport 1900 -j ACCEPT'):
             self.assertIn(rule, script)
             self.assertLess(script.index(rule), script.index('iptables-legacy -P INPUT DROP'), rule)
+        self.assertNotIn('-p igmp', script)  # by number: nothing to look up
 
 
 if __name__ == '__main__':

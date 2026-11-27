@@ -74,8 +74,8 @@ iptables-legacy -A INPUT -p udp --sport 67 --dport 68 -j ACCEPT
 iptables-legacy -A INPUT -p icmp -j ACCEPT
 # IGMP (protocol 2): a switch's or access point's queries for which groups the Dot is in. Dropped, they went
 # unanswered, and a network that snoops IGMP stopped passing the SSDP group's searches on to the Dot once its
-# membership timed out (TECHO5 #779). IPv6's own (MLD) is ICMPv6, let in below.
-iptables-legacy -A INPUT -p igmp -j ACCEPT
+# membership timed out (TECHO5 #779). By number, never a name to look up. IPv6's own (MLD) is ICMPv6, let in below.
+iptables-legacy -A INPUT -p 2 -j ACCEPT
 iptables-legacy -A INPUT -p udp --dport 1900 -j ACCEPT
 ip6tables-legacy -A INPUT -p ipv6-icmp -j ACCEPT
 ip6tables-legacy -A INPUT -p udp --sport 547 --dport 546 -j ACCEPT

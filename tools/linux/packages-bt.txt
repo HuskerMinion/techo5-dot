@@ -11,7 +11,7 @@ glib-2.88.4-r0.apk
 json-c-0.18-r1.apk
 libblkid-2.42.3-r1.apk
 libeconf-0.8.3-r0.apk
-libexpat-2.10.0-r0.apk
+libexpat-2.11.0-r0.apk
 libffi-3.8.1-r0.apk
 libfreeaptx-0.2.2-r0.apk
 libgcc-15.2.0-r5.apk

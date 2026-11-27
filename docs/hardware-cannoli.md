@@ -39,8 +39,15 @@ Installing: [install-cannoli.md](install-cannoli.md). Building the slot-B pieces
 | USB | none on the case. D+, D− and GND are on the 3×3 test pads under the rubber foot (firebreak's [cannoli guide](https://github.com/Gamer92000/firebreak/blob/main/docs/cannoli.md) shows them); power comes from the 15 V adapter |
 
 On a slot-B boot U-Boot leaves the amplifier, the microphone converter and the LED driver disabled in the
-device tree. `cannoli_hwfixup.ko` creates their devices from their nodes; for the ring it asks the chip at
-0-0031 which one it is first (an LP5036 reads back its reset defaults), or takes `ring=<node path>`.
+device tree. `cannoli_hwfixup.ko` creates their devices from their nodes. The ring's chip is read first,
+without writing to it: an LP5036 at 0x30-0x33 is known by its configuration registers (reserved bits 0,
+DEVICE_CONFIG1 0x3c-0x3f), and anything else is taken as the IS31FL3246 at 0-0031. Its line in `dmesg`
+says what it read and chose. To pick the ring by hand, build the image with the module's parameters,
+which init-cannoli puts on its insmod line:
+
+    python3 tools/install-cannoli.py ... --hwfixup-args ring=/soc/i2c@10019100/lp5036@31
+
+(`ring=none` brings up no ring; an AW21036 board, not seen yet, needs `ring=` with its node.)
 
 ## Boot slots
 

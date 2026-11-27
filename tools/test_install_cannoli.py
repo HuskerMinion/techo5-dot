@@ -752,5 +752,53 @@ class Gift(unittest.TestCase):
         self.assertIn("rm -f %s/name %s/psk %s/wifi.conf", src)
 
 
+class RingId(unittest.TestCase):
+    """cannoli_hwfixup's ring check (#780), built on the host: an LP5036 by its registers, from reads alone."""
+
+    def test_the_lp5036_and_the_is31fl3246_apart(self):
+        cc = shutil.which('cc') or shutil.which('gcc')
+        if not cc:
+            self.skipTest('no C compiler')
+        hdr = os.path.join(HERE, 'linux', 'cannoli-hwfixup', 'ring_id.h')
+        cases = [
+            ((0x00, 0x3c, 0x00), 1),    # an LP5036 from power-on
+            ((0x40, 0x3f, 0x00), 1),    # one Fire OS's lp50xx drove (#780's unit)
+            ((0x40, 0x3d, 0x0f), 1),
+            ((0x00, 0x00, 0x00), 0),    # an IS31FL3246 from power-on: its PWM bytes are 0
+            ((0x01, 0x3c, 0x00), 0),    # a reserved bit set is not an LP5036
+            ((0x00, 0x7c, 0x00), 0),
+            ((0x00, 0x3c, 0x10), 0),
+            ((0x00, 0x38, 0x00), 0),
+            ((-5, 0x3c, 0x00), 0),      # a read that failed
+            ((0x00, -6, 0x00), 0),
+        ]
+        body = ''.join('printf("%%d\\n", ring_is_lp5036(%d, %d, %d));\n' % c for c, _ in cases)
+        with tempfile.TemporaryDirectory() as d:
+            src = os.path.join(d, 't.c')
+            with open(src, 'w') as f:
+                f.write('#include <stdio.h>\n#include "%s"\nint main(void) {\n%sreturn 0;\n}\n' % (hdr, body))
+            exe = os.path.join(d, 't')
+            subprocess.run([cc, '-Wall', '-Werror', '-o', exe, src], check=True)
+            got = subprocess.run([exe], check=True, capture_output=True, text=True).stdout.split()
+        self.assertEqual([int(g) for g in got], [w for _, w in cases])
+
+    def test_nothing_is_written_to_the_ring_before_its_driver(self):
+        with open(os.path.join(HERE, 'linux', 'cannoli-hwfixup', 'cannoli_hwfixup.c')) as f:
+            src = f.read()
+        self.assertNotIn('I2C_SMBUS_WRITE', src)
+        self.assertNotIn('i2c_smbus_write', src)
+        self.assertNotIn('i2c_transfer', src)
+
+    def test_the_image_takes_only_the_modules_parameters(self):
+        spec = importlib.util.spec_from_file_location('cannoli_image_t', os.path.join(HERE, 'linux', 'build-cannoli-image.py'))
+        img = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(img)
+        self.assertEqual(img.hwfixup_args(' ring=/soc/i2c@10019100/lp5036@31 '), 'ring=/soc/i2c@10019100/lp5036@31')
+        self.assertEqual(img.hwfixup_args('ring=none nodes=/a@1,/b@2'), 'ring=none nodes=/a@1,/b@2')
+        for bad in ('ring=x;reboot', 'ring=$(id)', 'foo=1', 'ring'):
+            with self.assertRaises(Exception):
+                img.hwfixup_args(bad)
+
+
 if __name__ == '__main__':
     unittest.main()

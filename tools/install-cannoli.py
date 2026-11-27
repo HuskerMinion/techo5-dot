@@ -756,6 +756,8 @@ def main():
     ap.add_argument('--rootfs', help="build-dot-rootfs.py --board cannoli's tarball (default build/techo5-cannoli-rootfs.tar.gz)")
     ap.add_argument('--rescue-only', action='store_true', help='no root filesystem: slot B boots the rescue environment')
     ap.add_argument('--hwfixup', help='cannoli_hwfixup.ko (default build/cannoli-hwfixup/, else <unit>/builds/)')
+    ap.add_argument('--hwfixup-args', default='',
+                    help="the module's parameters at boot, e.g. ring=/soc/i2c@10019100/lp5036@31 (#780)")
     ap.add_argument('--no-bluetooth', action='store_true', help='leave out the Bluetooth payload')
     ap.add_argument('--name', help='the name Home Assistant shows (asked for when missing)')
     ap.add_argument('--key-file', help='where the Home Assistant key is kept (default backups/<serial>/home-assistant.key)')
@@ -1034,6 +1036,8 @@ def main():
            '--boot', files['boot_a'], '--uboot', files['uboot_b'], '-o', image]
     if hwfixup:
         cmd += ['--hwfixup', hwfixup]
+        if a.hwfixup_args:
+            cmd += ['--hwfixup-args', a.hwfixup_args]
     run_tool(cmd, 'the slot-B image')
     with open(image, 'rb') as f:
         if not is_techo5_fit(f.read()):

@@ -229,6 +229,10 @@ def initramfs(a, unit_m0):
         c.add_parents("lib/modules/techo5/cannoli_hwfixup.ko")
         c.file("lib/modules/techo5/cannoli_hwfixup.ko", read(a.hwfixup))
         print("hwfixup: %s" % a.hwfixup)
+        if a.hwfixup_args:
+            # Read by init-cannoli onto the module's insmod line, e.g. ring=<node> (#780).
+            c.file("lib/modules/techo5/cannoli_hwfixup.args", (a.hwfixup_args + "\n").encode())
+            print("hwfixup args: %s" % a.hwfixup_args)
     else:
         print("note: no %s: no ring, speaker or microphones on this boot (build-cannoli-hwfixup.sh)" % a.hwfixup)
     if missing:
@@ -260,6 +264,17 @@ def uboot_read_length(uboot):
     return int(m.group(1), 16)
 
 
+HWFIXUP_ARG = re.compile(r"^(nodes|ring)=[A-Za-z0-9_@,./-]+$")
+
+
+def hwfixup_args(v):
+    """cannoli_hwfixup's parameters, as name=value words: only its own, in characters a path has."""
+    for w in v.split():
+        if not HWFIXUP_ARG.match(w):
+            raise argparse.ArgumentTypeError("not a cannoli_hwfixup parameter: %r" % w)
+    return " ".join(v.split())
+
+
 def main():
     j = os.path.join
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -270,6 +285,8 @@ def main():
     ap.add_argument("--release", default="first", help="what /etc/techo5-release says")
     ap.add_argument("--hwfixup", default=j(REPO, "build", "cannoli-hwfixup", "cannoli_hwfixup.ko"),
                     help="build-cannoli-hwfixup.sh's module")
+    ap.add_argument("--hwfixup-args", type=hwfixup_args, default="",
+                    help="the module's parameters at boot, e.g. ring=/soc/i2c@10019100/lp5036@31")
     ap.add_argument("--wpa-supplicant", default=j(REPO, "build", "wpa_supplicant", "wpa_supplicant"),
                     help="build-wpa-supplicant.sh's, in place of Alpine's")
     ap.add_argument("-o", "--output", default=None, help="default: <unit>/builds/techo5-cannoli-boot_b.img")

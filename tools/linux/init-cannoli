@@ -46,7 +46,9 @@ LOGDIR=/tmp
 # The ring, the amplifier and the microphone converter: U-Boot leaves their nodes disabled on this
 # recovery boot (cannoli-hwfixup/cannoli_hwfixup.c), and the module makes their devices from them. First,
 # so the sound card's deferred probe finds its codecs while the rest comes up.
-[ -e /lib/modules/techo5/cannoli_hwfixup.ko ] && $BB insmod /lib/modules/techo5/cannoli_hwfixup.ko 2>/tmp/hwfixup.err
+# Its parameters, if the image was built with any (--hwfixup-args: ring=<node> picks the ring's chip, #780).
+[ -e /lib/modules/techo5/cannoli_hwfixup.ko ] && $BB insmod /lib/modules/techo5/cannoli_hwfixup.ko \
+	$($BB cat /lib/modules/techo5/cannoli_hwfixup.args 2>/dev/null) 2>/tmp/hwfixup.err
 say() { echo "techo5-cannoli: $*"; echo "$($BB cut -d' ' -f1 /proc/uptime) $*" >> $LOGDIR/first-boot.log 2>/dev/null; }
 
 say "init started: $($BB uname -r) $($BB uname -m)"

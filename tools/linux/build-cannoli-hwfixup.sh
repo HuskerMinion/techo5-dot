@@ -27,7 +27,7 @@ cannoli_build
 
 M=$WORK/hwfixup
 rm -rf "$M"; mkdir -p "$M"
-cp "$HERE/cannoli-hwfixup/cannoli_hwfixup.c" "$HERE/cannoli-hwfixup/Kbuild" "$M/"
+cp "$HERE/cannoli-hwfixup/cannoli_hwfixup.c" "$HERE/cannoli-hwfixup/ring_id.h" "$HERE/cannoli-hwfixup/Kbuild" "$M/"
 cannoli_ext "$M"
 [ -f "$M/cannoli_hwfixup.ko" ] || { echo "no module built" >&2; exit 1; }
 

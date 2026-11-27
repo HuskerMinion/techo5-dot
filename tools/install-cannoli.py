@@ -39,6 +39,7 @@ docs/install-cannoli.md has those commands.
 """
 import argparse
 import codecs
+import contextlib
 import hashlib
 import importlib.util
 import json
@@ -688,6 +689,28 @@ def prerequisites_8349(unit):
     return out
 
 
+@contextlib.contextmanager
+def uninterrupted(adb):
+    """A write to the unit that a Ctrl-C must not cut short: a BL2 copy or boot_b half written leaves a
+    unit that may not start. SIGINT is ignored here, as around firebreak, and adb inherits that (an
+    ignored signal stays ignored across exec); adb reads no terminal (stdin from /dev/null), and on
+    Windows runs in a process group of its own, out of the console's Ctrl-C. All put back after, however
+    the write ended."""
+    try:
+        sigint = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    except ValueError:  # not the main thread, where no Ctrl-C is delivered anyway
+        sigint = None
+    stdin, spawn = getattr(adb, 'stdin', None), getattr(adb, 'spawn', {})
+    adb.stdin = subprocess.DEVNULL
+    adb.spawn = dict(spawn, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP) if os.name == 'nt' else spawn
+    try:
+        yield
+    finally:
+        adb.stdin, adb.spawn = stdin, spawn
+        if sigint is not None:
+            signal.signal(signal.SIGINT, sigint)
+
+
 def flash_brhgptlk(unit, image, dry_run):
     """The four copies of the 8349 BL2, from TWRP: each is skipped when it already holds it, written with
     flash_image otherwise, and read back over the image's length."""
@@ -705,13 +728,15 @@ def flash_brhgptlk(unit, image, dry_run):
     unit.adb.push(image, unit.stage + '/brhgptlk.img')
     if unit.sha256(unit.stage + '/brhgptlk.img') != BRHGPTLK_SHA256:
         fail('the brhgptlk image pushed to the unit differs; nothing written')
-    for name in todo:
-        unit.sh('flash_image %s %s/brhgptlk.img' % (name, unit.stage))
-        back = unit.checked('dump_image %s %s/bl2 >/dev/null 2>&1 && %s head -c %d %s/bl2 | %s sha256sum; rm -f %s/bl2'
-                            % (name, unit.stage, unit.bb, BRHGPTLK_LEN, unit.stage, unit.bb, unit.stage), name).split(' ')[0]
-        if back != BRHGPTLK_SHA256:
-            fail('%s reads back %s, not 8349\'s BL2. Do not power the unit off; run the installer again from TWRP.' % (name, back))
-        note('%s written and read back' % name)
+    note('writing the BL2 copies: Ctrl-C waits until they are written and read back')
+    with uninterrupted(unit.adb):
+        for name in todo:
+            unit.sh('flash_image %s %s/brhgptlk.img' % (name, unit.stage))
+            back = unit.checked('dump_image %s %s/bl2 >/dev/null 2>&1 && %s head -c %d %s/bl2 | %s sha256sum; rm -f %s/bl2'
+                                % (name, unit.stage, unit.bb, BRHGPTLK_LEN, unit.stage, unit.bb, unit.stage), name).split(' ')[0]
+            if back != BRHGPTLK_SHA256:
+                fail('%s reads back %s, not 8349\'s BL2. Do not power the unit off; run the installer again from TWRP.' % (name, back))
+            note('%s written and read back' % name)
 
 
 def main():
@@ -1095,15 +1120,10 @@ def main():
             fail('the Bluetooth payload on the unit differs from %s' % bt)
         note('Bluetooth payload on userdata')
     tmp = os.path.join(a.work, 'provision-' + a.serial)
-    os.makedirs(tmp, exist_ok=True)
+    os.makedirs(tmp, mode=0o700, exist_ok=True)
 
     def push_text(text, remote, mode='600'):
-        local = os.path.join(tmp, os.path.basename(remote))
-        with open(local, 'w', encoding='utf-8', newline='\n') as f:
-            f.write(text)
-        adb.push(local, remote)
-        os.remove(local)
-        adb.sh('chmod %s %s' % (mode, remote))
+        push_text_file(adb, tmp, text, remote, mode)
 
     if ssh_key:
         adb.sh('mkdir -p %s/ssh; chmod 700 %s/ssh' % (STATE, STATE))
@@ -1142,6 +1162,25 @@ def main():
     wait_healthy(a, shown, key_file, rootfs is not None)
 
 
+def push_text_file(adb, tmp, text, remote, mode='600'):
+    """text onto the unit at remote, through a file in tmp that only this user can read (it can be the
+    Wi-Fi passphrase or the Home Assistant key) and that is gone after, whether the push worked or not."""
+    local = os.path.join(tmp, os.path.basename(remote))
+    if os.path.lexists(local):
+        os.remove(local)
+    fd = os.open(local, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(text)
+        adb.push(local, remote)
+    finally:
+        try:
+            os.remove(local)
+        except FileNotFoundError:
+            pass
+    adb.sh('chmod %s %s' % (mode, remote))
+
+
 def write_boot_b(unit, image, twrp_copy):
     """An image into boot_b from Fire OS with ubiupdatevol, pushed through memory (RAM_STAGE) and read back
     by sha256."""
@@ -1164,9 +1203,10 @@ def write_boot_b(unit, image, twrp_copy):
         unit.adb.push(image, remote)
         if unit.sha256(remote) != want:
             fail('the image pushed to the unit differs; nothing written')
-        unit.checked('$(command -v ubiupdatevol || echo /system/vendor/bin/ubiupdatevol) /dev/ubi0_%d %s'
-                     % (n, remote), 'ubiupdatevol')
-        back = unit.sha256('/dev/ubi0_%d' % n, size)
+        with uninterrupted(unit.adb):
+            unit.checked('$(command -v ubiupdatevol || echo /system/vendor/bin/ubiupdatevol) /dev/ubi0_%d %s'
+                         % (n, remote), 'ubiupdatevol')
+            back = unit.sha256('/dev/ubi0_%d' % n, size)
     finally:
         unit.sh('rm -rf %s' % RAM_STAGE)
     if back != want:

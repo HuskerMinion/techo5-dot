@@ -359,9 +359,14 @@ class Adb:
     def __init__(self, serial, exe='adb'):
         self.serial = serial
         self.cmd = tool(exe) + ['-s', serial]
+        # What adb is started with: its stdin, and anything else Popen takes. Set while a write must not be
+        # cut short by a Ctrl-C (install-cannoli.py's uninterrupted): no terminal to read it from, and on
+        # Windows a process group of its own, out of the console's Ctrl-C.
+        self.stdin, self.spawn = None, {}
 
     def run(self, *args):
-        return subprocess.run(self.cmd + list(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return subprocess.run(self.cmd + list(args), stdin=self.stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              **self.spawn)
 
     def state(self):
         r = self.run('get-state')

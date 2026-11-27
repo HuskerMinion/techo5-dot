@@ -329,6 +329,27 @@ class Simulated(unittest.TestCase):
         self.assertLess(time.time() - start, 8)  # a retry waits 10 s first
         self.assertFalse(os.path.exists(written))
 
+    @unittest.skipUnless(os.name == 'posix', 'SIGINT to oneself is POSIX')
+    def test_ctrl_c_does_not_cut_a_boot_b_write(self):
+        # Release review: a Ctrl-C mid-ubiupdatevol stopped the installer and adb with it, boot_b half written.
+        import signal
+        unit, image, written = self.boot_b_unit()
+        before = signal.getsignal(signal.SIGINT)
+        real, seen = unit.adb.run, []
+
+        def run(*args):
+            if any('ubiupdatevol' in str(x) for x in args):
+                seen.append((signal.getsignal(signal.SIGINT), unit.adb.stdin))
+                os.kill(os.getpid(), signal.SIGINT)
+            return real(*args)
+        unit.adb.run = run
+        ic.write_boot_b(unit, image, image)
+        self.assertEqual(seen, [(signal.SIG_IGN, subprocess.DEVNULL)])
+        with open(image, 'rb') as a, open(written, 'rb') as b:
+            self.assertEqual(a.read(), b.read())
+        self.assertIs(signal.getsignal(signal.SIGINT), before)
+        self.assertIsNone(unit.adb.stdin)
+
     def bundle(self, **over):
         bundle = os.path.join(self.d, 'unit', 'bundle')
         os.makedirs(bundle, exist_ok=True)
@@ -605,6 +626,98 @@ class FakeAdb:
     def sh(self, command):
         self.asked.append(command)
         return ''
+
+
+class FakeBL2Unit:
+    """A unit in TWRP whose four brhgptlk copies are not 8349's yet: flash_image makes each one so."""
+
+    def __init__(self, on_flash):
+        self.adb = techo5lib.Adb(SERIAL, 'adb')
+        self.adb.push = lambda local, remote: None
+        self.stage, self.bb, self.written, self.on_flash = '/tmp/stage', '/tmp/stage/busybox', set(), on_flash
+
+    def sha256(self, path, length=None):
+        return ic.BRHGPTLK_SHA256
+
+    def sh(self, command):
+        name = command.split()[1]
+        self.on_flash(name)
+        self.written.add(name)
+        return ''
+
+    def checked(self, command, what):
+        return (ic.BRHGPTLK_SHA256 if what in self.written else '0' * 64) + '  -'
+
+
+class Uninterrupted(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'posix', 'SIGINT to oneself is POSIX')
+    def test_ctrl_c_does_not_cut_the_bl2_writes(self):
+        # Release review: a Ctrl-C between or during the flash_image writes stopped the installer, a copy
+        # half written or the rest not; now it waits, and adb reads no terminal meanwhile.
+        import signal
+        before = signal.getsignal(signal.SIGINT)
+        seen = []
+
+        def on_flash(name):
+            seen.append((name, signal.getsignal(signal.SIGINT), unit.adb.stdin))
+            os.kill(os.getpid(), signal.SIGINT)
+        unit = FakeBL2Unit(on_flash)
+        image = os.path.join(tempfile.mkdtemp(), 'brhgptlk_0.img')
+        self.addCleanup(shutil.rmtree, os.path.dirname(image))
+        ic.flash_brhgptlk(unit, image, False)
+        self.assertEqual([n for n, _, _ in seen], list(ic.BRHGPTLK))
+        self.assertTrue(all(h == signal.SIG_IGN and i == subprocess.DEVNULL for _, h, i in seen), seen)
+        self.assertIs(signal.getsignal(signal.SIGINT), before)
+        self.assertIsNone(unit.adb.stdin)
+
+    def test_the_handler_is_put_back_when_a_write_fails(self):
+        import signal
+        before = signal.getsignal(signal.SIGINT)
+        adb = techo5lib.Adb(SERIAL, 'adb')
+        with self.assertRaises(techo5lib.Fail):
+            with ic.uninterrupted(adb):
+                ic.fail('read back wrong')
+        self.assertIs(signal.getsignal(signal.SIGINT), before)
+        self.assertEqual((adb.stdin, adb.spawn), (None, {}))
+
+
+class PushText(unittest.TestCase):
+    """What goes onto the unit as text (a Wi-Fi passphrase, the Home Assistant key) passes through a file
+    only this user can read, gone after the push, whether it worked or not."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp)
+
+    def test_the_file_is_private_and_removed(self):
+        modes, asked = [], []
+
+        class A:
+            def push(self, local, remote):
+                modes.append(os.stat(local).st_mode & 0o777)
+                with open(local, encoding='utf-8') as f:
+                    asked.append(f.read())
+
+            def sh(self, command):
+                asked.append(command)
+        ic.push_text_file(A(), self.tmp, 'secret', '/data/misc/echolocal/psk')
+        if os.name == 'posix':
+            self.assertEqual(modes, [0o600])
+        self.assertEqual(asked, ['secret', 'chmod 600 /data/misc/echolocal/psk'])
+        self.assertEqual(os.listdir(self.tmp), [])
+
+    def test_a_failed_push_leaves_nothing(self):
+        class A:
+            def push(self, local, remote):
+                ic.fail('adb push failed')
+
+            def sh(self, command):
+                raise AssertionError('chmod after a failed push')
+        with open(os.path.join(self.tmp, 'wifi.conf'), 'w') as f:
+            f.write('left from before')
+        with self.assertRaises(techo5lib.Fail):
+            ic.push_text_file(A(), self.tmp, 'network={psk="x"}', '/data/linux/wifi.conf')
+        self.assertEqual(os.listdir(self.tmp), [])
 
 
 class Gift(unittest.TestCase):

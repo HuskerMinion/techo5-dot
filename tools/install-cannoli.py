@@ -728,7 +728,7 @@ def flash_brhgptlk(unit, image, dry_run):
     unit.adb.push(image, unit.stage + '/brhgptlk.img')
     if unit.sha256(unit.stage + '/brhgptlk.img') != BRHGPTLK_SHA256:
         fail('the brhgptlk image pushed to the unit differs; nothing written')
-    note('writing the BL2 copies: Ctrl-C waits until they are written and read back')
+    note('writing the BL2 copies: Ctrl-C is ignored until they are written and read back')
     with uninterrupted(unit.adb):
         for name in todo:
             unit.sh('flash_image %s %s/brhgptlk.img' % (name, unit.stage))
@@ -1121,6 +1121,8 @@ def main():
         note('Bluetooth payload on userdata')
     tmp = os.path.join(a.work, 'provision-' + a.serial)
     os.makedirs(tmp, mode=0o700, exist_ok=True)
+    # makedirs leaves a folder already there as it was, and the umask can loosen a new one.
+    os.chmod(tmp, 0o700)
 
     def push_text(text, remote, mode='600'):
         push_text_file(adb, tmp, text, remote, mode)

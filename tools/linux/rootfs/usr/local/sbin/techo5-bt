@@ -149,7 +149,13 @@ if ! pidof dbus-daemon > /dev/null; then
 fi
 # Only what audio needs: no HID or HID over GATT (a paired device could otherwise present itself as a
 # keyboard), no PAN networking, no SIM access.
-"$BLUETOOTHD" -n --noplugin=input,hog,network,sap >> $LOG/bluetoothd.log 2>&1 &
+# -E: the daemon's Bluetooth proxy lends Home Assistant connections through bluetoothd, to devices it
+# heard on its own raw HCI socket and bluetoothd never did, and Adapter1.ConnectDevice, which makes such
+# a device and connects it, is experimental. Only that board's boot.sh asks for it (TECHO5_BT_CONNECT,
+# the Echo Dot 5th gen); on the others the proxy makes no connections.
+EXPERIMENTAL=
+[ -n "$TECHO5_BT_CONNECT" ] && EXPERIMENTAL=-E
+"$BLUETOOTHD" -n $EXPERIMENTAL --noplugin=input,hog,network,sap >> $LOG/bluetoothd.log 2>&1 &
 
 # Seen on the Show: after the first power-on the controller answers commands but reports nothing it
 # hears until it has been powered off and on once.
